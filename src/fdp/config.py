@@ -104,10 +104,12 @@ class Settings(BaseSettings):
     # Postgres
     postgres_dsn: PostgresDsn
 
-    # Subgroups
-    triplestore: TripleStoreSettings = Field(default_factory=TripleStoreSettings)
-    oidc: OIDCSettings = Field(default_factory=OIDCSettings)
-    metrics: MetricsSettings = Field(default_factory=MetricsSettings)
+    # Subgroups — required fields are filled from prefixed env vars at construction time.
+    triplestore: TripleStoreSettings = Field(
+        default_factory=lambda: TripleStoreSettings(),  # type: ignore[call-arg]
+    )
+    oidc: OIDCSettings = Field(default_factory=lambda: OIDCSettings())  # type: ignore[call-arg]
+    metrics: MetricsSettings = Field(default_factory=lambda: MetricsSettings())
 
 
 @lru_cache(maxsize=1)

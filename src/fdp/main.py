@@ -11,7 +11,7 @@ dependencies (storage adapters, OIDC JWKS cache, event-bus subscribers).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -30,7 +30,7 @@ log = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: initialize shared resources, yield, then clean up.
 
     Initialization order matters. Storage adapters come first because everything
@@ -82,7 +82,7 @@ def create_app() -> FastAPI:
     # TODO: mount admin / health endpoints
 
     @app.get("/healthz", tags=["internal"])
-    async def healthz() -> dict[str, str]:
+    async def healthz() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         """Liveness probe. Does not check downstream dependencies."""
         return {"status": "ok", "version": __version__}
 
