@@ -1,0 +1,60 @@
+# Default deployment profile for FDP v2.
+#
+# This profile ships with the FDP server and bootstraps a standard
+# DCAT-based metadata repository: Repository → Catalogs → Datasets / Data
+# Services → Distributions. Communities that need custom schemas should
+# either extend this profile or replace it entirely.
+#
+# See architecture document Section 12 for the profile mechanism and
+# bootstrap behaviour.
+
+apiVersion: fdp/v1
+kind: DeploymentProfile
+
+metadata:
+  name: default
+  version: 0.1.0
+  description: Standard FDP profile based on DCAT 3 with FDP extensions.
+  authors:
+    - name: FDP Contributors
+  homepage: https://specs.fairdatapoint.org
+
+# Profile this one extends. Null for a base profile (this one).
+extends: null
+
+# SHACL schemas the FDP will register on bootstrap. Order matters when
+# schemas reference each other; declare leaves first.
+schemas:
+  - id: fdp:Repository
+    path: schemas/repository.ttl
+  - id: dcat:Catalog
+    path: schemas/catalog.ttl
+  - id: dcat:Dataset
+    path: schemas/dataset.ttl
+  - id: dcat:DataService
+    path: schemas/data-service.ttl
+  - id: dcat:Distribution
+    path: schemas/distribution.ttl
+
+# Meta-metadata schema for record provenance. The FDP-managed fields.
+metaMetadataSchema:
+  path: schemas/meta-metadata.ttl
+
+# ODRL Offer templates. The system-default Offer is referenced by Repository
+# resources whose dct:rights is unset.
+offers:
+  - id: system-default
+    path: offers/public-read-steward-modify.ttl
+    isSystemDefault: true
+
+# LDP container hierarchy. The repository container is created first; child
+# containers reference their parent. Each container declares the schema its
+# members must satisfy via ldp:constrainedBy.
+containers:
+  - id: repository
+    type: fdp:Repository
+    parent: null
+    constrainedBy: dcat:Catalog   # members of the repository are catalogs
+
+# Seed records. Empty in the default profile; communities populate this.
+seedRecords: []

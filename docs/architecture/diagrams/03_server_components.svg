@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="640"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 3: Server component architecture</text>
+
+    <g>
+      <rect class="box gray" x="170" y="60" width="250" height="60" rx="8"/>
+      <text class="th" x="295" y="86" text-anchor="middle">REST API (LDP)</text>
+      <text class="ts" x="295" y="106" text-anchor="middle">Containers, records, schemas, policies</text>
+    </g>
+    <g>
+      <rect class="box gray" x="480" y="60" width="250" height="60" rx="8"/>
+      <text class="th" x="605" y="86" text-anchor="middle">SPARQL endpoint</text>
+      <text class="ts" x="605" y="106" text-anchor="middle">Read and update queries</text>
+    </g>
+
+    <g>
+      <rect class="box gray" x="60" y="150" width="780" height="50" rx="8"/>
+      <text class="th" x="450" y="172" text-anchor="middle">Auth middleware</text>
+      <text class="ts" x="450" y="190" text-anchor="middle">OIDC bearer, JWT validation, role resolution, request context</text>
+    </g>
+
+    <g>
+      <rect class="box teal" x="60" y="230" width="180" height="100" rx="8"/>
+      <text class="th" x="150" y="260" text-anchor="middle">Metadata provider</text>
+      <text class="ts" x="150" y="280" text-anchor="middle">Records, schemas</text>
+      <text class="ts" x="150" y="298" text-anchor="middle">LDP server</text>
+      <text class="ts" x="150" y="316" text-anchor="middle">SHACL validation</text>
+    </g>
+    <g>
+      <rect class="box teal" x="260" y="230" width="180" height="100" rx="8"/>
+      <text class="th" x="350" y="260" text-anchor="middle">Security enforcer</text>
+      <text class="ts" x="350" y="280" text-anchor="middle">ODRL evaluator (PDP)</text>
+      <text class="ts" x="350" y="298" text-anchor="middle">Offer / Agreement</text>
+      <text class="ts" x="350" y="316" text-anchor="middle">Authorization cache</text>
+    </g>
+    <g>
+      <rect class="box teal" x="460" y="230" width="180" height="100" rx="8"/>
+      <text class="th" x="550" y="260" text-anchor="middle">Metrics gatherer</text>
+      <text class="ts" x="550" y="280" text-anchor="middle">Anonymized events</text>
+      <text class="ts" x="550" y="298" text-anchor="middle">Aggregation, dashboard</text>
+      <text class="ts" x="550" y="316" text-anchor="middle">GDPR-safe</text>
+    </g>
+    <g>
+      <rect class="box teal" x="660" y="230" width="180" height="100" rx="8"/>
+      <text class="th" x="750" y="260" text-anchor="middle">Data provider</text>
+      <text class="ts" x="750" y="280" text-anchor="middle">Open distributions</text>
+      <text class="ts" x="750" y="298" text-anchor="middle">Download, SPARQL</text>
+      <text class="ts" x="750" y="316" text-anchor="middle">Per-distribution scope</text>
+    </g>
+
+    <g>
+      <rect class="box amber" x="60" y="370" width="780" height="60" rx="8"/>
+      <text class="th" x="450" y="396" text-anchor="middle">Shared kernel</text>
+      <text class="ts" x="450" y="416" text-anchor="middle">RDF utilities, namespaces, event bus, identity context, error types</text>
+    </g>
+
+    <g>
+      <rect class="box gray" x="60" y="470" width="780" height="60" rx="8"/>
+      <text class="th" x="450" y="496" text-anchor="middle">Storage adapters</text>
+      <text class="ts" x="450" y="514" text-anchor="middle">Triple store port (SPARQL 1.1 Protocol)   ·   Postgres repository</text>
+    </g>
+
+    <g>
+      <rect class="box purple" x="160" y="570" width="240" height="50" rx="8"/>
+      <text class="th" x="280" y="600" text-anchor="middle">Triple store</text>
+    </g>
+    <g>
+      <rect class="box purple" x="500" y="570" width="240" height="50" rx="8"/>
+      <text class="th" x="620" y="600" text-anchor="middle">PostgreSQL</text>
+    </g>
+
+    <line x1="295" y1="120" x2="295" y2="148" class="arr" marker-end="url(#arrow)"/>
+    <line x1="605" y1="120" x2="605" y2="148" class="arr" marker-end="url(#arrow)"/>
+
+    <line x1="150" y1="200" x2="150" y2="228" class="arr" marker-end="url(#arrow)"/>
+    <line x1="350" y1="200" x2="350" y2="228" class="arr" marker-end="url(#arrow)"/>
+    <line x1="550" y1="200" x2="550" y2="228" class="arr" marker-end="url(#arrow)"/>
+    <line x1="750" y1="200" x2="750" y2="228" class="arr" marker-end="url(#arrow)"/>
+
+    <line x1="150" y1="330" x2="150" y2="368" class="arr" marker-end="url(#arrow)"/>
+    <line x1="350" y1="330" x2="350" y2="368" class="arr" marker-end="url(#arrow)"/>
+    <line x1="550" y1="330" x2="550" y2="368" class="arr" marker-end="url(#arrow)"/>
+    <line x1="750" y1="330" x2="750" y2="368" class="arr" marker-end="url(#arrow)"/>
+
+    <line x1="450" y1="430" x2="450" y2="468" class="arr" marker-end="url(#arrow)"/>
+
+    <line x1="280" y1="530" x2="280" y2="568" class="arr" marker-end="url(#arrow)"/>
+    <line x1="620" y1="530" x2="620" y2="568" class="arr" marker-end="url(#arrow)"/>
+    
+</svg>

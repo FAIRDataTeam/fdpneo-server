@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="420"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 6: ODRL Offer and Agreement lifecycle</text>
+
+    <g>
+      <rect class="box gray" x="40" y="170" width="160" height="80" rx="8"/>
+      <text class="th" x="120" y="200" text-anchor="middle">Record</text>
+      <text class="ts" x="120" y="222" text-anchor="middle">Metadata resource</text>
+      <text class="tn" x="120" y="240" text-anchor="middle">in record graph</text>
+    </g>
+    <text class="lbl" x="240" y="200" text-anchor="middle">dct:rights</text>
+    <line x1="200" y1="210" x2="278" y2="210" class="arr" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect class="box blue" x="280" y="150" width="240" height="120" rx="10"/>
+      <text class="th" x="400" y="180" text-anchor="middle">Offer</text>
+      <text class="ts" x="400" y="202" text-anchor="middle">odrl:Offer</text>
+      <text class="ts" x="400" y="222" text-anchor="middle">Permissions and Prohibitions</text>
+      <text class="ts" x="400" y="242" text-anchor="middle">Versioned, immutable</text>
+      <text class="tn" x="400" y="260" text-anchor="middle">stored in offers graph</text>
+    </g>
+
+    <text class="lbl" x="570" y="200" text-anchor="middle">PERMIT</text>
+    <text class="lbl" x="570" y="218" text-anchor="middle">materializes</text>
+    <line x1="520" y1="210" x2="598" y2="210" class="arr" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect class="box green" x="600" y="80" width="280" height="280" rx="10"/>
+      <text class="th" x="740" y="110" text-anchor="middle">Agreement</text>
+      <text class="ts" x="740" y="132" text-anchor="middle">odrl:Agreement</text>
+      <text class="tn" x="620" y="170">odrl:assigner = rights holder</text>
+      <text class="tn" x="620" y="190">odrl:assignee = user URI</text>
+      <text class="tn" x="620" y="210">prov:wasDerivedFrom Offer vN</text>
+      <text class="tn" x="620" y="230">dct:issued = grant timestamp</text>
+      <text class="tn" x="620" y="250">odrl:action = read | modify | ...</text>
+      <text class="tn" x="620" y="290">Stored in record audit graph</text>
+      <text class="tn" x="620" y="310">Append-only, retention per policy</text>
+      <text class="tn" x="620" y="340">Identifies the assignee by design</text>
+    </g>
+    
+</svg>

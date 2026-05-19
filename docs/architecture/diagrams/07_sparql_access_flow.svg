@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="580" viewBox="0 0 900 580">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="580"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 7: SPARQL access-control flow</text>
+
+    <g>
+      <rect class="box teal" x="220" y="70" width="460" height="60" rx="8"/>
+      <text class="th" x="450" y="96" text-anchor="middle">1. Authenticate request</text>
+      <text class="ts" x="450" y="116" text-anchor="middle">Validate JWT, build user context (subject, roles)</text>
+    </g>
+    <line x1="450" y1="130" x2="450" y2="158" class="arr" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect class="box teal" x="220" y="160" width="460" height="60" rx="8"/>
+      <text class="th" x="450" y="186" text-anchor="middle">2. Parse and classify query</text>
+      <text class="ts" x="450" y="206" text-anchor="middle">rdflib algebra; read vs update; referenced graphs</text>
+    </g>
+    <line x1="450" y1="220" x2="450" y2="248" class="arr" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect class="box teal" x="220" y="250" width="460" height="60" rx="8"/>
+      <text class="th" x="450" y="276" text-anchor="middle">3. Resolve authorized graphs</text>
+      <text class="ts" x="450" y="296" text-anchor="middle">PDP lookup against materialized authorization index</text>
+    </g>
+    <line x1="450" y1="310" x2="450" y2="338" class="arr" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect class="box teal" x="220" y="340" width="460" height="60" rx="8"/>
+      <text class="th" x="450" y="366" text-anchor="middle">4. Rewrite or reject</text>
+      <text class="ts" x="450" y="386" text-anchor="middle">Inject FROM NAMED; validate explicit GRAPH references</text>
+    </g>
+    <line x1="450" y1="400" x2="450" y2="428" class="arr" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect class="box teal" x="220" y="430" width="460" height="60" rx="8"/>
+      <text class="th" x="450" y="456" text-anchor="middle">5. Execute via adapter</text>
+      <text class="ts" x="450" y="476" text-anchor="middle">Pass through to triple store, stream results back</text>
+    </g>
+
+    <text class="tn" x="80" y="100">Anonymous</text>
+    <text class="tn" x="80" y="116">→ read only</text>
+    <text class="tn" x="80" y="190">SERVICE</text>
+    <text class="tn" x="80" y="206">→ reject (no federation)</text>
+    <text class="tn" x="80" y="280">Auth cache</text>
+    <text class="tn" x="80" y="296">→ Postgres</text>
+    <text class="tn" x="80" y="370">Explicit unauth graph</text>
+    <text class="tn" x="80" y="386">→ 403</text>
+    <text class="tn" x="80" y="460">Adapter</text>
+    <text class="tn" x="80" y="476">→ Fuseki/GraphDB/...</text>
+    
+</svg>

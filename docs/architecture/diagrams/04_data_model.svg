@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="540"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 4: Named-graph data model per record</text>
+
+    <g>
+      <rect class="box blue" x="40" y="80" width="820" height="380" rx="14"/>
+      <text class="th" x="60" y="108">Triple store</text>
+      <text class="tn" x="60" y="126">Backed by SPARQL 1.1 Protocol; FDP is agnostic to vendor</text>
+    </g>
+
+    <g>
+      <rect class="box teal" x="80" y="160" width="260" height="240" rx="10"/>
+      <text class="th" x="210" y="190" text-anchor="middle">Record graph</text>
+      <text class="ts" x="210" y="212" text-anchor="middle">&lt;https://fdp.example/r/123&gt;</text>
+      <text class="tn" x="100" y="244">dcat:Dataset / FDP type</text>
+      <text class="tn" x="100" y="264">dct:title, dct:description</text>
+      <text class="tn" x="100" y="284">dcat:keyword, dcat:theme</text>
+      <text class="tn" x="100" y="304">dct:rights → Offer (versioned)</text>
+      <text class="tn" x="100" y="324">SHACL-validated on write</text>
+      <text class="tn" x="100" y="364">Subject to ODRL policy</text>
+      <text class="tn" x="100" y="384">Visible via SPARQL when authorized</text>
+    </g>
+
+    <g>
+      <rect class="box amber" x="370" y="160" width="220" height="240" rx="10"/>
+      <text class="th" x="480" y="190" text-anchor="middle">Meta-metadata graph</text>
+      <text class="ts" x="480" y="212" text-anchor="middle">&lt;.../r/123/meta&gt;</text>
+      <text class="tn" x="390" y="244">dct:creator (steward URI)</text>
+      <text class="tn" x="390" y="264">dct:created, dct:modified</text>
+      <text class="tn" x="390" y="284">owl:versionInfo</text>
+      <text class="tn" x="390" y="304">prov:wasGeneratedBy</text>
+      <text class="tn" x="390" y="324">Custom fields per profile</text>
+      <text class="tn" x="390" y="364">SHACL-validated against</text>
+      <text class="tn" x="390" y="384">meta-metadata schema</text>
+    </g>
+
+    <g>
+      <rect class="box red" x="620" y="160" width="220" height="240" rx="10"/>
+      <text class="th" x="730" y="190" text-anchor="middle">Audit graph</text>
+      <text class="ts" x="730" y="212" text-anchor="middle">&lt;.../r/123/audit&gt;</text>
+      <text class="tn" x="640" y="244">odrl:Agreement instances</text>
+      <text class="tn" x="640" y="264">odrl:assigner, odrl:assignee</text>
+      <text class="tn" x="640" y="284">prov:wasDerivedFrom Offer</text>
+      <text class="tn" x="640" y="304">Grant timestamp, action</text>
+      <text class="tn" x="640" y="324">Append-only</text>
+      <text class="tn" x="640" y="364">Steward visible</text>
+      <text class="tn" x="640" y="384">Excluded from public SPARQL</text>
+    </g>
+
+    <text class="ts" x="450" y="490" text-anchor="middle">Per-record authorization is set membership over named graph URIs.</text>
+    <text class="ts" x="450" y="510" text-anchor="middle">Different access policies can apply to the record, its meta-metadata, and its audit trail.</text>
+    
+</svg>

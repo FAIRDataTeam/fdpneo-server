@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+sdist/
+wheels/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments / uv
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.cache/
+.hypothesis/
+nosetests.xml
+
+# Type checkers / linters
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.pytype/
+.dmypy.json
+dmypy.json
+
+# Tooling caches
+.tox/
+.nox/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local config overrides
+docker-compose.override.yaml
+docker-compose.override.yml
+deploy/compose.override.yaml
+deploy/compose.override.yml
+
+# Logs / runtime
+*.log
+logs/
+*.pid
+*.sock
+
+# Local data / state
+data/local/
+*.sqlite
+*.sqlite3
+*.db
+
+# OpenTelemetry / profiling dumps
+*.prof
+*.pstats
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude local settings (keep shared settings.json, ignore personal overrides)
+.claude/settings.local.json

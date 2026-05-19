@@ -1,0 +1,79 @@
+# Development stack for fdp-server.
+#
+# Brings up GraphDB (the recommended default triple store), PostgreSQL for
+# operational state, and Keycloak as an OIDC provider with a pre-configured
+# realm. Credentials are development-only — do NOT use this configuration in
+# production.
+#
+# Usage:
+#   docker compose -f deploy/compose.yaml up -d
+#   docker compose -f deploy/compose.yaml logs -f
+#   docker compose -f deploy/compose.yaml down       # stop
+#   docker compose -f deploy/compose.yaml down -v    # stop and delete volumes
+#
+# Endpoints (all on localhost):
+#   GraphDB workbench:   http://localhost:7200
+#   Postgres:            postgres://fdp:fdp@localhost:5432/fdp
+#   Keycloak admin:      http://localhost:8080  (admin / admin)
+#   Keycloak fdp realm:  http://localhost:8080/realms/fdp-dev
+
+services:
+  graphdb:
+    image: ontotext/graphdb:10.7.0
+    container_name: fdp-graphdb
+    ports:
+      - "7200:7200"
+    volumes:
+      - graphdb-data:/opt/graphdb/home
+      - ./graphdb/preload:/preload:ro
+    environment:
+      GDB_JAVA_OPTS: >-
+        -Xmx2g -Xms1g
+        -Dgraphdb.workbench.cors.enable=true
+        -Dgraphdb.workbench.importDirectory=/preload
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7200/rest/repositories"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:16
+    container_name: fdp-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: fdp
+      POSTGRES_PASSWORD: fdp
+      POSTGRES_DB: fdp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fdp -d fdp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: fdp-keycloak
+    command:
+      - start-dev
+      - --import-realm
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/realm-fdp-dev.json:/opt/keycloak/data/import/realm-fdp-dev.json:ro
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  graphdb-data:
+  postgres-data:

@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="520"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 2: Container architecture</text>
+
+    <g>
+      <rect class="box teal" x="330" y="60" width="240" height="80" rx="10"/>
+      <text class="th" x="450" y="92" text-anchor="middle">Web client</text>
+      <text class="ts" x="450" y="114" text-anchor="middle">Vue 3 + TypeScript SPA</text>
+      <text class="tn" x="450" y="130" text-anchor="middle">Static assets, served by CDN or nginx</text>
+    </g>
+
+    <g>
+      <rect class="box teal" x="180" y="200" width="540" height="120" rx="10"/>
+      <text class="th" x="450" y="234" text-anchor="middle">API server</text>
+      <text class="ts" x="450" y="256" text-anchor="middle">Python 3.12 + FastAPI, stateless, horizontally scalable</text>
+      <text class="ts" x="450" y="276" text-anchor="middle">REST (LDP), SPARQL endpoint, JWT-authenticated</text>
+      <text class="tn" x="450" y="298" text-anchor="middle">Containerized; one or more instances behind a load balancer</text>
+    </g>
+
+    <g>
+      <rect class="box gray" x="760" y="220" width="130" height="80" rx="8"/>
+      <text class="th" x="825" y="248" text-anchor="middle">Identity</text>
+      <text class="ts" x="825" y="268" text-anchor="middle">External OIDC</text>
+      <text class="tn" x="825" y="286" text-anchor="middle">Keycloak, etc.</text>
+    </g>
+
+    <g>
+      <rect class="box coral" x="80" y="390" width="320" height="90" rx="8"/>
+      <text class="th" x="240" y="422" text-anchor="middle">Triple store</text>
+      <text class="ts" x="240" y="444" text-anchor="middle">Pluggable SPARQL 1.1 Protocol backend</text>
+      <text class="tn" x="240" y="464" text-anchor="middle">GraphDB (recommended), Fuseki, Oxigraph, ...</text>
+    </g>
+
+    <g>
+      <rect class="box coral" x="500" y="390" width="320" height="90" rx="8"/>
+      <text class="th" x="660" y="422" text-anchor="middle">Operational store</text>
+      <text class="ts" x="660" y="444" text-anchor="middle">PostgreSQL 16+</text>
+      <text class="tn" x="660" y="464" text-anchor="middle">Metrics, audit hashes, auth cache, jobs</text>
+    </g>
+
+    <line x1="450" y1="140" x2="450" y2="198" class="arr" marker-end="url(#arrow)"/>
+    <text class="lbl" x="460" y="172">HTTPS</text>
+
+    <line x1="720" y1="260" x2="758" y2="260" class="arr" marker-end="url(#arrow)"/>
+    <text class="lbl" x="720" y="252">OIDC</text>
+
+    <line x1="320" y1="320" x2="270" y2="388" class="arr" marker-end="url(#arrow)"/>
+    <text class="lbl" x="220" y="362">SPARQL 1.1 Protocol</text>
+
+    <line x1="580" y1="320" x2="630" y2="388" class="arr" marker-end="url(#arrow)"/>
+    <text class="lbl" x="600" y="362">SQL</text>
+    
+</svg>

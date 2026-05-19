@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="320" viewBox="0 0 900 320">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="320"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 5: Metrics anonymization boundary</text>
+
+    <g>
+      <rect class="box amber" x="40" y="70" width="380" height="220" rx="10"/>
+      <text class="th" x="60" y="100">Observed, then discarded</text>
+      <text class="ts" x="60" y="136">IP address</text>
+      <text class="ts" x="60" y="160">User agent string</text>
+      <text class="ts" x="60" y="184">Authenticated identity</text>
+      <text class="ts" x="60" y="208">Query and search text</text>
+      <text class="ts" x="60" y="232">Referrer URL</text>
+      <text class="tn" x="60" y="268">Stripped at ingress, never persisted</text>
+    </g>
+
+    <g>
+      <rect class="box green" x="480" y="70" width="380" height="220" rx="10"/>
+      <text class="th" x="500" y="100">Stored as aggregate</text>
+      <text class="ts" x="500" y="136">Country, region, city (from GeoLite2)</text>
+      <text class="ts" x="500" y="160">Daily-rotated visitor hash</text>
+      <text class="ts" x="500" y="184">Event type and resource id</text>
+      <text class="ts" x="500" y="208">Hourly or daily time bucket</text>
+      <text class="ts" x="500" y="232">Counts only</text>
+      <text class="tn" x="500" y="268">Persisted to Postgres aggregates</text>
+    </g>
+
+    <line x1="424" y1="180" x2="476" y2="180" class="arr" marker-end="url(#arrow)"/>
+    <text class="lbl" x="450" y="172" text-anchor="middle">anonymize</text>
+    
+</svg>

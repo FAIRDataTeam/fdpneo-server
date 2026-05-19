@@ -1,0 +1,185 @@
+[project]
+name = "fdp"
+version = "0.1.0"
+description = "FAIR Data Point v2 server — a FAIR-aligned metadata repository implementing the FDP specifications."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "FDP Contributors" },
+]
+keywords = ["fair", "fdp", "metadata", "rdf", "dcat", "shacl", "ldp", "sparql"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+  # HTTP / API
+  "fastapi[standard]>=0.115",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.4",
+  "uvicorn[standard]>=0.30",
+
+  # RDF
+  "rdflib>=7.0",
+  "pyshacl>=0.26",
+
+  # Identity / OIDC
+  "authlib>=1.3",
+  "pyjwt[crypto]>=2.9",
+  "httpx>=0.27",
+
+  # Storage
+  "sqlalchemy[asyncio]>=2.0",
+  "asyncpg>=0.29",
+  "alembic>=1.13",
+
+  # Background jobs
+  "arq>=0.26",
+
+  # Observability
+  "structlog>=24.2",
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-instrumentation-fastapi>=0.48b0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
+  "opentelemetry-instrumentation-httpx>=0.48b0",
+
+  # Geo lookup for anonymized metrics
+  "geoip2>=4.8",
+
+  # CLI
+  "typer>=0.12",
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=5.0",
+  "pytest-mock>=3.14",
+  "testcontainers[postgres]>=4.8",
+  "httpx>=0.27",
+  "ruff>=0.6",
+  "pyright>=1.1.380",
+  "respx>=0.21",  # httpx mocking for OIDC tests
+]
+
+[project.scripts]
+fdp = "fdp.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/FAIRDataTeam/fdp-server"  # placeholder
+Documentation = "https://specs.fairdatapoint.org"
+Repository = "https://github.com/FAIRDataTeam/fdp-server"  # placeholder
+Issues = "https://github.com/FAIRDataTeam/fdp-server/issues"  # placeholder
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fdp"]
+
+# ----------------------------------------------------------------------------
+# Ruff — lint and format
+# ----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "B",    # flake8-bugbear
+  "C4",   # flake8-comprehensions
+  "UP",   # pyupgrade
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific
+  "N",    # pep8-naming
+  "S",    # flake8-bandit (security)
+  "ASYNC",
+  "PTH",  # use pathlib
+  "TID",  # tidy imports
+  "ARG",  # unused arguments
+]
+ignore = [
+  "E501",   # line length — handled by formatter
+  "S101",   # assert is fine in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "ARG"]
+"src/fdp/cli.py" = ["B008"]  # typer uses function defaults heavily
+"src/fdp/shared/errors.py" = ["N818"]  # HTTP-style names (NotFound, Forbidden, …) are intentional
+
+[tool.ruff.lint.isort]
+known-first-party = ["fdp"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+# ----------------------------------------------------------------------------
+# Pyright — type checking
+# ----------------------------------------------------------------------------
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/__pycache__", ".venv", "migrations/versions"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = "warning"
+reportUnknownMemberType = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownArgumentType = "warning"
+
+# ----------------------------------------------------------------------------
+# Pytest
+# ----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+  "--strict-markers",
+  "--strict-config",
+  "-ra",
+  "--showlocals",
+]
+markers = [
+  "unit: fast tests with no I/O",
+  "integration: tests that spin up containers (testcontainers)",
+  "conformance: FDP spec or LDP test suite conformance",
+  "slow: tests that take more than a few seconds",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning:pkg_resources",
+]
+
+[tool.coverage.run]
+source = ["src/fdp"]
+branch = true
+omit = ["src/fdp/cli.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+  "@abstractmethod",
+]
+show_missing = true
+skip_covered = false

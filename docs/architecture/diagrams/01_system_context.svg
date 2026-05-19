@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+  <style>
+  .bg { fill: #ffffff; }
+  text { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #1f2937; }
+  .th { font-size: 14px; font-weight: 600; fill: #111827; }
+  .ts { font-size: 12px; fill: #374151; }
+  .tn { font-size: 11px; fill: #6b7280; }
+  .box { stroke-width: 1; }
+  .gray { fill: #f3f4f6; stroke: #9ca3af; }
+  .teal { fill: #ccfbf1; stroke: #0d9488; }
+  .blue { fill: #dbeafe; stroke: #2563eb; }
+  .green { fill: #dcfce7; stroke: #16a34a; }
+  .amber { fill: #fef3c7; stroke: #d97706; }
+  .red { fill: #fee2e2; stroke: #dc2626; }
+  .purple { fill: #ede9fe; stroke: #7c3aed; }
+  .coral { fill: #ffe4e6; stroke: #e11d48; }
+  .arr { stroke: #4b5563; stroke-width: 1.5; fill: none; }
+  .arr-dashed { stroke: #4b5563; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+  .lbl { font-size: 11px; fill: #4b5563; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1 L8 5 L2 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+  <marker id="arrowstart" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M8 1 L2 5 L8 9" fill="none" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+  <rect class="bg" width="900" height="420"/>
+  
+    <text class="th" x="450" y="30" text-anchor="middle">Figure 1: FDP system context</text>
+
+    <g>
+      <rect class="box gray" x="30" y="60" width="200" height="60" rx="8"/>
+      <text class="th" x="130" y="86" text-anchor="middle">Data steward</text>
+      <text class="ts" x="130" y="106" text-anchor="middle">Curates metadata, policies</text>
+    </g>
+    <g>
+      <rect class="box gray" x="30" y="140" width="200" height="60" rx="8"/>
+      <text class="th" x="130" y="166" text-anchor="middle">Data consumer</text>
+      <text class="ts" x="130" y="186" text-anchor="middle">Browses, queries, downloads</text>
+    </g>
+    <g>
+      <rect class="box gray" x="30" y="220" width="200" height="60" rx="8"/>
+      <text class="th" x="130" y="246" text-anchor="middle">Anonymous user</text>
+      <text class="ts" x="130" y="266" text-anchor="middle">Public read-only access</text>
+    </g>
+    <g>
+      <rect class="box gray" x="30" y="300" width="200" height="60" rx="8"/>
+      <text class="th" x="130" y="326" text-anchor="middle">Administrator</text>
+      <text class="ts" x="130" y="346" text-anchor="middle">Deploys, configures</text>
+    </g>
+
+    <g>
+      <rect class="box teal" x="340" y="170" width="220" height="110" rx="10"/>
+      <text class="th" x="450" y="206" text-anchor="middle">FAIR Data Point</text>
+      <text class="ts" x="450" y="228" text-anchor="middle">Metadata repository</text>
+      <text class="ts" x="450" y="248" text-anchor="middle">DCAT, SHACL, ODRL, LDP</text>
+    </g>
+
+    <g>
+      <rect class="box purple" x="670" y="80" width="200" height="60" rx="8"/>
+      <text class="th" x="770" y="106" text-anchor="middle">Identity provider</text>
+      <text class="ts" x="770" y="126" text-anchor="middle">External OIDC (any)</text>
+    </g>
+    <g>
+      <rect class="box purple" x="670" y="190" width="200" height="60" rx="8"/>
+      <text class="th" x="770" y="216" text-anchor="middle">Triple store</text>
+      <text class="ts" x="770" y="236" text-anchor="middle">RDF storage backend</text>
+    </g>
+    <g>
+      <rect class="box purple" x="670" y="300" width="200" height="60" rx="8"/>
+      <text class="th" x="770" y="326" text-anchor="middle">API consumers</text>
+      <text class="ts" x="770" y="346" text-anchor="middle">SPARQL, REST clients</text>
+    </g>
+
+    <line x1="230" y1="90"  x2="338" y2="190" class="arr" marker-end="url(#arrow)"/>
+    <line x1="230" y1="170" x2="338" y2="215" class="arr" marker-end="url(#arrow)"/>
+    <line x1="230" y1="250" x2="338" y2="240" class="arr" marker-end="url(#arrow)"/>
+    <line x1="230" y1="330" x2="338" y2="265" class="arr" marker-end="url(#arrow)"/>
+
+    <line x1="562" y1="190" x2="668" y2="112" class="arr" marker-end="url(#arrow)"/>
+    <line x1="562" y1="225" x2="668" y2="220" class="arr" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <line x1="668" y1="330" x2="562" y2="260" class="arr" marker-end="url(#arrow)"/>
+    
+</svg>
