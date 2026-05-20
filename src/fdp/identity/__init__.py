@@ -1,26 +1,32 @@
-"""Identity module — OIDC integration and request context.
+"""Identity bounded context — OIDC authentication.
 
-Responsibilities:
+Validates inbound JWT bearer tokens against the configured OIDC provider's
+JWKS, resolves the user identity and roles, and binds an immutable
+:class:`~fdp.shared.context.RequestContext` on the active task's ContextVar.
 
-* Validate inbound JWT bearer tokens against the OIDC provider's JWKS.
-* Resolve user identity, roles, and group memberships from token claims.
-* Build the immutable ``RequestContext`` that downstream modules read from.
-* Provide FastAPI dependencies / middleware that other modules use to require
-  authenticated access.
+Authorization decisions are *not* this module's concern — the policy module
+decides what an authenticated subject may do. Identity is read fresh from
+every token; there is no user table.
 
-Non-responsibilities:
+See architecture §7 and CLAUDE.md for the authentication / authorization
+split. Submodules:
 
-* This module does *not* make authorization decisions. It establishes *who*
-  the user is; the policy module decides *what* they may do.
-* It does *not* persist user data. Identity is read fresh from every token;
-  there is no user table.
-
-Public interface (planned):
-
-* ``middleware.authenticate`` — FastAPI middleware factory.
-* ``deps.require_auth`` — dependency that 401s anonymous requests.
-* ``deps.current_user`` — dependency returning the ``RequestContext``.
-
-See architecture document Section 7 and CLAUDE.md for the rules around the
-authentication / authorization split.
+* :mod:`fdp.identity.jwks` — discovery + JWKS fetch and cache.
+* :mod:`fdp.identity.middleware` — pure-ASGI authentication middleware.
+* :mod:`fdp.identity.deps` — FastAPI dependencies (``current_context``,
+  ``require_auth``).
 """
+
+from __future__ import annotations
+
+from fdp.identity.deps import current_context, require_auth
+from fdp.identity.jwks import JWKSClient, build_jwks_client
+from fdp.identity.middleware import AuthenticationMiddleware
+
+__all__ = [
+    "AuthenticationMiddleware",
+    "JWKSClient",
+    "build_jwks_client",
+    "current_context",
+    "require_auth",
+]

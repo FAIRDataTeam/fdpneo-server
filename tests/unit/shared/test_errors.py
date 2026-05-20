@@ -13,6 +13,7 @@ from fdp.shared.errors import (
     NotFound,
     PolicyViolation,
     SchemaViolation,
+    Unauthenticated,
     fdp_error_handler,
     register_exception_handlers,
 )
@@ -29,6 +30,9 @@ def test_concrete_error_classes_expose_envelope_metadata() -> None:
     assert SchemaViolation.http_status == 422
     assert PolicyViolation.http_status == 403
     assert PolicyViolation.code == "fdp.policy_violation"
+    assert Unauthenticated.http_status == 401
+    assert Unauthenticated.code == "fdp.unauthenticated"
+    assert Unauthenticated.docs_url.endswith("#fdp.unauthenticated")
 
 
 @pytest.mark.unit

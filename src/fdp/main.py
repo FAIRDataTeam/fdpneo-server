@@ -15,11 +15,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+import httpx
 import structlog
 from fastapi import FastAPI
 
 from fdp import __version__
 from fdp.config import Settings, get_settings
+from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.logging import configure_logging
 
@@ -30,7 +32,7 @@ log = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: initialize shared resources, yield, then clean up.
 
     Initialization order matters. Storage adapters come first because everything
@@ -41,8 +43,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = get_settings()
     log.info("fdp_starting", version=__version__, env=settings.environment)
 
+    http_client = httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0))
+    jwks_client = build_jwks_client(settings.oidc, http_client)
+    app.state.http_client = http_client
+    app.state.jwks_client = jwks_client
+
     # TODO: initialize storage adapters (triple store + Postgres pool)
-    # TODO: initialize OIDC JWKS cache
     # TODO: initialize PDP and warm authorization cache for anonymous
     # TODO: subscribe metrics handler to the event bus
     # TODO: subscribe audit-log handler to the event bus
@@ -51,6 +57,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         yield
     finally:
         log.info("fdp_stopping")
+        await http_client.aclose()
         # TODO: close storage connections, flush metrics buckets
 
 
@@ -73,8 +80,12 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
 
-    # TODO: register auth middleware (identity.middleware)
-    # TODO: register request-context middleware (shared.context)
+    app.add_middleware(
+        AuthenticationMiddleware,
+        oidc=settings.oidc,
+        jwks_client_provider=lambda: app.state.jwks_client,
+    )
+
     # TODO: mount LDP router (metadata.api)
     # TODO: mount SPARQL endpoint (access.api)
     # TODO: mount metrics dashboard API (metrics.api)

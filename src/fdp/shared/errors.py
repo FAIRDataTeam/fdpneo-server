@@ -59,6 +59,19 @@ class FDPError(Exception):
                 )
 
 
+class Unauthenticated(FDPError):
+    """Raised when a request requires authentication that wasn't provided.
+
+    Maps to HTTP 401. ``Forbidden`` (403) is reserved for the policy layer:
+    *anonymous* is the absence of authentication, *unauthorized* is a denied
+    decision against an authenticated subject.
+    """
+
+    code = "fdp.unauthenticated"
+    http_status = 401
+    docs_url = _DOCS_BASE + "fdp.unauthenticated"
+
+
 class NotFound(FDPError):
     code = "fdp.not_found"
     http_status = 404
@@ -128,6 +141,7 @@ __all__ = [
     "NotFound",
     "PolicyViolation",
     "SchemaViolation",
+    "Unauthenticated",
     "fdp_error_handler",
     "register_exception_handlers",
 ]

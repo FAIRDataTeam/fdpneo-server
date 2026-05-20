@@ -122,6 +122,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "ARG"]
 "src/fdp/cli.py" = ["B008"]  # typer uses function defaults heavily
+"src/fdp/identity/deps.py" = ["B008"]  # FastAPI Depends() in argument defaults is the idiomatic pattern
+"src/fdp/identity/jwks.py" = ["N818"]  # UnknownSigningKey reads cleanly; JWKSError is the base
 "src/fdp/shared/errors.py" = ["N818"]  # HTTP-style names (NotFound, Forbidden, …) are intentional
 
 [tool.ruff.lint.isort]
