@@ -130,9 +130,11 @@ class AuthenticationMiddleware:
 
         subject = f"{self._issuer}#{payload['sub']}"
         roles = frozenset(_get_nested_claim(payload, self._oidc.roles_claim))
+        groups = frozenset(_get_nested_claim(payload, self._oidc.groups_claim))
         return RequestContext(
             subject=subject,
             roles=roles,
+            groups=groups,
             trace_id=trace_id,
         )
 

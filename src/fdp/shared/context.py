@@ -38,12 +38,17 @@ class RequestContext:
 
     subject: str | None
     roles: frozenset[str] = frozenset()
+    groups: frozenset[str] = frozenset()
     request_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     trace_id: str = ""
 
     @property
     def is_anonymous(self) -> bool:
-        """True iff there is no subject *and* no role — architecture §3.1."""
+        """True iff there is no subject *and* no role — architecture §3.1.
+
+        Groups do not contribute to anonymity: a request without a subject
+        is anonymous regardless of any group claims.
+        """
         return self.subject is None and not self.roles
 
     @classmethod
@@ -57,6 +62,7 @@ class RequestContext:
         return cls(
             subject=None,
             roles=frozenset(),
+            groups=frozenset(),
             request_timestamp=request_timestamp or datetime.now(UTC),
             trace_id=trace_id,
         )
