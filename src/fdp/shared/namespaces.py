@@ -31,6 +31,7 @@ DCT = Namespace("http://purl.org/dc/terms/")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 LDP = Namespace("http://www.w3.org/ns/ldp#")
 ODRL = Namespace("http://www.w3.org/ns/odrl/2/")
+OWL = Namespace("http://www.w3.org/2002/07/owl#")
 PROV = Namespace("http://www.w3.org/ns/prov#")
 SH = Namespace("http://www.w3.org/ns/shacl#")
 XSD = Namespace("http://www.w3.org/2001/XMLSchema#")
@@ -45,6 +46,7 @@ PREFIXES: Mapping[str, Namespace] = MappingProxyType(
         "foaf": FOAF,
         "ldp": LDP,
         "odrl": ODRL,
+        "owl": OWL,
         "prov": PROV,
         "sh": SH,
         "xsd": XSD,
@@ -80,6 +82,7 @@ __all__ = [
     "FOAF",
     "LDP",
     "ODRL",
+    "OWL",
     "PREFIXES",
     "PROV",
     "SH",

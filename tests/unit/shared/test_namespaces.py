@@ -15,6 +15,7 @@ from fdp.shared.namespaces import (
     FOAF,
     LDP,
     ODRL,
+    OWL,
     PREFIXES,
     PROV,
     SH,
@@ -31,6 +32,7 @@ def test_standard_namespaces_have_expected_iris() -> None:
     assert str(FOAF) == "http://xmlns.com/foaf/0.1/"
     assert str(LDP) == "http://www.w3.org/ns/ldp#"
     assert str(ODRL) == "http://www.w3.org/ns/odrl/2/"
+    assert str(OWL) == "http://www.w3.org/2002/07/owl#"
     assert str(PROV) == "http://www.w3.org/ns/prov#"
     assert str(SH) == "http://www.w3.org/ns/shacl#"
     assert str(XSD) == "http://www.w3.org/2001/XMLSchema#"
@@ -44,7 +46,7 @@ def test_namespace_resolves_terms() -> None:
 
 @pytest.mark.unit
 def test_prefixes_mapping_is_lowercase_and_immutable() -> None:
-    assert set(PREFIXES) == {"dcat", "dct", "foaf", "ldp", "odrl", "prov", "sh", "xsd"}
+    assert set(PREFIXES) == {"dcat", "dct", "foaf", "ldp", "odrl", "owl", "prov", "sh", "xsd"}
     with pytest.raises(TypeError):
         PREFIXES["xx"] = Namespace("http://example.org/xx#")  # type: ignore[index]
 
