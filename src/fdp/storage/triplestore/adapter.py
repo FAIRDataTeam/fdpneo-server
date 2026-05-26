@@ -22,8 +22,10 @@ async context manager.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
+from urllib.parse import urlencode
 
 import httpx
 from rdflib import Graph
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
 SPARQL_JSON: str = "application/sparql-results+json"
 SPARQL_UPDATE: str = "application/sparql-update"
 TURTLE: str = "text/turtle"
+_FORM_ENCODED: str = "application/x-www-form-urlencoded"
 
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
 
@@ -83,20 +86,58 @@ class TripleStoreAdapter:
 
     # --- SPARQL Protocol ----------------------------------------------------
 
-    async def query(self, sparql: str, *, accept: str = SPARQL_JSON) -> bytes:
+    async def query(
+        self,
+        sparql: str,
+        *,
+        accept: str = SPARQL_JSON,
+        default_graph_uris: Sequence[str] = (),
+        named_graph_uris: Sequence[str] = (),
+    ) -> bytes:
         """Execute a SPARQL query and return the raw response body.
 
         ``Accept`` defaults to SPARQL Results JSON. Override it with a
         Turtle / RDF/XML / N-Triples media type for ``CONSTRUCT`` and
         ``DESCRIBE`` queries.
+
+        ``default_graph_uris`` and ``named_graph_uris`` are forwarded as
+        repeated form fields per SPARQL 1.1 Protocol §2.1.4. Per the spec,
+        if the query body itself contains ``FROM`` or ``FROM NAMED``, the
+        server ignores these parameters — they only apply when the query
+        does not describe its own dataset.
         """
         response = await self._client.post(
             str(self._settings.query_endpoint),
-            data={"query": sparql},
-            headers={"Accept": accept},
+            content=_query_form(sparql, default_graph_uris, named_graph_uris),
+            headers={"Accept": accept, "Content-Type": _FORM_ENCODED},
         )
         response.raise_for_status()
         return response.content
+
+    async def query_stream(
+        self,
+        sparql: str,
+        *,
+        accept: str,
+        default_graph_uris: Sequence[str] = (),
+        named_graph_uris: Sequence[str] = (),
+    ) -> AsyncIterator[bytes]:
+        """Stream a SPARQL query response, yielding response-body chunks.
+
+        Designed for large ``CONSTRUCT`` / ``DESCRIBE`` payloads so we
+        don't buffer the entire RDF dump in memory. Consume via
+        ``async for chunk in adapter.query_stream(...)``; when the
+        consumer exits, the underlying connection is released.
+        """
+        async with self._client.stream(
+            "POST",
+            str(self._settings.query_endpoint),
+            content=_query_form(sparql, default_graph_uris, named_graph_uris),
+            headers={"Accept": accept, "Content-Type": _FORM_ENCODED},
+        ) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                yield chunk
 
     async def ask(self, sparql: str) -> bool:
         """Execute an ``ASK`` query and return its boolean result."""
@@ -104,12 +145,29 @@ class TripleStoreAdapter:
         payload: dict[str, object] = json.loads(body)
         return bool(payload.get("boolean", False))
 
-    async def update(self, sparql: str) -> None:
-        """Execute a SPARQL Update statement (no response body expected)."""
+    async def update(
+        self,
+        sparql: str,
+        *,
+        using_graph_uris: Sequence[str] = (),
+        using_named_graph_uris: Sequence[str] = (),
+    ) -> None:
+        """Execute a SPARQL Update statement (no response body expected).
+
+        ``using_graph_uris`` and ``using_named_graph_uris`` are forwarded
+        as URL query-string parameters per SPARQL 1.1 Protocol §2.2.1; the
+        triple store uses them as the dataset for ``WHERE`` clauses in
+        ``INSERT``/``DELETE`` updates that don't specify their own
+        ``USING`` / ``WITH``. The router scopes update WHEREs to the
+        user's authorized read set to prevent the WHERE from observing
+        unauthorized data even when the write target is authorized.
+        """
+        params = _update_params(using_graph_uris, using_named_graph_uris)
         response = await self._client.post(
             str(self._settings.update_endpoint),
             content=sparql.encode("utf-8"),
             headers={"Content-Type": SPARQL_UPDATE},
+            params=httpx.QueryParams(params) if params else None,
         )
         response.raise_for_status()
 
@@ -185,6 +243,37 @@ class TripleStoreAdapter:
             return data.encode("utf-8")
         # rdflib.Graph
         return data.serialize(format=_rdflib_format_for(mime)).encode("utf-8")
+
+
+def _query_form(
+    sparql: str,
+    default_graph_uris: Sequence[str],
+    named_graph_uris: Sequence[str],
+) -> str:
+    """URL-encode the form body for a SPARQL Protocol POST.
+
+    Manual encoding (vs httpx ``data=``) so we can include repeated
+    ``default-graph-uri`` / ``named-graph-uri`` fields without httpx
+    routing the call through its raw-content compatibility shim.
+    """
+    fields: list[tuple[str, str]] = [("query", sparql)]
+    for graph_uri in default_graph_uris:
+        fields.append(("default-graph-uri", graph_uri))
+    for graph_uri in named_graph_uris:
+        fields.append(("named-graph-uri", graph_uri))
+    return urlencode(fields)
+
+
+def _update_params(
+    using_graph_uris: Sequence[str],
+    using_named_graph_uris: Sequence[str],
+) -> tuple[tuple[str, str], ...]:
+    params: list[tuple[str, str]] = []
+    for graph_uri in using_graph_uris:
+        params.append(("using-graph-uri", graph_uri))
+    for graph_uri in using_named_graph_uris:
+        params.append(("using-named-graph-uri", graph_uri))
+    return tuple(params)
 
 
 def _rdflib_format_for(mime: str) -> str:

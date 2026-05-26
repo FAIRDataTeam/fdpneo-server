@@ -159,3 +159,61 @@ async def test_from_settings_attaches_basic_auth() -> None:
     async with TripleStoreAdapter.from_settings(_settings(with_auth=True)) as adapter:
         await adapter.query("SELECT * { ?s ?p ?o }")
     assert route.calls.last.request.headers["authorization"].startswith("Basic ")
+
+
+# --- protocol-level dataset overrides ---------------------------------------
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_query_forwards_named_graph_uris(async_client: httpx.AsyncClient) -> None:
+    route = respx.post(QUERY_URL).respond(200, json={"head": {}, "results": {"bindings": []}})
+    await _adapter(_settings(), async_client).query(
+        "SELECT * { ?s ?p ?o }",
+        named_graph_uris=("https://example.org/g1", "https://example.org/g2"),
+    )
+    body = route.calls.last.request.content.decode("utf-8")
+    assert "named-graph-uri=https%3A%2F%2Fexample.org%2Fg1" in body
+    assert "named-graph-uri=https%3A%2F%2Fexample.org%2Fg2" in body
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_query_forwards_default_graph_uris(async_client: httpx.AsyncClient) -> None:
+    route = respx.post(QUERY_URL).respond(200, json={"head": {}, "results": {"bindings": []}})
+    await _adapter(_settings(), async_client).query(
+        "SELECT * { ?s ?p ?o }",
+        default_graph_uris=("https://example.org/d",),
+    )
+    body = route.calls.last.request.content.decode("utf-8")
+    assert "default-graph-uri=https%3A%2F%2Fexample.org%2Fd" in body
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_query_stream_yields_chunks(async_client: httpx.AsyncClient) -> None:
+    respx.post(QUERY_URL).respond(200, text="<a> <b> <c> .\n")
+    chunks: list[bytes] = []
+    async for chunk in _adapter(_settings(), async_client).query_stream(
+        "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
+        accept=TURTLE,
+    ):
+        chunks.append(chunk)
+    assert b"".join(chunks) == b"<a> <b> <c> .\n"
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_update_forwards_using_named_graph_uri_params(
+    async_client: httpx.AsyncClient,
+) -> None:
+    route = respx.post(UPDATE_URL).respond(204)
+    await _adapter(_settings(), async_client).update(
+        "WITH <https://example.org/g1> DELETE WHERE { ?s ?p ?o }",
+        using_named_graph_uris=("https://example.org/g1", "https://example.org/g2"),
+    )
+    sent = route.calls.last.request
+    # Repeated query-string params.
+    params = sent.url.params.multi_items()
+    assert ("using-named-graph-uri", "https://example.org/g1") in params
+    assert ("using-named-graph-uri", "https://example.org/g2") in params
