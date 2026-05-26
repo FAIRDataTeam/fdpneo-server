@@ -1,6 +1,6 @@
 """LDP server router — GET/HEAD/POST/PUT/PATCH/DELETE/OPTIONS on records.
 
-This is the skeleton for ticket 2.3. It owns:
+Responsibilities:
 
 * Path → resource IRI mapping (the IRI is the absolute request URL).
 * Content negotiation across Turtle, JSON-LD, RDF/XML, N-Triples.
@@ -8,17 +8,23 @@ This is the skeleton for ticket 2.3. It owns:
 * LDP ``Link``, ``Allow``, ``Accept-Post`` and ``Accept-Patch`` headers.
 * The per-method policy enforcement point — each handler calls into
   :class:`PDP.authorize` before any storage I/O.
+* PATCH pipeline: parse → simulate locally → SHACL the post-update state →
+  commit + meta refresh → publish ``RecordModified``. The simulation lives
+  in :func:`fdp.metadata.patch.simulate_update`.
 
-It deliberately delegates the deeper semantics to later tickets:
+SHACL hooks are pluggable through :class:`ContainerRegistry`:
 
-* SHACL validation is wired through an optional :class:`ContainerRegistry`
-  whose :meth:`member_shape` maps a container IRI to the shape IRI its
-  members must satisfy. If no registry / shape / validator is supplied the
-  router happily skips validation (ticket 2.4 + 2.5 tighten this).
-* PATCH simulates against the live graph by calling
-  :meth:`MetadataRepository.patch_graph` directly; the full
-  *parse → simulate → SHACL → commit* pipeline is ticket 2.4.
-* Meta-metadata schema validation is ticket 2.5.
+* :meth:`ContainerRegistry.member_shape` — shape for *new members* of a
+  container (used by POST).
+* :meth:`ContainerRegistry.shape_for` — shape a *resource itself* must
+  satisfy (used by PATCH; PUT-to-replace is added in ticket 2.5).
+
+Still deferred to later tickets:
+
+* PROV ``Activity`` blank-node in meta-metadata — ticket 2.5.
+* Meta-metadata schema validation — ticket 2.5.
+* Parser-level SPARQL classification (read/update, referenced graphs,
+  SERVICE detection) — ticket 3.1.
 
 The router is built by :func:`build_ldp_router`. The factory takes its
 dependencies explicitly so tests can wire fakes without going through
@@ -37,6 +43,7 @@ from rdflib import Graph
 
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
+from fdp.metadata.events import RecordModified
 from fdp.metadata.ldp.negotiation import (
     SPARQL_UPDATE,
     SUPPORTED_TYPES,
@@ -46,6 +53,7 @@ from fdp.metadata.ldp.negotiation import (
     select_media_type,
     serialize,
 )
+from fdp.metadata.patch import simulate_update
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
@@ -65,6 +73,7 @@ if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
     from fdp.metadata.shacl import ShaclValidator
     from fdp.policy.pdp import PDP
+    from fdp.shared.events import EventBus
 
 log = structlog.get_logger(__name__)
 
@@ -81,16 +90,23 @@ _SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class ContainerRegistry(Protocol):
-    """Resolves a resource IRI to its LDP container kind and member shape.
+    """Resolves a resource IRI to its LDP container kind and bound shapes.
 
-    The default implementation treats nothing as a container. Deployments
-    that want POST and SHACL-on-write provide their own — typically
-    sourced from container records' ``ldp:constrainedBy`` triples.
+    The default implementation treats nothing as a container and binds no
+    shapes. Deployments that want POST + SHACL-on-write provide their own —
+    typically sourced from container records' ``ldp:constrainedBy`` triples.
+
+    ``member_shape`` returns the shape that *new members* of the container
+    must satisfy; ``shape_for`` returns the shape that the *resource itself*
+    must satisfy (in practice resolved by walking up to the resource's
+    parent container's ``ldp:constrainedBy``).
     """
 
     def is_container(self, resource_iri: str) -> bool: ...
 
     def member_shape(self, container_iri: str) -> str | None: ...
+
+    def shape_for(self, resource_iri: str) -> str | None: ...
 
 
 class DefaultContainerRegistry:
@@ -102,6 +118,9 @@ class DefaultContainerRegistry:
     def member_shape(self, container_iri: str) -> str | None:  # noqa: ARG002
         return None
 
+    def shape_for(self, resource_iri: str) -> str | None:  # noqa: ARG002
+        return None
+
 
 def build_ldp_router(
     *,
@@ -109,9 +128,15 @@ def build_ldp_router(
     pdp: PDP,
     validator: ShaclValidator | None = None,
     containers: ContainerRegistry | None = None,
+    event_bus: EventBus | None = None,
     prefix: str = "/ldp",
 ) -> APIRouter:
-    """Build the LDP router wired with ``repo`` + ``pdp`` + optional helpers."""
+    """Build the LDP router wired with ``repo`` + ``pdp`` + optional helpers.
+
+    ``event_bus`` is optional. When supplied, successful PATCH commits
+    publish :class:`RecordModified`. PUT/POST/DELETE will gain events in
+    ticket 2.5 along with the meta-metadata schema work.
+    """
     router = APIRouter(prefix=prefix, tags=["ldp"])
     registry: ContainerRegistry = containers or DefaultContainerRegistry()
 
@@ -136,6 +161,15 @@ def build_ldp_router(
         if validator is None:
             return
         shape_iri = registry.member_shape(container_iri)
+        if shape_iri is None:
+            return
+        report = await validator.validate_against(graph, shape_iri)
+        report.raise_if_failed()
+
+    async def _validate_against_resource_shape(graph: Graph, resource_iri: str) -> None:
+        if validator is None:
+            return
+        shape_iri = registry.shape_for(resource_iri)
         if shape_iri is None:
             return
         report = await validator.validate_against(graph, shape_iri)
@@ -234,7 +268,18 @@ def build_ldp_router(
         body = (await request.body()).decode("utf-8")
         if not body.strip():
             raise BadRequest("PATCH body must be a non-empty SPARQL Update")
-        etag = await repo.patch_graph(iri, body, creator=ctx.subject)
+        new_graph = simulate_update(existing, body, iri)
+        await _validate_against_resource_shape(new_graph, iri)
+        etag = await repo.put_graph(iri, new_graph, creator=ctx.subject)
+        if event_bus is not None:
+            await event_bus.publish(
+                RecordModified(
+                    record_iri=iri,
+                    subject=ctx.subject,
+                    etag=etag,
+                    timestamp=ctx.request_timestamp,
+                )
+            )
         headers = _response_headers(etag, registry.is_container(iri))
         return Response(status_code=204, headers=headers)
 

