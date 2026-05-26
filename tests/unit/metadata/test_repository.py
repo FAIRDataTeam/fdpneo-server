@@ -98,7 +98,7 @@ async def test_get_graph_empty_when_record_absent() -> None:
 @pytest.mark.unit
 async def test_put_writes_record_graph_and_meta() -> None:
     repo, adapter = _repo(now=datetime(2026, 6, 1, 12, 0, tzinfo=UTC))
-    etag = await repo.put_graph(RECORD, _record_graph(), creator=ALICE)
+    etag = await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
 
     assert etag and len(etag) == 32
     assert RECORD in adapter.graphs
@@ -109,17 +109,23 @@ async def test_put_writes_record_graph_and_meta() -> None:
     assert (RECORD_URI, RDF.type, PROV.Entity) in meta
     assert (RECORD_URI, DCT.creator, URIRef(ALICE)) in meta
     assert (RECORD_URI, OWL.versionInfo, Literal(1)) in meta
+    # PROV Activity is stamped on every write.
+    activities = list(meta.objects(RECORD_URI, PROV.wasGeneratedBy))
+    assert len(activities) == 1
+    activity = activities[0]
+    assert (activity, RDF.type, PROV.Activity) in meta
+    assert (activity, PROV.wasAssociatedWith, URIRef(ALICE)) in meta
 
 
 @pytest.mark.unit
 async def test_second_put_bumps_version_and_preserves_creator() -> None:
     repo, adapter = _repo(now=datetime(2026, 6, 1, 12, 0, tzinfo=UTC))
-    await repo.put_graph(RECORD, _record_graph(), creator=ALICE)
+    await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
 
     # Bob tries to overwrite — creator should NOT change, version increments.
     second = Graph()
     second.add((RECORD_URI, DCT.title, Literal("hello again")))
-    await repo.put_graph(RECORD, second, creator=BOB)
+    await repo.put_graph(RECORD, second, subject=BOB)
 
     meta = adapter.graphs[str(meta_graph_uri(RECORD))]
     assert (RECORD_URI, DCT.creator, URIRef(ALICE)) in meta
@@ -130,18 +136,18 @@ async def test_second_put_bumps_version_and_preserves_creator() -> None:
 @pytest.mark.unit
 async def test_put_etag_changes_when_content_changes() -> None:
     repo, _ = _repo()
-    etag1 = await repo.put_graph(RECORD, _record_graph(), creator=ALICE)
+    etag1 = await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
 
     altered = Graph()
     altered.add((RECORD_URI, DCT.title, Literal("changed")))
-    etag2 = await repo.put_graph(RECORD, altered, creator=ALICE)
+    etag2 = await repo.put_graph(RECORD, altered, subject=ALICE)
     assert etag1 != etag2
 
 
 @pytest.mark.unit
 async def test_patch_runs_update_and_bumps_meta() -> None:
     repo, adapter = _repo()
-    await repo.put_graph(RECORD, _record_graph(), creator=ALICE)
+    await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
 
     update = (
         f"INSERT DATA {{ GRAPH <{RECORD}> "
@@ -150,7 +156,7 @@ async def test_patch_runs_update_and_bumps_meta() -> None:
     )
     # Mirror the side effect of the update on the fake.
     adapter.graphs[RECORD].add((RECORD_URI, DCT.description, Literal("added")))
-    new_etag = await repo.patch_graph(RECORD, update, creator=ALICE)
+    new_etag = await repo.patch_graph(RECORD, update, subject=ALICE)
 
     assert adapter.update_calls == [update]
     meta = adapter.graphs[str(meta_graph_uri(RECORD))]
@@ -161,7 +167,7 @@ async def test_patch_runs_update_and_bumps_meta() -> None:
 @pytest.mark.unit
 async def test_delete_drops_record_meta_and_audit_graphs() -> None:
     repo, adapter = _repo()
-    await repo.put_graph(RECORD, _record_graph(), creator=ALICE)
+    await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
     # Pretend an audit graph also exists.
     audit = Graph()
     audit.add((RECORD_URI, DCT.subject, Literal("anything")))
@@ -177,7 +183,7 @@ async def test_delete_drops_record_meta_and_audit_graphs() -> None:
 @pytest.mark.unit
 async def test_get_graph_round_trips_after_put() -> None:
     repo, _ = _repo()
-    await repo.put_graph(RECORD, _record_graph(), creator=ALICE)
+    await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
     fetched = await repo.get_graph(RECORD)
     assert (RECORD_URI, DCT.title, Literal("hello")) in fetched
 
@@ -185,7 +191,7 @@ async def test_get_graph_round_trips_after_put() -> None:
 @pytest.mark.unit
 async def test_put_with_no_creator_still_writes_meta() -> None:
     repo, adapter = _repo()
-    await repo.put_graph(RECORD, _record_graph(), creator=None)
+    await repo.put_graph(RECORD, _record_graph(), subject=None)
     meta = adapter.graphs[str(meta_graph_uri(RECORD))]
     assert (RECORD_URI, OWL.versionInfo, Literal(1)) in meta
     # dct:creator omitted when no authenticated principal supplied

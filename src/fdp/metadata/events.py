@@ -24,8 +24,23 @@ from fdp.shared.events import Event
 
 
 @dataclass(frozen=True)
+class RecordCreated(Event):
+    """A new record was written (LDP POST, or PUT against a fresh URL).
+
+    Carries the post-write ETag so audit subscribers can correlate without
+    re-reading the record. ``subject`` is the acting principal's URI;
+    ``None`` covers writes performed under an anonymous context.
+    """
+
+    record_iri: str
+    subject: str | None
+    etag: str
+    timestamp: datetime
+
+
+@dataclass(frozen=True)
 class RecordModified(Event):
-    """A record's content changed (LDP PUT / PATCH applied successfully).
+    """A record's content changed (LDP PUT replace / PATCH).
 
     Carries the post-write ETag so audit subscribers can correlate without
     re-reading the record. ``subject`` is the acting principal's URI;
@@ -41,4 +56,18 @@ class RecordModified(Event):
     timestamp: datetime
 
 
-__all__ = ["RecordModified"]
+@dataclass(frozen=True)
+class RecordDeleted(Event):
+    """A record was removed (LDP DELETE).
+
+    ``etag`` is intentionally absent — there is no post-delete content to
+    fingerprint. Audit subscribers can pair this with the last seen
+    :class:`RecordModified` to reconstruct the pre-delete state if needed.
+    """
+
+    record_iri: str
+    subject: str | None
+    timestamp: datetime
+
+
+__all__ = ["RecordCreated", "RecordDeleted", "RecordModified"]

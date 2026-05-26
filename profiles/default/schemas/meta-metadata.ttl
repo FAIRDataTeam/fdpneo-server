@@ -1,0 +1,47 @@
+# Default meta-metadata SHACL shape (architecture §6.2).
+#
+# Every record's sibling <record>/meta graph is validated against this
+# shape on every write. Profiles MAY replace this shape but MUST keep
+# the FDP-managed fields (dct:created, dct:modified, owl:versionInfo,
+# prov:wasGeneratedBy) intact — those are produced by the server itself
+# and form the audit baseline.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix fdp:  <https://w3id.org/fdp/o#> .
+
+fdp:MetaMetadataShape
+    a sh:NodeShape ;
+    sh:targetClass prov:Entity ;
+    sh:property [
+        sh:path dct:created ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+    ] ;
+    sh:property [
+        sh:path dct:modified ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+    ] ;
+    sh:property [
+        sh:path owl:versionInfo ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+    ] ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:BlankNodeOrIRI ;
+    ] ;
+    sh:property [
+        sh:path dct:creator ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+    ] .

@@ -64,7 +64,7 @@ async def test_full_lifecycle(repo: MetadataRepository) -> None:
     # Empty to start.
     assert len(await repo.get_graph(RECORD)) == 0
 
-    etag1 = await repo.put_graph(RECORD, _record_graph("hello"), creator=ALICE)
+    etag1 = await repo.put_graph(RECORD, _record_graph("hello"), subject=ALICE)
     fetched = await repo.get_graph(RECORD)
     assert (RECORD_URI, DCT.title, Literal("hello")) in fetched
 
@@ -82,7 +82,7 @@ async def test_full_lifecycle(repo: MetadataRepository) -> None:
         "{ <https://example.org/records/integration-r1> "
         '<http://purl.org/dc/terms/description> "added" } }'
     )
-    etag2 = await repo.patch_graph(RECORD, update, creator=ALICE)
+    etag2 = await repo.patch_graph(RECORD, update, subject=ALICE)
     assert etag1 != etag2
     meta2 = Graph()
     meta2.parse(

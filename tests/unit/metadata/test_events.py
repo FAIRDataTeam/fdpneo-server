@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.metadata.events import RecordModified
+from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.shared.events import EventBus
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
@@ -54,3 +54,67 @@ async def test_record_modified_round_trips_through_event_bus() -> None:
     assert received[0].record_iri == "https://example.org/r1"
     assert received[0].subject is None
     assert received[0].etag == "deadbeef"
+
+
+@pytest.mark.unit
+def test_record_created_is_frozen_with_expected_fields() -> None:
+    evt = RecordCreated(
+        record_iri="https://example.org/r1",
+        subject="https://idp/alice",
+        etag="abc",
+        timestamp=NOW,
+    )
+    assert evt.record_iri == "https://example.org/r1"
+    assert evt.etag == "abc"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        evt.record_iri = "x"  # type: ignore[misc]
+
+
+@pytest.mark.unit
+def test_record_deleted_omits_etag() -> None:
+    evt = RecordDeleted(
+        record_iri="https://example.org/r1",
+        subject="https://idp/alice",
+        timestamp=NOW,
+    )
+    assert evt.record_iri == "https://example.org/r1"
+    # No etag attribute by design.
+    assert not hasattr(evt, "etag")
+
+
+@pytest.mark.unit
+async def test_record_created_and_deleted_round_trip_through_bus() -> None:
+    bus = EventBus()
+    created: list[RecordCreated] = []
+    deleted: list[RecordDeleted] = []
+
+    async def on_created(evt: RecordCreated) -> None:
+        created.append(evt)
+
+    async def on_deleted(evt: RecordDeleted) -> None:
+        deleted.append(evt)
+
+    s1 = bus.subscribe(RecordCreated, on_created)
+    s2 = bus.subscribe(RecordDeleted, on_deleted)
+    try:
+        await bus.publish(
+            RecordCreated(
+                record_iri="https://example.org/r1",
+                subject="https://idp/alice",
+                etag="e1",
+                timestamp=NOW,
+            )
+        )
+        await bus.publish(
+            RecordDeleted(
+                record_iri="https://example.org/r1",
+                subject="https://idp/alice",
+                timestamp=NOW,
+            )
+        )
+    finally:
+        s1.unsubscribe()
+        s2.unsubscribe()
+
+    assert len(created) == 1
+    assert len(deleted) == 1

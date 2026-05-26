@@ -43,7 +43,7 @@ from rdflib import Graph
 
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
-from fdp.metadata.events import RecordModified
+from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.metadata.ldp.negotiation import (
     SPARQL_UPDATE,
     SUPPORTED_TYPES,
@@ -73,7 +73,7 @@ if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
     from fdp.metadata.shacl import ShaclValidator
     from fdp.policy.pdp import PDP
-    from fdp.shared.events import EventBus
+    from fdp.shared.events import Event, EventBus
 
 log = structlog.get_logger(__name__)
 
@@ -139,6 +139,11 @@ def build_ldp_router(
     """
     router = APIRouter(prefix=prefix, tags=["ldp"])
     registry: ContainerRegistry = containers or DefaultContainerRegistry()
+
+    async def _publish(event: Event) -> None:
+        if event_bus is None:
+            return
+        await event_bus.publish(event)
 
     async def _enforce(ctx: RequestContext, action: Action, resource_iri: str) -> None:
         decision = await pdp.authorize(ctx, action, resource_iri)
@@ -223,11 +228,28 @@ def build_ldp_router(
         _enforce_if_match(request, existing, required=resource_exists)
         new_graph = _parse_body(request, await request.body())
         await _validate_member(new_graph, iri)
-        etag = await repo.put_graph(iri, new_graph, creator=ctx.subject)
+        etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
         status_code = 200 if resource_exists else 201
         headers = _response_headers(etag, registry.is_container(iri))
         if not resource_exists:
             headers["Location"] = iri
+            await _publish(
+                RecordCreated(
+                    record_iri=iri,
+                    subject=ctx.subject,
+                    etag=etag,
+                    timestamp=ctx.request_timestamp,
+                )
+            )
+        else:
+            await _publish(
+                RecordModified(
+                    record_iri=iri,
+                    subject=ctx.subject,
+                    etag=etag,
+                    timestamp=ctx.request_timestamp,
+                )
+            )
         return Response(status_code=status_code, headers=headers)
 
     @router.post("/{path:path}", name="ldp_post")
@@ -243,7 +265,15 @@ def build_ldp_router(
         member_graph = _parse_body(request, await request.body())
         await _validate_member(member_graph, container_iri)
         member_iri = _mint_member_iri(container_iri, request.headers.get("slug"))
-        etag = await repo.put_graph(member_iri, member_graph, creator=ctx.subject)
+        etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
+        await _publish(
+            RecordCreated(
+                record_iri=member_iri,
+                subject=ctx.subject,
+                etag=etag,
+                timestamp=ctx.request_timestamp,
+            )
+        )
         headers = _response_headers(etag, is_container=False)
         headers["Location"] = member_iri
         return Response(status_code=201, headers=headers)
@@ -270,16 +300,15 @@ def build_ldp_router(
             raise BadRequest("PATCH body must be a non-empty SPARQL Update")
         new_graph = simulate_update(existing, body, iri)
         await _validate_against_resource_shape(new_graph, iri)
-        etag = await repo.put_graph(iri, new_graph, creator=ctx.subject)
-        if event_bus is not None:
-            await event_bus.publish(
-                RecordModified(
-                    record_iri=iri,
-                    subject=ctx.subject,
-                    etag=etag,
-                    timestamp=ctx.request_timestamp,
-                )
+        etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
+        await _publish(
+            RecordModified(
+                record_iri=iri,
+                subject=ctx.subject,
+                etag=etag,
+                timestamp=ctx.request_timestamp,
             )
+        )
         headers = _response_headers(etag, registry.is_container(iri))
         return Response(status_code=204, headers=headers)
 
@@ -296,6 +325,13 @@ def build_ldp_router(
             raise NotFound(f"resource not found: {iri}")
         _enforce_if_match(request, existing, required=True)
         await repo.delete_graph(iri)
+        await _publish(
+            RecordDeleted(
+                record_iri=iri,
+                subject=ctx.subject,
+                timestamp=ctx.request_timestamp,
+            )
+        )
         return Response(status_code=204)
 
     @router.options("/{path:path}", name="ldp_options")

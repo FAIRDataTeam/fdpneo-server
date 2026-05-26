@@ -13,7 +13,7 @@ from rdflib.namespace import RDF
 
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
-from fdp.metadata.events import RecordModified
+from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.metadata.graphs import meta_graph_uri
 from fdp.metadata.ldp import ContainerRegistry, build_ldp_router
 from fdp.metadata.ldp.negotiation import (
@@ -214,7 +214,7 @@ def _build_app(
 async def _seed_record(repo: MetadataRepository, iri: str, *, title: str = "hello") -> str:
     graph = Graph()
     graph.add((URIRef(iri), DCT.title, Literal(title)))
-    return await repo.put_graph(iri, graph, creator=ALICE)
+    return await repo.put_graph(iri, graph, subject=ALICE)
 
 
 # --- GET / HEAD -------------------------------------------------------------
@@ -524,7 +524,7 @@ async def test_patch_failing_post_state_shacl_returns_422_and_leaves_storage_unc
     seed = Graph()
     seed.add((URIRef(RECORD_IRI), RDF.type, URIRef("http://www.w3.org/ns/dcat#Dataset")))
     seed.add((URIRef(RECORD_IRI), DCT.title, Literal("ok")))
-    await repo.put_graph(RECORD_IRI, seed, creator=ALICE)
+    await repo.put_graph(RECORD_IRI, seed, subject=ALICE)
     snapshot = sorted(str(t) for t in adapter.graphs[RECORD_IRI])
     current_etag = compute_etag(await repo.get_graph(RECORD_IRI))
 
@@ -702,3 +702,123 @@ async def test_options_advertises_allow_link_accept_post_and_accept_patch() -> N
     )
     assert response.headers["accept-patch"] == SPARQL_UPDATE
     assert "ldp#DirectContainer" in response.headers["link"]
+
+
+# --- write events (PUT / POST / DELETE) -------------------------------------
+
+
+@pytest.mark.unit
+async def test_put_new_resource_publishes_record_created() -> None:
+    repo, _ = _make_repo()
+    bus = EventBus()
+    created: list[RecordCreated] = []
+
+    async def on_created(evt: RecordCreated) -> None:
+        created.append(evt)
+
+    sub = bus.subscribe(RecordCreated, on_created)
+    try:
+        app = _build_app(repo=repo, pdp=FakePDP(), event_bus=bus)
+        body = f'<{RECORD_IRI}> <{DCT.title}> "new" .'.encode()
+        with TestClient(app) as client:
+            response = client.put(
+                RECORD_PATH, content=body, headers={"content-type": N_TRIPLES}
+            )
+    finally:
+        sub.unsubscribe()
+
+    assert response.status_code == 201
+    assert len(created) == 1
+    assert created[0].record_iri == RECORD_IRI
+    assert created[0].subject == ALICE
+    assert created[0].etag == response.headers["etag"].strip('"')
+
+
+@pytest.mark.unit
+async def test_put_replace_publishes_record_modified() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    etag = compute_etag(await repo.get_graph(RECORD_IRI))
+    bus = EventBus()
+    modified: list[RecordModified] = []
+    created: list[RecordCreated] = []
+
+    async def on_modified(evt: RecordModified) -> None:
+        modified.append(evt)
+
+    async def on_created(evt: RecordCreated) -> None:
+        created.append(evt)
+
+    s1 = bus.subscribe(RecordModified, on_modified)
+    s2 = bus.subscribe(RecordCreated, on_created)
+    try:
+        app = _build_app(repo=repo, pdp=FakePDP(), event_bus=bus)
+        body = f'<{RECORD_IRI}> <{DCT.title}> "updated" .'.encode()
+        with TestClient(app) as client:
+            response = client.put(
+                RECORD_PATH,
+                content=body,
+                headers={"content-type": N_TRIPLES, "if-match": f'"{etag}"'},
+            )
+    finally:
+        s1.unsubscribe()
+        s2.unsubscribe()
+
+    assert response.status_code == 200
+    assert len(modified) == 1
+    assert created == []
+
+
+@pytest.mark.unit
+async def test_post_publishes_record_created_with_member_iri() -> None:
+    repo, _ = _make_repo()
+    containers = FixedContainerRegistry(container_iris={CONTAINER_IRI})
+    bus = EventBus()
+    created: list[RecordCreated] = []
+
+    async def on_created(evt: RecordCreated) -> None:
+        created.append(evt)
+
+    sub = bus.subscribe(RecordCreated, on_created)
+    try:
+        app = _build_app(repo=repo, pdp=FakePDP(), containers=containers, event_bus=bus)
+        body = b'<urn:_> <http://purl.org/dc/terms/title> "child" .'
+        with TestClient(app) as client:
+            response = client.post(
+                CONTAINER_PATH,
+                content=body,
+                headers={"content-type": N_TRIPLES, "slug": "bb1"},
+            )
+    finally:
+        sub.unsubscribe()
+
+    assert response.status_code == 201
+    expected_iri = f"{CONTAINER_IRI}/bb1"
+    assert len(created) == 1
+    assert created[0].record_iri == expected_iri
+    assert response.headers["location"] == expected_iri
+
+
+@pytest.mark.unit
+async def test_delete_publishes_record_deleted() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    etag = compute_etag(await repo.get_graph(RECORD_IRI))
+    bus = EventBus()
+    deleted: list[RecordDeleted] = []
+
+    async def on_deleted(evt: RecordDeleted) -> None:
+        deleted.append(evt)
+
+    sub = bus.subscribe(RecordDeleted, on_deleted)
+    try:
+        app = _build_app(repo=repo, pdp=FakePDP(), event_bus=bus)
+        with TestClient(app) as client:
+            response = client.delete(RECORD_PATH, headers={"if-match": f'"{etag}"'})
+    finally:
+        sub.unsubscribe()
+
+    assert response.status_code == 204
+    assert len(deleted) == 1
+    assert deleted[0].record_iri == RECORD_IRI
+    assert deleted[0].subject == ALICE

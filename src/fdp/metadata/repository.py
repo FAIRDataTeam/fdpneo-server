@@ -3,20 +3,20 @@
 **Responsibilities**
 
 * Get / put / patch / delete the record graph identified by a record URI.
-* On every mutation, refresh the sibling meta graph: bump
-  ``owl:versionInfo``, update ``dct:modified``, stamp ``dct:created`` and
-  ``dct:creator`` on the first write.
+* On every mutation, refresh the sibling meta graph via
+  :class:`MetaWriter`. The meta builder (see :mod:`fdp.metadata.meta`)
+  owns the meta-graph shape, including the PROV ``Activity`` and the
+  SHACL self-check.
 * Compute the post-write ETag of the record graph so the LDP layer can
   return it in ``ETag`` headers for ``If-Match`` concurrency control.
 
 **Non-responsibilities**
 
-* SHACL validation — ticket 2.2 + 2.5.
+* SHACL validation of the *record* content — that lives in the LDP
+  router via :class:`ShaclValidator` (tickets 2.2 / 2.3 / 2.4).
 * Validating that a PATCH body scopes itself to the record's graph — the
-  LDP layer parses and validates the update before handing the string
-  here; this module just executes it.
-* PROV ``Activity`` blank nodes — minimal meta-metadata only for now;
-  ticket 2.5 owns the full schema.
+  LDP layer parses and simulates the update before handing the
+  *resulting* graph to :meth:`put_graph` (ticket 2.4).
 """
 
 from __future__ import annotations
@@ -25,8 +25,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import RDF
+from rdflib import Graph, URIRef
 
 from fdp.metadata.etag import compute_etag
 from fdp.metadata.graphs import (
@@ -34,7 +33,7 @@ from fdp.metadata.graphs import (
     meta_graph_uri,
     record_graph_uri,
 )
-from fdp.shared.namespaces import DCT, OWL, PROV
+from fdp.metadata.meta import MetaResult, MetaWriter
 
 if TYPE_CHECKING:
     from fdp.storage.triplestore import TripleStoreAdapter
@@ -47,9 +46,11 @@ class MetadataRepository:
         self,
         adapter: TripleStoreAdapter,
         *,
+        meta_writer: MetaWriter | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._adapter = adapter
+        self._meta = meta_writer or MetaWriter()
         self._clock = clock or (lambda: datetime.now(UTC))
 
     # --- read ---------------------------------------------------------------
@@ -76,13 +77,13 @@ class MetadataRepository:
         record_uri: str | URIRef,
         graph: Graph,
         *,
-        creator: str | None,
+        subject: str | None,
     ) -> str:
         """Replace the record graph; return the post-write ETag."""
         graph_uri = record_graph_uri(record_uri)
         nt = graph.serialize(format="nt")
         await self._adapter.replace_graph(str(graph_uri), nt, mime="application/n-triples")
-        await self._refresh_meta(record_uri, creator=creator)
+        await self._refresh_meta(record_uri, subject=subject)
         return compute_etag(graph)
 
     async def patch_graph(
@@ -90,15 +91,18 @@ class MetadataRepository:
         record_uri: str | URIRef,
         sparql_update: str,
         *,
-        creator: str | None,
+        subject: str | None,
     ) -> str:
         """Execute ``sparql_update`` then refresh meta and return the new ETag.
 
-        The update body is run verbatim — the LDP layer is responsible
-        for verifying it only targets the record's graph.
+        The update body is run verbatim against the triple store. The LDP
+        layer no longer uses this path — its PATCH handler simulates
+        locally and commits via :meth:`put_graph`. ``patch_graph`` stays
+        as the lower-level escape hatch for the SPARQL endpoint (ticket
+        3.x).
         """
         await self._adapter.update(sparql_update)
-        await self._refresh_meta(record_uri, creator=creator)
+        await self._refresh_meta(record_uri, subject=subject)
         new_graph = await self.get_graph(record_uri)
         return compute_etag(new_graph)
 
@@ -119,31 +123,16 @@ class MetadataRepository:
         self,
         record_uri: str | URIRef,
         *,
-        creator: str | None,
-    ) -> None:
-        """Read current meta, bump version, write the new meta graph."""
-        meta_uri = meta_graph_uri(record_uri)
-        record_subject = record_graph_uri(record_uri)
-        now = self._clock()
-
-        prior = await self._get_meta(meta_uri)
-        version = self._next_version(prior, record_subject)
-        created_at, prior_creator = self._extract_creation(prior, record_subject)
-
-        next_graph = Graph()
-        next_graph.add((record_subject, RDF.type, PROV.Entity))
-
-        effective_created = created_at or now
-        effective_creator = prior_creator or creator
-
-        next_graph.add((record_subject, DCT.created, Literal(effective_created.isoformat())))
-        if effective_creator is not None:
-            next_graph.add((record_subject, DCT.creator, URIRef(effective_creator)))
-        next_graph.add((record_subject, DCT.modified, Literal(now.isoformat())))
-        next_graph.add((record_subject, OWL.versionInfo, Literal(version)))
-
-        nt = next_graph.serialize(format="nt")
-        await self._adapter.replace_graph(str(meta_uri), nt, mime="application/n-triples")
+        subject: str | None,
+    ) -> MetaResult:
+        prior = await self._get_meta(meta_graph_uri(record_uri))
+        return await self._meta.write(
+            self._adapter,
+            record_iri=record_uri,
+            prior=prior,
+            subject=subject,
+            now=self._clock(),
+        )
 
     async def _get_meta(self, meta_uri: URIRef) -> Graph:
         sparql = f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{meta_uri}> {{ ?s ?p ?o }} }}"
@@ -152,36 +141,6 @@ class MetadataRepository:
         if body:
             graph.parse(data=body.decode("utf-8"), format="turtle")
         return graph
-
-    @staticmethod
-    def _next_version(prior: Graph, record_subject: URIRef) -> int:
-        for value in prior.objects(record_subject, OWL.versionInfo):
-            if isinstance(value, Literal):
-                try:
-                    return int(str(value)) + 1
-                except ValueError:
-                    return 1
-        return 1
-
-    @staticmethod
-    def _extract_creation(
-        prior: Graph,
-        record_subject: URIRef,
-    ) -> tuple[datetime | None, str | None]:
-        created: datetime | None = None
-        for value in prior.objects(record_subject, DCT.created):
-            if isinstance(value, Literal):
-                try:
-                    created = datetime.fromisoformat(str(value))
-                except ValueError:
-                    created = None
-            break
-        creator: str | None = None
-        for value in prior.objects(record_subject, DCT.creator):
-            if isinstance(value, URIRef):
-                creator = str(value)
-                break
-        return created, creator
 
 
 __all__ = ["MetadataRepository"]
