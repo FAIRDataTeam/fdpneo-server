@@ -106,6 +106,54 @@ class PolicyViolation(FDPError):
     docs_url = _DOCS_BASE + "fdp.policy_violation"
 
 
+class BadRequest(FDPError):
+    """Raised when a client sends an unparseable or semantically invalid request."""
+
+    code = "fdp.bad_request"
+    http_status = 400
+    docs_url = _DOCS_BASE + "fdp.bad_request"
+
+
+class NotAcceptable(FDPError):
+    """Raised when none of the client's Accept media types is supported."""
+
+    code = "fdp.not_acceptable"
+    http_status = 406
+    docs_url = _DOCS_BASE + "fdp.not_acceptable"
+
+
+class PreconditionFailed(FDPError):
+    """Raised when an ``If-Match`` ETag does not match the current resource."""
+
+    code = "fdp.precondition_failed"
+    http_status = 412
+    docs_url = _DOCS_BASE + "fdp.precondition_failed"
+
+
+class PreconditionRequired(FDPError):
+    """Raised when ``If-Match`` is required but absent on a conditional write."""
+
+    code = "fdp.precondition_required"
+    http_status = 428
+    docs_url = _DOCS_BASE + "fdp.precondition_required"
+
+
+class UnsupportedMediaType(FDPError):
+    """Raised when a request body's Content-Type isn't supported on this route."""
+
+    code = "fdp.unsupported_media_type"
+    http_status = 415
+    docs_url = _DOCS_BASE + "fdp.unsupported_media_type"
+
+
+class MethodNotAllowed(FDPError):
+    """Raised when the HTTP method isn't valid for this resource type."""
+
+    code = "fdp.method_not_allowed"
+    http_status = 405
+    docs_url = _DOCS_BASE + "fdp.method_not_allowed"
+
+
 async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
     """Render an ``FDPError`` as the documented JSON envelope."""
     ctx = get_current()
@@ -135,13 +183,19 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 
 __all__ = [
+    "BadRequest",
     "Conflict",
     "FDPError",
     "Forbidden",
+    "MethodNotAllowed",
+    "NotAcceptable",
     "NotFound",
     "PolicyViolation",
+    "PreconditionFailed",
+    "PreconditionRequired",
     "SchemaViolation",
     "Unauthenticated",
+    "UnsupportedMediaType",
     "fdp_error_handler",
     "register_exception_handlers",
 ]

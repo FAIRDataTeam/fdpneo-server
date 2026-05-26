@@ -169,6 +169,8 @@ asyncio_mode = "auto"
 filterwarnings = [
   "error",
   "ignore::DeprecationWarning:pkg_resources",
+  # rdflib's JSON-LD parser still constructs ConjunctiveGraph internally
+  "ignore:ConjunctiveGraph is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
