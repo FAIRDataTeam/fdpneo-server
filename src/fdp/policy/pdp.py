@@ -100,9 +100,7 @@ class PDP:
         first — entries the PDP has never evaluated do not appear here.
         """
         subject_key = compute_subject_key(ctx)
-        return await self._cache.authorized_resources(
-            subject_key=subject_key, action=action.value
-        )
+        return await self._cache.authorized_resources(subject_key=subject_key, action=action.value)
 
     async def invalidate_resource(self, resource_iri: str) -> int:
         """Drop every cached decision against ``resource_iri``."""
@@ -122,4 +120,4 @@ class PDP:
         return await self._cache.invalidate_by_subject(subject_key)
 
 
-__all__ = ["OfferResolver", "PDP"]
+__all__ = ["PDP", "OfferResolver"]

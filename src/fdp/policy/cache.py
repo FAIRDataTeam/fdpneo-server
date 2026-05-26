@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import (
     BigInteger,
@@ -150,22 +150,29 @@ class CacheRepository:
     async def invalidate_by_resource(self, graph_uri: str) -> int:
         """Drop every cached decision for ``graph_uri``. Returns rows deleted."""
         stmt = delete(AuthzIndex).where(AuthzIndex.graph_uri == graph_uri)
-        result = await self._session.execute(stmt)
-        return result.rowcount or 0
+        return await self._execute_delete(stmt)
 
     async def invalidate_by_subject(self, subject_key: str) -> int:
         """Drop every cached decision for ``subject_key``. Returns rows deleted."""
         stmt = delete(AuthzIndex).where(AuthzIndex.subject_key == subject_key)
-        result = await self._session.execute(stmt)
-        return result.rowcount or 0
+        return await self._execute_delete(stmt)
 
     async def invalidate_many_resources(self, graph_uris: Iterable[str]) -> int:
         uris = list(graph_uris)
         if not uris:
             return 0
         stmt = delete(AuthzIndex).where(AuthzIndex.graph_uri.in_(uris))
+        return await self._execute_delete(stmt)
+
+    async def _execute_delete(self, stmt: Any) -> int:
+        """Execute a DELETE and return the affected row count.
+
+        ``Result.rowcount`` is documented for cursor-style results but not
+        present on the generic ``Result`` type stubs; the cast keeps the
+        call concise and pyright-clean.
+        """
         result = await self._session.execute(stmt)
-        return result.rowcount or 0
+        return cast("int | None", getattr(result, "rowcount", None)) or 0
 
 
 __all__ = [

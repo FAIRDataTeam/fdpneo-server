@@ -32,8 +32,7 @@ def register_all_models() -> None:
     pulling SQLAlchemy state into modules that don't need it at import
     time.
     """
-    # noqa: F401 — imports are for side effect (table registration).
-    from fdp.policy import cache as _policy_cache  # noqa: F401
+    import fdp.policy.cache  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 
 __all__ = ["Base", "register_all_models"]

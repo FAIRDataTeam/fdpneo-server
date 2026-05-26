@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 
 import pytest
 
@@ -50,11 +49,15 @@ class _FakeRow:
     policy_version: str | None
 
 
+def _empty_rows() -> dict[tuple[str, str, str], _FakeRow]:
+    return {}
+
+
 @dataclass
 class FakeCache:
     """In-memory stand-in for :class:`CacheRepository`."""
 
-    rows: dict[tuple[str, str, str], _FakeRow] = field(default_factory=dict)
+    rows: dict[tuple[str, str, str], _FakeRow] = field(default_factory=_empty_rows)
 
     async def upsert(
         self,
@@ -91,9 +94,7 @@ class FakeCache:
         return {
             row.graph_uri
             for row in self.rows.values()
-            if row.subject_key == subject_key
-            and row.action == action
-            and row.decision == "permit"
+            if row.subject_key == subject_key and row.action == action and row.decision == "permit"
         }
 
     async def invalidate_by_resource(self, graph_uri: str) -> int:
@@ -109,12 +110,20 @@ class FakeCache:
         return len(keys)
 
 
+def _empty_offer_map() -> dict[str, Offer | None]:
+    return {}
+
+
+def _empty_call_log() -> list[str]:
+    return []
+
+
 @dataclass
 class FakeResolver:
     """Returns a pre-arranged Offer per resource (or ``None``)."""
 
-    by_resource: dict[str, Offer | None] = field(default_factory=dict)
-    calls: list[str] = field(default_factory=list)
+    by_resource: dict[str, Offer | None] = field(default_factory=_empty_offer_map)
+    calls: list[str] = field(default_factory=_empty_call_log)
 
     async def resolve_offer(self, resource_iri: str) -> Offer | None:
         self.calls.append(resource_iri)
@@ -141,6 +150,7 @@ def _pdp(*, offers: dict[str, Offer | None] | None = None) -> tuple[PDP, FakeCac
 
 
 # --- cache miss → resolve → evaluate → store -------------------------------
+
 
 @pytest.mark.unit
 async def test_cache_miss_resolves_evaluates_and_stores() -> None:
@@ -179,6 +189,7 @@ async def test_no_offer_resolved_yields_deny() -> None:
 
 # --- subject_key ----------------------------------------------------------
 
+
 @pytest.mark.unit
 def test_subject_key_for_anonymous_is_constant() -> None:
     anon1 = _ctx(subject=None)
@@ -202,6 +213,7 @@ def test_subject_key_is_role_order_independent() -> None:
 
 
 # --- authorized_graphs (bulk) ---------------------------------------------
+
 
 @pytest.mark.unit
 async def test_authorized_graphs_returns_only_permitted_resources() -> None:
@@ -231,6 +243,7 @@ async def test_authorized_graphs_is_scoped_to_subject_and_action() -> None:
 
 
 # --- invalidation ---------------------------------------------------------
+
 
 @pytest.mark.unit
 async def test_invalidate_resource_drops_cached_rows() -> None:
