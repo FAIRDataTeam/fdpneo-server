@@ -17,7 +17,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from fdp.config import get_settings
-from fdp.storage.postgres.models import Base
+from fdp.storage.postgres.models import Base, register_all_models
 
 if TYPE_CHECKING:
     pass
@@ -31,6 +31,8 @@ if config.config_file_name is not None:
 # Inject the DSN at runtime so neither alembic.ini nor env-supplied URL is required.
 config.set_main_option("sqlalchemy.url", str(get_settings().postgres_dsn))
 
+# Populate Base.metadata with every ORM model before reading it for migrations.
+register_all_models()
 target_metadata = Base.metadata
 
 
