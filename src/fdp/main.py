@@ -22,8 +22,13 @@ from fastapi import FastAPI
 from fdp import __version__
 from fdp.config import Settings, get_settings
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
+from fdp.metrics.geo import open_geo_lookup
+from fdp.metrics.pipeline import MetricsPipeline
+from fdp.metrics.salt import SaltRotator
 from fdp.shared.errors import register_exception_handlers
+from fdp.shared.events import EventBus
 from fdp.shared.logging import configure_logging
+from fdp.storage.postgres.engine import build_engine, build_session_factory
 
 if TYPE_CHECKING:
     pass
@@ -48,17 +53,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.http_client = http_client
     app.state.jwks_client = jwks_client
 
-    # TODO: initialize storage adapters (triple store + Postgres pool)
+    # Postgres engine + async session factory; shared by every Postgres-backed
+    # module via app.state.session_factory.
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+    app.state.engine = engine
+    app.state.session_factory = session_factory
+
+    # In-process event bus; producers (metadata, identity, access, data) publish
+    # here, subscribers (metrics, audit log) bind on startup.
+    bus = EventBus()
+    app.state.event_bus = bus
+
+    # Metrics pipeline owns the geo lookup and salt rotator. open_geo_lookup
+    # degrades to a no-op if the GeoLite2 DB is absent, so dev startup never
+    # hard-fails on this.
+    geo = open_geo_lookup(settings.metrics.geoip_database_path)
+    salt_rotator = SaltRotator()
+    metrics_pipeline = MetricsPipeline(
+        session_factory=session_factory,
+        geo=geo,
+        salt_rotator=salt_rotator,
+        enabled=settings.metrics.enabled,
+        counting_enabled=settings.metrics.unique_visitor_counting,
+    )
+    metrics_pipeline.start(bus)
+    app.state.metrics_pipeline = metrics_pipeline
+
+    # TODO: initialize triple store adapter
     # TODO: initialize PDP and warm authorization cache for anonymous
-    # TODO: subscribe metrics handler to the event bus
     # TODO: subscribe audit-log handler to the event bus
 
     try:
         yield
     finally:
         log.info("fdp_stopping")
+        metrics_pipeline.stop()
+        geo.close()
+        await engine.dispose()
         await http_client.aclose()
-        # TODO: close storage connections, flush metrics buckets
 
 
 def create_app() -> FastAPI:

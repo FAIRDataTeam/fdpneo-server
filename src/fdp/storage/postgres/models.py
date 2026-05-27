@@ -32,6 +32,7 @@ def register_all_models() -> None:
     pulling SQLAlchemy state into modules that don't need it at import
     time.
     """
+    import fdp.metrics.repository  # noqa: F401  # pyright: ignore[reportUnusedImport]
     import fdp.policy.cache  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 
