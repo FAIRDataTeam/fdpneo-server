@@ -17,6 +17,8 @@ from typing import Literal
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DownloadMode = Literal["redirect", "stream"]
+
 
 class TripleStoreSettings(BaseSettings):
     """Configuration for the operator-chosen triple store backend.
@@ -73,6 +75,31 @@ class MetricsSettings(BaseSettings):
     discard_hourly_after_days: int = 2
 
 
+class DataSettings(BaseSettings):
+    """Configuration for the simple data provider (architecture §5.6).
+
+    The provider serves only distributions whose Offer permits anonymous
+    read; that invariant is enforced in code regardless of these
+    settings.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="FDP_DATA_", extra="ignore")
+
+    download_mode: DownloadMode = "redirect"
+    """``redirect`` issues a 302 to the upstream ``dcat:downloadURL``;
+    ``stream`` proxies bytes through the FDP (range-aware). Redirect is
+    the default because it is cheaper and avoids the FDP becoming a
+    bandwidth bottleneck."""
+
+    proxy_timeout_seconds: float = 30.0
+    """Per-request timeout when streaming an upstream download. Applies
+    only in ``stream`` mode."""
+
+    proxy_max_bytes: int = 1024 * 1024 * 1024  # 1 GiB
+    """Hard cap on a streamed download's size. Applies only in ``stream``
+    mode; oversize responses are aborted mid-stream."""
+
+
 class Settings(BaseSettings):
     """Top-level application settings.
 
@@ -110,6 +137,7 @@ class Settings(BaseSettings):
     )
     oidc: OIDCSettings = Field(default_factory=lambda: OIDCSettings())  # type: ignore[call-arg]
     metrics: MetricsSettings = Field(default_factory=lambda: MetricsSettings())
+    data: DataSettings = Field(default_factory=lambda: DataSettings())
 
 
 @lru_cache(maxsize=1)

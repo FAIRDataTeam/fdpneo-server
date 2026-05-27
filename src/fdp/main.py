@@ -20,15 +20,20 @@ from fastapi import FastAPI
 
 from fdp import __version__
 from fdp.config import get_settings
+from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
+from fdp.metadata.repository import MetadataRepository
 from fdp.metrics.api import build_metrics_router
 from fdp.metrics.geo import open_geo_lookup
 from fdp.metrics.pipeline import MetricsPipeline
 from fdp.metrics.salt import SaltRotator
+from fdp.policy.resolver import GraphBackedOfferResolver
+from fdp.policy.runtime import RequestScopedPDP
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.events import EventBus
 from fdp.shared.logging import configure_logging
 from fdp.storage.postgres.engine import build_engine, build_session_factory
+from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
 log = structlog.get_logger(__name__)
 
@@ -52,6 +57,21 @@ def _build_shared_state(app: FastAPI) -> None:
     app.state.session_factory = build_session_factory(engine)
 
     app.state.event_bus = EventBus()
+
+    # Triple store adapter + metadata repository, shared across requests.
+    # Each request that needs the adapter borrows the singleton; the
+    # underlying httpx client pools connections.
+    app.state.triplestore = TripleStoreAdapter.from_settings(settings.triplestore)
+    app.state.metadata_repository = MetadataRepository(app.state.triplestore)
+
+    # PDP wrapper that opens a fresh Postgres session per call — required
+    # because CacheRepository binds to one session, and the data/SPARQL
+    # routers are concurrent. See fdp.policy.runtime.
+    app.state.offer_resolver = GraphBackedOfferResolver(app.state.metadata_repository)
+    app.state.pdp = RequestScopedPDP(
+        session_factory=app.state.session_factory,
+        offer_resolver=app.state.offer_resolver,
+    )
 
     # GeoLite2 lookup degrades to no-op if the DB is missing — safe for dev.
     app.state.geo = open_geo_lookup(settings.metrics.geoip_database_path)
@@ -78,8 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.metrics_pipeline.start(app.state.event_bus)
 
-    # TODO: initialize triple store adapter
-    # TODO: initialize PDP and warm authorization cache for anonymous
+    # TODO: warm authorization cache for anonymous
     # TODO: subscribe audit-log handler to the event bus
 
     try:
@@ -88,6 +107,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("fdp_stopping")
         app.state.metrics_pipeline.stop()
         app.state.geo.close()
+        await app.state.triplestore.close()
         await app.state.engine.dispose()
         await app.state.http_client.aclose()
 
@@ -121,10 +141,19 @@ def create_app() -> FastAPI:
     app.include_router(
         build_metrics_router(session_factory=app.state.session_factory)
     )
+    app.include_router(
+        build_data_router(
+            repository=app.state.metadata_repository,
+            pdp=app.state.pdp,
+            adapter=app.state.triplestore,
+            settings=settings.data,
+            base_url=str(settings.base_url),
+            http_client=app.state.http_client,
+        )
+    )
 
     # TODO: mount LDP router (metadata.api)
     # TODO: mount SPARQL endpoint (access.api)
-    # TODO: mount data provider API (data.api)
     # TODO: mount admin / health endpoints
 
     @app.get("/healthz", tags=["internal"])
