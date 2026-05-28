@@ -22,6 +22,11 @@ from fdp import __version__
 from fdp.config import get_settings
 from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
+from fdp.metadata.profiles import (
+    apply_profile,
+    load_profile,
+    ProfileStateRepository,
+)
 from fdp.metadata.repository import MetadataRepository
 from fdp.metrics.api import build_metrics_router
 from fdp.metrics.geo import open_geo_lookup
@@ -97,6 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("fdp_starting", version=__version__)
 
     app.state.metrics_pipeline.start(app.state.event_bus)
+    await _maybe_auto_bootstrap(app)
 
     # TODO: warm authorization cache for anonymous
     # TODO: subscribe audit-log handler to the event bus
@@ -162,6 +168,40 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     return app
+
+
+async def _maybe_auto_bootstrap(app: FastAPI) -> None:
+    """Apply the configured profile if both opt-in flags are set and the FDP is uninitialized.
+
+    Failure here is fatal — per architecture §12.2 the FDP refuses to
+    start if a configured profile fails to apply. Logging is structured
+    so the operator can spot the cause in their startup log.
+    """
+    settings = get_settings()
+    if not settings.profile.auto_apply or settings.profile.path is None:
+        return
+
+    bundle = settings.profile.path
+    log.info("profile_auto_bootstrap_start", bundle=str(bundle))
+    profile = load_profile(bundle)
+
+    async with app.state.session_factory() as session:
+        state = ProfileStateRepository(session)
+        if await state.is_applied():
+            log.info(
+                "profile_auto_bootstrap_skipped",
+                reason="already_applied",
+                profile=profile.name,
+            )
+            return
+        await apply_profile(
+            profile,
+            repository=app.state.metadata_repository,
+            state=state,
+            session=session,
+            settings=settings,
+            force=False,
+        )
 
 
 app = create_app()

@@ -12,6 +12,7 @@ rather than mutating the global one.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
@@ -73,6 +74,21 @@ class MetricsSettings(BaseSettings):
     geoip_database_path: str = "/var/lib/fdp/GeoLite2-City.mmdb"
     aggregate_to_hourly_after_seconds: int = 300
     discard_hourly_after_days: int = 2
+
+
+class ProfileSettings(BaseSettings):
+    """Configuration for the deployment-profile bootstrap (architecture §12)."""
+
+    model_config = SettingsConfigDict(env_prefix="FDP_PROFILE_", extra="ignore")
+
+    auto_apply: bool = False
+    """If True and ``path`` is set, the lifespan handler applies the profile
+    when ``profile_applied`` is empty. Off by default so dev startup never
+    surprises an operator with a destructive operation."""
+
+    path: Path | None = None
+    """Filesystem location of the profile bundle (the directory containing
+    ``profile.yaml``). Resolved before the auto-bootstrap runs."""
 
 
 class DataSettings(BaseSettings):
@@ -138,6 +154,7 @@ class Settings(BaseSettings):
     oidc: OIDCSettings = Field(default_factory=lambda: OIDCSettings())  # type: ignore[call-arg]
     metrics: MetricsSettings = Field(default_factory=lambda: MetricsSettings())
     data: DataSettings = Field(default_factory=lambda: DataSettings())
+    profile: ProfileSettings = Field(default_factory=lambda: ProfileSettings())
 
 
 @lru_cache(maxsize=1)
