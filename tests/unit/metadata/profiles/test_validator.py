@@ -60,31 +60,6 @@ def test_validate_catches_offer_without_odrl_offer_triple(
 
 
 @pytest.mark.unit
-def test_validate_catches_container_referencing_undeclared_schema(
-    write_bundle: Callable[..., Path],
-) -> None:
-    manifest = MANIFEST.replace(
-        "constrainedBy: dcat:Catalog",
-        "constrainedBy: dcat:Unknown",
-    )
-    profile = load_profile(write_bundle(manifest_text=manifest))
-    report = validate_profile(profile)
-    codes = {i.code for i in report.issues}
-    assert "container_constrained_by_not_declared" in codes
-
-
-@pytest.mark.unit
-def test_validate_catches_container_with_undeclared_parent(
-    write_bundle: Callable[..., Path],
-) -> None:
-    manifest = MANIFEST.replace("parent: null", "parent: ghost")
-    profile = load_profile(write_bundle(manifest_text=manifest))
-    report = validate_profile(profile)
-    codes = {i.code for i in report.issues}
-    assert "container_parent_not_declared" in codes
-
-
-@pytest.mark.unit
 def test_validate_catches_duplicate_schema_ids(
     write_bundle: Callable[..., Path],
 ) -> None:

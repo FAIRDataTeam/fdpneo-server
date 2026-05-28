@@ -67,11 +67,30 @@ offers:
     path: offers/system-default.ttl
     isSystemDefault: true
 
-containers:
-  - id: repository
-    type: dcat:Catalog
-    parent: null
-    constrainedBy: dcat:Catalog
+resourceDefinitions:
+  - urlPrefix: ""
+    name: Repository
+    schema: dcat:Catalog
+"""
+
+# A manifest without a resourceDefinitions: block. Used by the
+# "validator skips rd_* checks" guard.
+MANIFEST_WITHOUT_RDS = """\
+apiVersion: fdp/v1
+kind: DeploymentProfile
+
+metadata:
+  name: test
+  version: 0.1.0
+
+schemas:
+  - id: dcat:Catalog
+    path: schemas/catalog.ttl
+
+offers:
+  - id: system-default
+    path: offers/system-default.ttl
+    isSystemDefault: true
 """
 
 

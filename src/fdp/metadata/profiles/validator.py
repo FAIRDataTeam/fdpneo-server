@@ -81,7 +81,7 @@ def validate_profile(profile: DeploymentProfile) -> ValidationReport:
     _check_unique_ids(profile, report)
     _check_shapes_parse(profile, report)
     _check_offers_conform(profile, report)
-    _check_containers_resolve(profile, report)
+    _check_resource_definitions(profile, report)
     _check_seed_records_validate(profile, report)
 
     return report
@@ -119,17 +119,6 @@ def _check_unique_ids(profile: DeploymentProfile, report: ValidationReport) -> N
             code="multiple_system_default_offers",
             message="at most one offer may set isSystemDefault: true",
         )
-
-    seen_containers: set[str] = set()
-    for i, container in enumerate(profile.manifest.containers):
-        if container.id in seen_containers:
-            report.add(
-                where=f"containers[{i}]",
-                code="duplicate_container_id",
-                message=f"duplicate container id: {container.id}",
-            )
-        seen_containers.add(container.id)
-
 
 def _check_shapes_parse(profile: DeploymentProfile, report: ValidationReport) -> None:
     """Run pySHACL against each shape graph with an empty data graph.
@@ -214,40 +203,79 @@ def _check_offers_conform(profile: DeploymentProfile, report: ValidationReport) 
             )
 
 
-def _check_containers_resolve(
+def _check_resource_definitions(
     profile: DeploymentProfile, report: ValidationReport
 ) -> None:
-    schema_ids = {s.entry.id for s in profile.schemas}
-    container_ids = {c.id for c in profile.manifest.containers}
+    """Structural checks for the ``resourceDefinitions[]`` block.
 
-    for i, container in enumerate(profile.manifest.containers):
-        if container.parent is not None and container.parent not in container_ids:
+    Skipped when the manifest declares no resource definitions — minimal
+    bundles (schemas + offers only, no types exposed) still validate.
+    """
+    rds = profile.manifest.resource_definitions
+    if not rds:
+        return
+
+    # Exactly one root (urlPrefix == "").
+    roots = [rd for rd in rds if rd.is_root]
+    if len(roots) == 0:
+        report.add(
+            where="resourceDefinitions",
+            code="rd_missing_root",
+            message="resourceDefinitions must include exactly one entry with urlPrefix: \"\"",
+        )
+    elif len(roots) > 1:
+        for i, rd in enumerate(rds):
+            if rd.is_root and rd is not roots[0]:
+                report.add(
+                    where=f"resourceDefinitions[{i}]",
+                    code="rd_multiple_roots",
+                    message=(
+                        f"multiple resourceDefinitions declare urlPrefix \"\"; "
+                        f"first was {roots[0].name}, also: {rd.name}"
+                    ),
+                )
+
+    # Unique urlPrefix values.
+    seen_prefixes: dict[str, int] = {}
+    for i, rd in enumerate(rds):
+        if rd.url_prefix in seen_prefixes:
             report.add(
-                where=f"containers[{i}]",
-                code="container_parent_not_declared",
+                where=f"resourceDefinitions[{i}]",
+                code="rd_duplicate_url_prefix",
                 message=(
-                    f"container {container.id} references undeclared parent: "
-                    f"{container.parent}"
+                    f"urlPrefix {rd.url_prefix!r} is declared by more than one "
+                    f"resource definition (also at index {seen_prefixes[rd.url_prefix]})"
                 ),
             )
-        if container.constrained_by is not None and container.constrained_by not in schema_ids:
+        else:
+            seen_prefixes[rd.url_prefix] = i
+
+    # Every declared schema must appear in schemas[].
+    schema_ids = {s.entry.id for s in profile.schemas}
+    for i, rd in enumerate(rds):
+        if rd.schema_id not in schema_ids:
             report.add(
-                where=f"containers[{i}]",
-                code="container_constrained_by_not_declared",
+                where=f"resourceDefinitions[{i}]",
+                code="rd_schema_not_declared",
                 message=(
-                    f"container {container.id} is constrainedBy undeclared schema: "
-                    f"{container.constrained_by}"
+                    f"resource definition {rd.name!r} declares schema {rd.schema_id!r} "
+                    "which is not listed in schemas[]"
                 ),
             )
-        if container.type not in schema_ids:
-            report.add(
-                where=f"containers[{i}]",
-                code="container_type_not_declared",
-                message=(
-                    f"container {container.id} declares type {container.type} which "
-                    "is not declared as a schema"
-                ),
-            )
+
+    # Every child.target must resolve to a declared urlPrefix.
+    prefixes = set(seen_prefixes)
+    for i, rd in enumerate(rds):
+        for j, link in enumerate(rd.children):
+            if link.target not in prefixes:
+                report.add(
+                    where=f"resourceDefinitions[{i}].children[{j}]",
+                    code="rd_child_target_not_declared",
+                    message=(
+                        f"child link from {rd.name!r} via {link.relation_uri!r} "
+                        f"targets undeclared urlPrefix {link.target!r}"
+                    ),
+                )
 
 
 def _check_seed_records_validate(

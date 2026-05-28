@@ -72,13 +72,41 @@ class OfferEntry(_StrictBase):
     is_system_default: bool = Field(default=False, alias="isSystemDefault")
 
 
-class ContainerEntry(_StrictBase):
-    """One LDP container the profile creates at bootstrap."""
+class ChildLink(_StrictBase):
+    """A typed link from one resource definition to another.
 
-    id: str
-    type: str
-    parent: str | None = None
-    constrained_by: str | None = Field(default=None, alias="constrainedBy")
+    Mirrors :class:`ResourceDefinitionChild` in the reference
+    implementation. The link's ``relation_uri`` is the predicate the
+    parent uses to point at members of the target type — for example
+    ``dcat:dataset`` links a Catalog to its Datasets.
+    """
+
+    relation_uri: str = Field(alias="relationUri")
+    target: str
+    """``url_prefix`` of the target :class:`ResourceDefinitionEntry`."""
+    title: str = ""
+    """Human label rendered in the per-type listing endpoint
+    (``/.../page/<target>``)."""
+    tags_uri: str | None = Field(default=None, alias="tagsUri")
+
+
+class ResourceDefinitionEntry(_StrictBase):
+    """One metadata *type* this deployment exposes.
+
+    Carries the URL prefix (route segment), the SHACL schema for
+    instances, and the typed child links the OpenAPI generator turns
+    into per-type paths. Exactly one entry must declare ``urlPrefix:
+    ""`` — that one is the FDP Repository at the API root.
+    """
+
+    url_prefix: str = Field(alias="urlPrefix")
+    name: str
+    schema_id: str = Field(alias="schema")
+    children: list[ChildLink] = Field(default_factory=list)
+
+    @property
+    def is_root(self) -> bool:
+        return self.url_prefix == ""
 
 
 class SeedRecord(_StrictBase):
@@ -102,7 +130,9 @@ class ProfileManifest(_StrictBase):
         default=None, alias="metaMetadataSchema"
     )
     offers: list[OfferEntry] = Field(default_factory=list)
-    containers: list[ContainerEntry] = Field(default_factory=list)
+    resource_definitions: list[ResourceDefinitionEntry] = Field(
+        default_factory=list, alias="resourceDefinitions"
+    )
     seed_records: list[SeedRecord] = Field(default_factory=list, alias="seedRecords")
 
 
@@ -243,7 +273,7 @@ def _manifest_checksum(manifest: ProfileManifest) -> str:
 
 
 __all__ = [
-    "ContainerEntry",
+    "ChildLink",
     "DeploymentProfile",
     "LoadedOffer",
     "LoadedSchema",
@@ -252,6 +282,7 @@ __all__ = [
     "OfferEntry",
     "ProfileManifest",
     "ProfileMetadata",
+    "ResourceDefinitionEntry",
     "SchemaEntry",
     "SeedRecord",
     "load_profile",

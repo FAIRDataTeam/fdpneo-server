@@ -1,0 +1,90 @@
+# Default SHACL shape for dcat:Dataset.
+#
+# Required: dct:title. The shape recognises distributions, themes,
+# keywords, contact information, and the parent catalog link.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+dcat:Dataset
+    a sh:NodeShape ;
+    sh:targetClass dcat:Dataset ;
+    rdfs:label "DCAT Dataset" ;
+    rdfs:comment "A dataset described by an FDP record." ;
+
+    sh:property [
+        sh:path dct:title ;
+        sh:name "title" ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dct:description ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dct:identifier ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dct:publisher ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:creator ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:license ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dct:language ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:rights ;
+        sh:description "ODRL Offer governing access to this Dataset." ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dct:isPartOf ;
+        sh:description "The parent Catalog this Dataset belongs to." ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dcat:theme ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dcat:keyword ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dcat:contactPoint ;
+    ] ;
+    sh:property [
+        sh:path dcat:landingPage ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dcat:distribution ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:issued ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dct:modified ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1 ;
+    ] .

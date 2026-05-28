@@ -19,15 +19,23 @@ entrypoints into this package.
 from __future__ import annotations
 
 from fdp.metadata.profiles.applier import ApplyError, ApplyReport, apply_profile
+from fdp.metadata.profiles.iri import IRIExpander
 from fdp.metadata.profiles.manifest import (
-    ContainerEntry,
+    ChildLink,
     DeploymentProfile,
     OfferEntry,
     ProfileManifest,
     ProfileMetadata,
+    ResourceDefinitionEntry,
     SchemaEntry,
     SeedRecord,
     load_profile,
+)
+from fdp.metadata.profiles.registry import (
+    ChildLinkInfo,
+    ResourceDefinition,
+    ResourceDefinitionCache,
+    build_cache_from_manifest,
 )
 from fdp.metadata.profiles.state import (
     ProfileAppliedRow,
@@ -42,18 +50,24 @@ from fdp.metadata.profiles.validator import (
 __all__ = [
     "ApplyError",
     "ApplyReport",
-    "ContainerEntry",
+    "ChildLink",
+    "ChildLinkInfo",
     "DeploymentProfile",
+    "IRIExpander",
     "OfferEntry",
     "ProfileAppliedRow",
     "ProfileManifest",
     "ProfileMetadata",
     "ProfileStateRepository",
+    "ResourceDefinition",
+    "ResourceDefinitionCache",
+    "ResourceDefinitionEntry",
     "SchemaEntry",
     "SeedRecord",
     "ValidationIssue",
     "ValidationReport",
     "apply_profile",
+    "build_cache_from_manifest",
     "load_profile",
     "validate_profile",
 ]

@@ -1,12 +1,17 @@
 # Default deployment profile for FDP v2.
 #
 # This profile ships with the FDP server and bootstraps a standard
-# DCAT-based metadata repository: Repository → Catalogs → Datasets / Data
-# Services → Distributions. Communities that need custom schemas should
-# either extend this profile or replace it entirely.
+# DCAT-based metadata repository: Repository → Catalogs → Datasets /
+# Data Services → Distributions. Communities that need custom schemas
+# (e.g., an Ontology type) should either extend this profile or
+# replace it entirely — see architecture §12 for the profile
+# mechanism and bootstrap behaviour.
 #
-# See architecture document Section 12 for the profile mechanism and
-# bootstrap behaviour.
+# `resourceDefinitions[]` is the source of truth for both the runtime
+# Container Registry and the OpenAPI generator: declaring a type here
+# lights up `/{urlPrefix}` and `/{urlPrefix}/{id}` (plus /spec,
+# /expanded, /page/{childPrefix}) in the served API. Adding an
+# Ontology type means adding one entry below.
 
 apiVersion: fdp/v1
 kind: DeploymentProfile
@@ -40,21 +45,53 @@ schemas:
 metaMetadataSchema:
   path: schemas/meta-metadata.ttl
 
-# ODRL Offer templates. The system-default Offer is referenced by Repository
-# resources whose dct:rights is unset.
+# ODRL Offer templates. The system-default Offer is referenced by the
+# Repository's dct:rights so unscoped records inherit it.
 offers:
   - id: system-default
     path: offers/public-read-steward-modify.ttl
     isSystemDefault: true
 
-# LDP container hierarchy. The repository container is created first; child
-# containers reference their parent. Each container declares the schema its
-# members must satisfy via ldp:constrainedBy.
-containers:
-  - id: repository
-    type: fdp:Repository
-    parent: null
-    constrainedBy: dcat:Catalog   # members of the repository are catalogs
+# Metadata types exposed by this deployment. Exactly one entry must
+# declare urlPrefix: "" — that's the Repository at the API root.
+# `children[]` declares the typed links the OpenAPI generator turns
+# into per-type listing endpoints (`/.../page/<target>`).
+resourceDefinitions:
+  - urlPrefix: ""
+    name: Repository
+    schema: fdp:Repository
+    children:
+      - relationUri: dcat:catalog
+        target: catalog
+        title: Catalogs
 
-# Seed records. Empty in the default profile; communities populate this.
+  - urlPrefix: catalog
+    name: Catalog
+    schema: dcat:Catalog
+    children:
+      - relationUri: dcat:dataset
+        target: dataset
+        title: Datasets
+      - relationUri: dcat:service
+        target: data-service
+        title: Data Services
+
+  - urlPrefix: dataset
+    name: Dataset
+    schema: dcat:Dataset
+    children:
+      - relationUri: dcat:distribution
+        target: distribution
+        title: Distributions
+
+  - urlPrefix: data-service
+    name: DataService
+    schema: dcat:DataService
+
+  - urlPrefix: distribution
+    name: Distribution
+    schema: dcat:Distribution
+
+# Seed records. Empty in the default profile; the root Repository
+# itself is seeded automatically from the root resource definition.
 seedRecords: []

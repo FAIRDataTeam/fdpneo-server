@@ -104,7 +104,7 @@ def _settings() -> Settings:
 
 
 @pytest.mark.unit
-async def test_apply_writes_schemas_then_containers_then_offers(
+async def test_apply_writes_schemas_then_offers_then_repository_seed(
     write_bundle: Callable[..., Path],
 ) -> None:
     profile = load_profile(write_bundle())
@@ -121,17 +121,26 @@ async def test_apply_writes_schemas_then_containers_then_offers(
     )
 
     iris = [c[0] for c in repo.put_calls]
-    # 1 schema, 1 container, 1 offer.
+    # Apply order: schemas → offers → Repository seed. The offer IRI
+    # is the one declared inside the TTL (intrinsic to the bundle).
+    # The Repository seed lives at the configured base_url (the API
+    # root) so the LDP layer serves it at "/".
     assert iris == [
         "http://www.w3.org/ns/dcat#Catalog",
-        "http://localhost:8000/repository",
-        "http://localhost:8000/offers/system-default",
+        "https://fdp.example/offers/system-default",
+        "http://localhost:8000",
     ]
     assert report.total_written == 3
+    assert report.repository_iri == "http://localhost:8000"
     assert report.rolled_back is False
     assert state.recorded is not None
     assert state.recorded["name"] == "test"
     assert session.committed is True
+
+    # The cache from build_cache_from_manifest is handed to the caller
+    # so app.state.resource_definitions can be populated post-apply.
+    assert report.resource_definitions is not None
+    assert report.resource_definitions.root() is not None
 
 
 # --- already-initialized refusal ----------------------------------------
@@ -182,9 +191,9 @@ async def test_apply_rolls_back_on_triple_store_failure(
     write_bundle: Callable[..., Path],
 ) -> None:
     profile = load_profile(write_bundle())
-    # Fail on the container write (second put). Schema was already written,
-    # so it must be dropped during rollback.
-    repo = _FakeRepo(fail_on_put="http://localhost:8000/repository")
+    # Fail on the Repository seed (third put). Schema + offer were
+    # already written, so both must be dropped during rollback.
+    repo = _FakeRepo(fail_on_put="http://localhost:8000")
     state = _FakeState()
     session = _FakeSession()
 
@@ -197,8 +206,12 @@ async def test_apply_rolls_back_on_triple_store_failure(
             settings=_settings(),
         )
 
-    # Schema was rolled back.
-    assert repo.delete_calls == ["http://www.w3.org/ns/dcat#Catalog"]
+    # Both prior writes (schema + offer) were rolled back, in reverse
+    # order. The Repository seed itself never succeeded so isn't dropped.
+    assert repo.delete_calls == [
+        "https://fdp.example/offers/system-default",
+        "http://www.w3.org/ns/dcat#Catalog",
+    ]
     assert session.rolled_back is True
     assert state.recorded is None
     assert "profile_apply" in repr(exc.value) or "simulated" in repr(exc.value)
@@ -211,10 +224,12 @@ async def test_apply_rolls_back_on_triple_store_failure(
 async def test_apply_refuses_invalid_profile_without_writing(
     write_bundle: Callable[..., Path],
 ) -> None:
-    # Container references undeclared schema → validator fails.
+    # Resource definition declares a schema that wasn't listed in
+    # schemas[] → validator's rd_schema_not_declared fires before any
+    # write hits the triple store.
     from tests.unit.metadata.profiles.conftest import MANIFEST
 
-    bad_manifest = MANIFEST.replace("constrainedBy: dcat:Catalog", "constrainedBy: dcat:Unknown")
+    bad_manifest = MANIFEST.replace("schema: dcat:Catalog", "schema: dcat:Unknown")
     profile = load_profile(write_bundle(manifest_text=bad_manifest))
     repo = _FakeRepo()
     state = _FakeState()

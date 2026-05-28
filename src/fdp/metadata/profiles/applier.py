@@ -15,20 +15,19 @@ emulate atomicity with **compensation rollback**:
   rollback always leaves the system "uninitialized" — a subsequent
   apply can re-attempt without ``--force``.
 
-Apply order is the one architecture §12.2 specifies: schemas →
-containers → offers → seed records.
+Apply order (architecture §12.2): schemas → offers → root Repository
+seed → seed records. Resource-definition processing happens between
+offers and the Repository seed because the seed needs to know the
+root RD's schema IRI and which offer is the system default.
 
-**IRI conventions** (kept narrow on purpose; profiles authored against
-this scheme remain portable):
+**IRI conventions**
 
-* Schema IRI: CURIE expansion through
-  :data:`fdp.shared.namespaces.PREFIXES` plus the deployment's
-  ``fdp:`` namespace. ``fdp:Repository`` → ``<fdp_namespace>Repository``;
-  ``dcat:Catalog`` → ``http://www.w3.org/ns/dcat#Catalog``.
-* Offer IRI: ``{base_url}/offers/{id}``.
-* Container IRI: ``{base_url}/{id}``.
-* Seed record IRI: the seed record's ``id`` is itself a relative IRI
-  appended to the base URL.
+* Schema IRI: CURIE expansion via :class:`IRIExpander`.
+* Offer IRI: intrinsic — the subject of the ``odrl:Offer`` triple in
+  the bundled TTL. Stable across deployments.
+* Root Repository IRI: the deployment's ``base_url`` itself (no
+  trailing slash). The Repository LDP container lives at the API root.
+* Seed record IRI: ``{base_url}/{seed_id}``.
 """
 
 from __future__ import annotations
@@ -37,22 +36,26 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import structlog
-from rdflib import Graph, Namespace, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.profiles.manifest import ContainerEntry
+from fdp.metadata.profiles.iri import IRIExpander
+from fdp.metadata.profiles.registry import (
+    ResourceDefinitionCache,
+    build_cache_from_manifest,
+)
 from fdp.metadata.profiles.validator import (
     ValidationReport,
     validate_profile,
 )
 from fdp.shared.errors import BadRequest, Conflict, FDPError
-from fdp.shared.namespaces import DCT, LDP, PREFIXES, fdp_namespace
+from fdp.shared.namespaces import DCT, LDP, ODRL
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from fdp.config import Settings
-    from fdp.metadata.profiles.manifest import DeploymentProfile
+    from fdp.metadata.profiles.manifest import DeploymentProfile, LoadedOffer
     from fdp.metadata.profiles.state import ProfileStateRepository
     from fdp.metadata.repository import MetadataRepository
 
@@ -63,12 +66,7 @@ log = structlog.get_logger(__name__)
 
 
 class ApplyError(FDPError):
-    """Raised when an apply attempt cannot complete.
-
-    Wraps the underlying cause; ``details`` carries a structured
-    description so the CLI can render something better than a stack
-    trace.
-    """
+    """Raised when an apply attempt cannot complete."""
 
     code = "fdp.profile_apply_failed"
     http_status = 500
@@ -80,20 +78,27 @@ class ApplyError(FDPError):
 
 @dataclass
 class ApplyReport:
-    """Outcome of a successful or attempted apply."""
+    """Outcome of a successful or attempted apply.
+
+    ``resource_definitions`` is set on success when the manifest declared
+    any. Callers (CLI / lifespan auto-bootstrap) hand it to
+    ``app.state.resource_definitions`` so the LDP router's container
+    registry and the OpenAPI generator (sub-task 15d) can read it.
+    """
 
     schemas_written: list[str] = field(default_factory=list)
-    containers_written: list[str] = field(default_factory=list)
     offers_written: list[str] = field(default_factory=list)
+    repository_iri: str | None = None
     seed_records_written: list[str] = field(default_factory=list)
+    resource_definitions: ResourceDefinitionCache | None = None
     rolled_back: bool = False
 
     @property
     def total_written(self) -> int:
         return (
             len(self.schemas_written)
-            + len(self.containers_written)
             + len(self.offers_written)
+            + (1 if self.repository_iri else 0)
             + len(self.seed_records_written)
         )
 
@@ -113,17 +118,15 @@ async def apply_profile(
     """Apply ``profile`` to the configured stores.
 
     ``force`` does **not** wipe state by itself; the CLI is responsible
-    for calling :meth:`ProfileStateRepository.clear` plus
-    triple-store cleanup before invoking this. Setting ``force=True``
-    here only suppresses the already-initialized refusal so a clean
-    deployment can re-apply.
+    for calling :meth:`ProfileStateRepository.clear` plus triple-store
+    cleanup before invoking this. ``force=True`` here only suppresses
+    the already-initialized refusal so a clean deployment can re-apply.
     """
-    if not force:
-        if await state.is_applied():
-            raise Conflict(
-                "profile already applied; use force-apply to re-bootstrap",
-                details={"profile": profile.name},
-            )
+    if not force and await state.is_applied():
+        raise Conflict(
+            "profile already applied; use force-apply to re-bootstrap",
+            details={"profile": profile.name},
+        )
 
     pre = validate_profile(profile)
     if not pre.ok:
@@ -131,44 +134,72 @@ async def apply_profile(
 
     report = ApplyReport()
     written: list[str] = []
-    expander = _IRIExpander(settings=settings)
+    expander = IRIExpander(settings=settings)
 
     try:
+        # 1. SHACL schemas — stored at their CURIE-expanded IRI.
         for loaded in profile.schemas:
             iri = expander.schema_iri(loaded.entry.id)
             await repository.put_graph(iri, loaded.graph, subject=None)
             report.schemas_written.append(iri)
             written.append(iri)
 
-        for container in profile.manifest.containers:
-            iri = expander.container_iri(container.id)
-            await repository.put_graph(
-                iri,
-                _container_graph(container, expander),
-                subject=None,
-            )
-            report.containers_written.append(iri)
-            written.append(iri)
-
+        # 2. ODRL Offers — stored at their intrinsic file-declared IRI.
+        offer_iris: dict[str, str] = {}  # offer-entry id → IRI
         for offer in profile.offers:
-            iri = expander.offer_iri(offer.entry.id)
+            iri = _offer_iri_from_graph(offer.graph)
             await repository.put_graph(iri, offer.graph, subject=None)
+            offer_iris[offer.entry.id] = iri
             report.offers_written.append(iri)
             written.append(iri)
 
+        # 3. Resource-definition cache — derived from the manifest, then
+        #    handed to callers via ApplyReport for installation on app.state.
+        rd_cache: ResourceDefinitionCache | None = None
+        if profile.manifest.resource_definitions:
+            rd_cache = build_cache_from_manifest(
+                profile.manifest.resource_definitions,
+                expander=expander,
+            )
+
+        # 4. Root Repository seed. Only emitted when the manifest declares
+        #    a root resource definition. Carries dct:title (from the
+        #    profile metadata) so the Repository SHACL shape's title
+        #    requirement is satisfied; dct:rights points at the
+        #    system-default Offer when one is declared.
+        if rd_cache is not None:
+            root_rd = rd_cache.root()
+            if root_rd is not None:
+                repo_iri = expander.base_url
+                system_default_iri = _find_system_default_offer(
+                    profile.offers, offer_iris
+                )
+                graph = _repository_graph(
+                    iri=repo_iri,
+                    schema_iri=root_rd.schema_iri,
+                    title=profile.name,
+                    rights_iri=system_default_iri,
+                )
+                await repository.put_graph(repo_iri, graph, subject=None)
+                report.repository_iri = repo_iri
+                written.append(repo_iri)
+
+        # 5. Explicit seed records.
         for seed in profile.seed_records:
             iri = expander.seed_record_iri(seed.entry.id)
             await repository.put_graph(iri, seed.graph, subject=None)
             report.seed_records_written.append(iri)
             written.append(iri)
 
+        # 6. Persist the applied-profile marker last so a mid-flight
+        #    failure leaves the system uninitialized.
         await state.record(
             name=profile.name,
             version=profile.version,
             manifest_checksum=profile.manifest_checksum,
         )
         await session.commit()
-    except Exception as err:  # any failure triggers compensation rollback
+    except Exception as err:  # any failure → compensation rollback
         log.error(
             "profile_apply_failed",
             profile=profile.name,
@@ -193,6 +224,7 @@ async def apply_profile(
             details={"profile": profile.name, "written_graphs": len(written)},
         ) from err
 
+    report.resource_definitions = rd_cache
     log.info(
         "profile_apply_succeeded",
         profile=profile.name,
@@ -217,69 +249,52 @@ def _bad_validation(report: ValidationReport) -> BadRequest:
     )
 
 
-class _IRIExpander:
-    """Translates manifest-local identifiers (CURIEs, slugs) into full IRIs.
+def _offer_iri_from_graph(graph: Graph) -> str:
+    """Return the (single) ``odrl:Offer`` subject URI from ``graph``.
 
-    Centralized so the URI scheme is in one place — the convention is
-    documented in this module's docstring and on each method.
+    The validator already guarantees one Offer subject per file.
     """
-
-    def __init__(self, *, settings: Settings) -> None:
-        self._base = str(settings.base_url).rstrip("/")
-        self._prefixes = dict(PREFIXES)
-        self._fdp = fdp_namespace(settings)
-
-    def schema_iri(self, schema_id: str) -> str:
-        """Expand a CURIE like ``fdp:Repository``. Unknown prefixes raise."""
-        if ":" not in schema_id or schema_id.startswith(("http://", "https://")):
-            return schema_id
-        prefix, local = schema_id.split(":", 1)
-        if prefix == "fdp":
-            return str(self._fdp[local])
-        ns: Namespace | None = self._prefixes.get(prefix)
-        if ns is None:
-            raise BadRequest(
-                f"unknown prefix in schema id: {prefix}",
-                details={"schema_id": schema_id},
-            )
-        return str(ns[local])
-
-    def offer_iri(self, offer_id: str) -> str:
-        return f"{self._base}/offers/{offer_id}"
-
-    def container_iri(self, container_id: str) -> str:
-        return f"{self._base}/{container_id}"
-
-    def seed_record_iri(self, seed_id: str) -> str:
-        seed_id = seed_id.lstrip("/")
-        return f"{self._base}/{seed_id}"
+    for subject in graph.subjects(RDF.type, ODRL.Offer):
+        if isinstance(subject, URIRef):
+            return str(subject)
+    raise ApplyError(
+        "offer graph has no odrl:Offer subject (validator should have caught this)",
+        details={},
+    )
 
 
-def _container_graph(container: ContainerEntry, expander: _IRIExpander) -> Graph:
-    """Build a tiny LDP container graph (architecture §10 / §12.1).
+def _find_system_default_offer(
+    offers: tuple[LoadedOffer, ...] | list[LoadedOffer],
+    offer_iris: dict[str, str],
+) -> str | None:
+    """Return the IRI of the offer flagged ``isSystemDefault: true``."""
+    for offer in offers:
+        if offer.entry.is_system_default:
+            return offer_iris.get(offer.entry.id)
+    return None
 
-    A profile-declared container is materialized as an LDP
-    ``BasicContainer`` whose ``ldp:constrainedBy`` links to the schema
-    its members must satisfy. The parent link is recorded as
-    ``dct:isPartOf`` so the container hierarchy is queryable; LDP's
-    containment triples accumulate as members are added at runtime.
+
+def _repository_graph(
+    *,
+    iri: str,
+    schema_iri: str,
+    title: str,
+    rights_iri: str | None,
+) -> Graph:
+    """Build the seed graph for the root Repository record.
+
+    The Repository is the single mandatory FDP resource (architecture
+    §10). Sat at the API root, typed as both the root RD's schema
+    class and ``ldp:BasicContainer``, with a human-readable title and
+    an optional link to the system-default Offer for inheritance.
     """
-    subject = URIRef(expander.container_iri(container.id))
+    subject = URIRef(iri)
     graph = Graph()
+    graph.add((subject, RDF.type, URIRef(schema_iri)))
     graph.add((subject, RDF.type, LDP.BasicContainer))
-    graph.add((subject, RDF.type, URIRef(expander.schema_iri(container.type))))
-    if container.constrained_by is not None:
-        graph.add(
-            (
-                subject,
-                LDP.constrainedBy,
-                URIRef(expander.schema_iri(container.constrained_by)),
-            )
-        )
-    if container.parent is not None:
-        graph.add(
-            (subject, DCT.isPartOf, URIRef(expander.container_iri(container.parent)))
-        )
+    graph.add((subject, DCT.title, Literal(title)))
+    if rights_iri is not None:
+        graph.add((subject, DCT.rights, URIRef(rights_iri)))
     return graph
 
 

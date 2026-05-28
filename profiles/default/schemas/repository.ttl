@@ -1,0 +1,75 @@
+# Default SHACL shape for fdp:Repository — the FDP root resource.
+#
+# The shape's IRI is fdp:Repository so the runtime ShaclValidator can
+# look it up by the same id the profile manifest declares. The shape
+# both *is* the class (RDF allows a single resource to be a class and
+# a NodeShape) and *targets* it via sh:targetClass.
+#
+# Required: dct:title. Everything else is optional in v1 — communities
+# tighten the shape by replacing this profile rather than by editing
+# this file in place. Meta-metadata fields (dct:created, dct:modified,
+# prov:wasGeneratedBy, owl:versionInfo) are server-managed and live in
+# the sibling /meta graph; they are NOT validated by this shape.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix fdp:  <https://w3id.org/fdp/o#> .
+
+fdp:Repository
+    a sh:NodeShape, rdfs:Class ;
+    sh:targetClass fdp:Repository ;
+    rdfs:label "FDP Repository" ;
+    rdfs:comment "The root resource of an FDP instance. Contains catalogs as members." ;
+
+    sh:property [
+        sh:path dct:title ;
+        sh:name "title" ;
+        sh:description "Human-readable name of this FAIR Data Point." ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dct:description ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dct:publisher ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:license ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:hasVersion ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dct:language ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path foaf:homepage ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dcat:contactPoint ;
+    ] ;
+    sh:property [
+        sh:path dct:rights ;
+        sh:description "ODRL Offer governing access to this Repository." ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path dcat:catalog ;
+        sh:description "Catalogs hosted by this Repository." ;
+        sh:nodeKind sh:IRI ;
+    ] .
