@@ -65,6 +65,30 @@ token's `aud` claim so the FDP server accepts tokens issued to
 
 Replace this realm wholesale before any non-dev deployment.
 
+## Metrics rollups
+
+The metrics pipeline writes raw events into Postgres; aggregation to
+hourly and daily tables runs through `fdp metrics rollup`. The
+recommended cadence matches the settings defaults:
+
+```env
+FDP_METRICS_AGGREGATE_TO_HOURLY_AFTER_SECONDS=300
+FDP_METRICS_DISCARD_HOURLY_AFTER_DAYS=2
+```
+
+Wire whichever scheduler your deployment uses. For dev / hobby
+deployments, a one-shot crontab line is enough:
+
+```cron
+*/5 * * * *  cd /srv/fdp && uv run fdp metrics rollup --hourly-only
+7   * * * *  cd /srv/fdp && uv run fdp metrics rollup --daily-only
+```
+
+In Kubernetes, two `CronJob` resources mirroring the cron above are the
+straightforward equivalent. The arq worker pattern is still on the
+roadmap but blocked on resolving the Postgres-vs-Redis trade-off
+flagged in CLAUDE.md; this CLI path is the unblocked option.
+
 ## What is deliberately not here
 
 - **No FDP-specific SHACL shapes beyond the bundled DCAT defaults.**

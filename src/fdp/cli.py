@@ -11,6 +11,7 @@ Subcommands:
 * ``fdp profile info``            — show the applied profile name and version.
 * ``fdp profile export <path>``   — deferred to v1.x.
 * ``fdp db migrate``              — run Alembic migrations.
+* ``fdp metrics rollup``          — run metrics rollups (cron-driven).
 
 The CLI is built with Typer for argument parsing and Rich for output.
 """
@@ -27,6 +28,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from fdp.metadata.profiles.applier import ApplyReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
+    from fdp.metrics.aggregation import RollupResult
 
 app = typer.Typer(
     name="fdp",
@@ -37,9 +39,11 @@ app = typer.Typer(
 
 profile_app = typer.Typer(help="Deployment-profile commands.", no_args_is_help=True)
 db_app = typer.Typer(help="Database commands.", no_args_is_help=True)
+metrics_app = typer.Typer(help="Metrics-pipeline commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
+app.add_typer(metrics_app, name="metrics")
 
 console = Console()
 
@@ -151,10 +155,7 @@ def profile_export(path: Path = typer.Argument(..., file_okay=False)) -> None:
     bundle-local state" question (architecture §12.4). The CLI keeps
     the command surface so tooling can detect availability.
     """
-    console.print(
-        "[yellow]profile export is deferred to v1.x[/] "
-        f"(would have written to {path})"
-    )
+    console.print(f"[yellow]profile export is deferred to v1.x[/] (would have written to {path})")
     raise typer.Exit(code=1)
 
 
@@ -169,6 +170,88 @@ def db_migrate() -> None:
     config.set_main_option("script_location", str(repo_root / "migrations"))
     command.upgrade(config, "head")
     console.print("[green]migrations applied to head[/]")
+
+
+# --- metrics commands ----------------------------------------------------
+
+
+@metrics_app.command("rollup")
+def metrics_rollup(
+    hourly_only: bool = typer.Option(False, "--hourly-only", help="Run raw → hourly only."),
+    daily_only: bool = typer.Option(False, "--daily-only", help="Run hourly → daily only."),
+) -> None:
+    """Run the metrics rollups once.
+
+    The aggregation logic is the same as ``fdp.metrics.aggregation`` — we
+    just drive it from a CLI invocation instead of an arq worker so
+    operators can schedule it externally (cron, k8s ``CronJob``,
+    systemd timer). Run the command on the schedule recommended in
+    ``MetricsSettings``: roughly every 5 minutes for the raw → hourly
+    step, once an hour for hourly → daily.
+    """
+    if hourly_only and daily_only:
+        console.print("[red]--hourly-only and --daily-only are mutually exclusive[/]")
+        raise typer.Exit(code=1)
+
+    try:
+        raw_result, daily_result = asyncio.run(
+            _run_rollup(
+                hourly_only=hourly_only,
+                daily_only=daily_only,
+            )
+        )
+    except Exception as err:
+        console.print(f"[red]rollup failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if raw_result is not None:
+        console.print(
+            f"[green]raw → hourly[/] "
+            f"buckets={raw_result.buckets_processed} "
+            f"aggregates={raw_result.aggregates_written} "
+            f"raw_deleted={raw_result.source_rows_deleted}"
+        )
+    if daily_result is not None:
+        console.print(
+            f"[green]hourly → daily[/] "
+            f"days={daily_result.buckets_processed} "
+            f"aggregates={daily_result.aggregates_written} "
+            f"hourly_deleted={daily_result.source_rows_deleted}"
+        )
+
+
+async def _run_rollup(
+    *,
+    hourly_only: bool,
+    daily_only: bool,
+) -> tuple[RollupResult | None, RollupResult | None]:
+    """Drive ``aggregation`` once. Returns (raw_result, daily_result)."""
+    from fdp.config import get_settings
+    from fdp.metrics.aggregation import (
+        roll_up_hourly_to_daily,
+        roll_up_raw_to_hourly,
+    )
+    from fdp.storage.postgres.engine import build_engine, build_session_factory
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+    try:
+        raw_result = None
+        daily_result = None
+        if not daily_only:
+            raw_result = await roll_up_raw_to_hourly(
+                session_factory,
+                aggregate_after_seconds=settings.metrics.aggregate_to_hourly_after_seconds,
+            )
+        if not hourly_only:
+            daily_result = await roll_up_hourly_to_daily(
+                session_factory,
+                discard_after_days=settings.metrics.discard_hourly_after_days,
+            )
+        return raw_result, daily_result
+    finally:
+        await engine.dispose()
 
 
 # --- async glue ---------------------------------------------------------
