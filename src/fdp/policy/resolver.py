@@ -6,17 +6,28 @@ ODRL graph into an :class:`Offer`. This resolver bridges the two
 without either module importing the other — the caller passes any
 object that satisfies the :class:`GraphFetcher` protocol.
 
-**v1 scope**
+**Inheritance walk (architecture §8.3)**
 
-Resolves only the ``dct:rights`` triple on the resource graph itself.
-No inheritance walk (record → container → repository → system default)
-— that lands later under architecture §8.3. A resource without an
-explicit ``dct:rights`` produces ``None``; the PDP turns that into a
-default DENY.
+The effective Offer for a resource is resolved in this order:
+
+1. The resource's own ``dct:rights`` triple.
+2. Walking up the ``dct:isPartOf`` chain (dataset → catalog →
+   repository) and using the first ``dct:rights`` encountered.
+3. A deployment-level system-default Offer IRI provided through
+   ``system_default_provider`` — typically the offer flagged
+   ``isSystemDefault: true`` in the applied profile and seeded onto
+   the Repository's ``dct:rights`` (so the walk above also lands
+   there). The explicit provider catches records that don't link
+   back to the Repository via ``dct:isPartOf``.
+
+When all three sources fail, the resolver returns ``None`` and the
+PDP applies its default-deny rule. Bounded walk + visited-set guard
+prevent pathological cycles.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 import structlog
@@ -34,6 +45,9 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 
+_DEFAULT_MAX_WALK_DEPTH = 10
+
+
 class GraphFetcher(Protocol):
     """Anything that can return a record graph for a given IRI.
 
@@ -45,38 +59,82 @@ class GraphFetcher(Protocol):
 
 
 class GraphBackedOfferResolver:
-    """Resolves the in-force Offer by reading ``dct:rights`` from the resource.
+    """Resolves the in-force Offer with a ``dct:isPartOf`` inheritance walk.
 
-    A missing ``dct:rights``, an empty Offer graph, or a parse failure
-    all produce ``None`` so the PDP can apply its default-deny rule.
-    Parse failures are logged so operators can see policies that don't
-    conform to the FDP profile (per architecture §8.2 such Offers
-    should never have been written in the first place; this is the
-    runtime backstop).
+    Parse failures and empty Offer graphs return ``None`` so the PDP
+    applies its default-deny rule. Failures are logged so operators
+    can see policies that don't conform to the FDP profile.
+
+    ``system_default_provider`` is read on every call so the deployment's
+    auto-bootstrap can publish the system-default Offer IRI after the
+    resolver is constructed without rebuilding it.
     """
 
-    def __init__(self, fetcher: GraphFetcher) -> None:
+    def __init__(
+        self,
+        fetcher: GraphFetcher,
+        *,
+        system_default_provider: Callable[[], str | None] = lambda: None,
+        max_walk_depth: int = _DEFAULT_MAX_WALK_DEPTH,
+    ) -> None:
         self._fetcher = fetcher
+        self._system_default_provider = system_default_provider
+        self._max_depth = max_walk_depth
 
     async def resolve_offer(self, resource_iri: str) -> Offer | None:
-        resource_graph = await self._fetcher.get_graph(resource_iri)
-        rights_iri: str | None = None
-        for obj in resource_graph.objects(URIRef(resource_iri), DCT.rights):
-            rights_iri = str(obj)
-            break
+        rights_iri = await self._resolve_rights_iri(resource_iri)
         if rights_iri is None:
             return None
+        return await self._fetch_and_parse(rights_iri)
 
+    # --- internals --------------------------------------------------------
+
+    async def _resolve_rights_iri(self, resource_iri: str) -> str | None:
+        """Walk up ``dct:isPartOf`` looking for the first ``dct:rights``.
+
+        Falls back to ``system_default_provider()`` only when the walk
+        completes without finding any ``dct:rights`` — the chain is
+        consulted first so a record's own (or an ancestor's) explicit
+        Offer wins over the deployment default.
+        """
+        visited: set[str] = set()
+        current = resource_iri
+        for depth in range(self._max_depth):
+            if current in visited:
+                log.warning("offer_inheritance_cycle", at=current, depth=depth)
+                break
+            visited.add(current)
+
+            graph = await self._fetcher.get_graph(current)
+
+            for obj in graph.objects(URIRef(current), DCT.rights):
+                return str(obj)
+
+            parent: str | None = None
+            for obj in graph.objects(URIRef(current), DCT.isPartOf):
+                parent = str(obj)
+                break
+            if parent is None:
+                break
+            current = parent
+        else:
+            log.warning(
+                "offer_inheritance_depth_exceeded",
+                resource_iri=resource_iri,
+                max_depth=self._max_depth,
+            )
+
+        return self._system_default_provider()
+
+    async def _fetch_and_parse(self, rights_iri: str) -> Offer | None:
         offer_graph = await self._fetcher.get_graph(rights_iri)
         if len(offer_graph) == 0:
             return None
-
         try:
             return parse_offer(offer_graph, URIRef(rights_iri))
         except SchemaViolation as err:
             log.warning(
                 "offer_parse_failed",
-                resource_iri=resource_iri,
                 rights_iri=rights_iri,
                 error=err.message,
             )

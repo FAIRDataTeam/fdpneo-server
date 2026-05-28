@@ -83,7 +83,13 @@ class ApplyReport:
     ``resource_definitions`` is set on success when the manifest declared
     any. Callers (CLI / lifespan auto-bootstrap) hand it to
     ``app.state.resource_definitions`` so the LDP router's container
-    registry and the OpenAPI generator (sub-task 15d) can read it.
+    registry and the OpenAPI generator can read it.
+
+    ``system_default_offer_iri`` is set when the manifest declared an
+    offer flagged ``isSystemDefault: true``. Auto-bootstrap installs
+    it on the resolver so records that don't carry an explicit
+    ``dct:rights`` (and don't link back to the Repository via
+    ``dct:isPartOf``) still resolve to the deployment default.
     """
 
     schemas_written: list[str] = field(default_factory=list)
@@ -91,6 +97,7 @@ class ApplyReport:
     repository_iri: str | None = None
     seed_records_written: list[str] = field(default_factory=list)
     resource_definitions: ResourceDefinitionCache | None = None
+    system_default_offer_iri: str | None = None
     rolled_back: bool = False
 
     @property
@@ -167,13 +174,12 @@ async def apply_profile(
         #    profile metadata) so the Repository SHACL shape's title
         #    requirement is satisfied; dct:rights points at the
         #    system-default Offer when one is declared.
+        system_default_iri = _find_system_default_offer(profile.offers, offer_iris)
+        report.system_default_offer_iri = system_default_iri
         if rd_cache is not None:
             root_rd = rd_cache.root()
             if root_rd is not None:
                 repo_iri = expander.base_url
-                system_default_iri = _find_system_default_offer(
-                    profile.offers, offer_iris
-                )
                 graph = _repository_graph(
                     iri=repo_iri,
                     schema_iri=root_rd.schema_iri,

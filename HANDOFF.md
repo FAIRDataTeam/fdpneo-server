@@ -39,18 +39,38 @@ In order:
    so you know where to look up details.
 6. **Pick up Phase 0.1 from `TASKS.md`** — the shared kernel.
 
+## Dev-stack credentials (Keycloak)
+
+`deploy/keycloak/realm-fdp-dev.json` ships a starter realm imported on
+container start. **Dev-only — credentials are publicly known.**
+
+| user  | password | realm roles                     |
+|-------|----------|---------------------------------|
+| admin | admin    | `fdp-admin`, `fdp-steward`      |
+| alice | alice    | `fdp-steward`                   |
+| bob   | bob      | _(none — anonymous-equivalent)_ |
+
+OIDC settings for the FDP server against this realm:
+
+```env
+FDP_OIDC_ISSUER=http://localhost:8080/realms/fdp-dev
+FDP_OIDC_AUDIENCE=fdp
+FDP_OIDC_ROLES_CLAIM=realm_access.roles
+```
+
+The realm includes an audience mapper that adds `fdp` to the access
+token's `aud` claim so the FDP server accepts tokens issued to
+`fdp-client`. The web client allows redirect URIs from
+`http://localhost:{5173,3000,8000}` for Vite/CRA/the FDP server.
+
+Replace this realm wholesale before any non-dev deployment.
+
 ## What is deliberately not here
 
-- **No Alembic migrations yet.** Phase 0.2 creates them.
-- **No Keycloak realm import file.** The compose file references
-  `deploy/keycloak/realm-fdp-dev.json` — that needs to be created during
-  Phase 1.1 (OIDC middleware). For now, Keycloak comes up empty and you can
-  configure a realm manually if you need one before then.
-- **No FDP-specific SHACL shapes.** `profiles/default/schemas/` is empty.
-  Phase 2.2 / Phase 5.2 populate it; the standard FDP DCAT shapes can be
-  imported from the existing reference implementation or written fresh.
-- **No source code in the modules.** `__init__.py` docstrings document
-  intent; the implementations are Phases 0–5 in `TASKS.md`.
+- **No FDP-specific SHACL shapes beyond the bundled DCAT defaults.**
+  `profiles/default/schemas/` ships repository/catalog/dataset/data-service/
+  distribution shapes plus the meta-metadata schema. Communities replace
+  these via their own deployment profile.
 
 ## Coordination with the client repo
 

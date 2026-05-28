@@ -25,6 +25,7 @@ from fdp.access.router import build_sparql_router
 from fdp.config import get_settings
 from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
+from fdp.metadata.audit import AuditLog
 from fdp.metadata.ldp.router import build_ldp_router
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.profiles import (
@@ -34,6 +35,8 @@ from fdp.metadata.profiles import (
     load_profile,
 )
 from fdp.metadata.repository import MetadataRepository
+from fdp.metadata.shacl import ShaclValidator
+from fdp.metadata.shape_provider import MetadataShapeProvider
 from fdp.metrics.api import build_metrics_router
 from fdp.metrics.geo import open_geo_lookup
 from fdp.metrics.middleware import RequestObservationMiddleware
@@ -79,7 +82,16 @@ def _build_shared_state(app: FastAPI) -> None:
     # PDP wrapper that opens a fresh Postgres session per call — required
     # because CacheRepository binds to one session, and the data/SPARQL
     # routers are concurrent. See fdp.policy.runtime.
-    app.state.offer_resolver = GraphBackedOfferResolver(app.state.metadata_repository)
+    #
+    # The offer resolver walks dct:isPartOf for inheritance; the
+    # system-default Offer IRI is published on app.state by the
+    # auto-bootstrap hook and read lazily on every call so the resolver
+    # picks it up without rebuild.
+    app.state.system_default_offer_iri = None
+    app.state.offer_resolver = GraphBackedOfferResolver(
+        app.state.metadata_repository,
+        system_default_provider=lambda: app.state.system_default_offer_iri,
+    )
     app.state.pdp = RequestScopedPDP(
         session_factory=app.state.session_factory,
         offer_resolver=app.state.offer_resolver,
@@ -91,6 +103,14 @@ def _build_shared_state(app: FastAPI) -> None:
     # container registry both no-op when it's not yet set.
     app.state.resource_definitions = None
 
+    # SHACL validator backed by shapes stored in the metadata triple
+    # store (architecture §5.3). Bootstrap-warming happens after the
+    # profile is applied so the validator's parsed-shape cache is
+    # populated against the IRIs the profile declares.
+    app.state.shacl_validator = ShaclValidator(
+        MetadataShapeProvider(app.state.metadata_repository)
+    )
+
     # GeoLite2 lookup degrades to no-op if the DB is missing — safe for dev.
     app.state.geo = open_geo_lookup(settings.metrics.geoip_database_path)
     app.state.salt_rotator = SaltRotator()
@@ -101,6 +121,7 @@ def _build_shared_state(app: FastAPI) -> None:
         enabled=settings.metrics.enabled,
         counting_enabled=settings.metrics.unique_visitor_counting,
     )
+    app.state.audit_log = AuditLog(session_factory=app.state.session_factory)
 
 
 @asynccontextmanager
@@ -115,15 +136,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("fdp_starting", version=__version__)
 
     app.state.metrics_pipeline.start(app.state.event_bus)
+    app.state.audit_log.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
 
     # TODO: warm authorization cache for anonymous
-    # TODO: subscribe audit-log handler to the event bus
 
     try:
         yield
     finally:
         log.info("fdp_stopping")
+        app.state.audit_log.stop()
         app.state.metrics_pipeline.stop()
         app.state.geo.close()
         await app.state.triplestore.close()
@@ -205,6 +227,7 @@ def create_app() -> FastAPI:
         build_ldp_router(
             repo=app.state.metadata_repository,
             pdp=app.state.pdp,
+            validator=app.state.shacl_validator,
             containers=_DynamicContainerRegistry(app),
             event_bus=app.state.event_bus,
             prefix="",
@@ -310,17 +333,37 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
             force=False,
         )
 
-    # Publish the cache so the LDP container registry and the OpenAPI
-    # generator can see it. Clearing app.openapi_schema forces the next
-    # /openapi.json request to rebuild the spec with the now-known
-    # resource definitions.
+    # Publish what auto-bootstrap learned so the runtime stops returning
+    # the early-startup defaults:
+    #
+    # * ``system_default_offer_iri`` — read lazily by the offer resolver's
+    #   inheritance fallback (architecture §8.3).
+    # * ``resource_definitions`` — read by the LDP container registry
+    #   and the OpenAPI generator.
+    # * ``openapi_schema`` cleared so the next ``/openapi.json`` request
+    #   rebuilds the spec with the typed paths.
+    # * SHACL validator warmed against the declared schema IRIs so the
+    #   first write per type doesn't pay a triple-store roundtrip.
+    if report.system_default_offer_iri is not None:
+        app.state.system_default_offer_iri = report.system_default_offer_iri
     if report.resource_definitions is not None:
         app.state.resource_definitions = report.resource_definitions
         app.openapi_schema = None  # type: ignore[assignment]
+        schema_iris = sorted({rd.schema_iri for rd in report.resource_definitions.all()})
+        try:
+            await app.state.shacl_validator.bootstrap(schema_iris)
+        except Exception as err:
+            log.warning(
+                "shacl_validator_bootstrap_failed",
+                error=repr(err),
+                shape_iris=schema_iris,
+            )
         log.info(
             "profile_auto_bootstrap_completed",
             profile=profile.name,
             resource_definitions=len(report.resource_definitions.all()),
+            shapes_warmed=len(schema_iris),
+            system_default_offer=report.system_default_offer_iri,
         )
 
 
