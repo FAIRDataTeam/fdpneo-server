@@ -18,11 +18,11 @@
   "roles": {
     "realm": [
       {
-        "name": "fdp-admin",
+        "name": "admin",
         "description": "FDP administrator: system-wide read/write."
       },
       {
-        "name": "fdp-steward",
+        "name": "steward",
         "description": "FDP steward: curates records and policies."
       }
     ]
@@ -43,7 +43,7 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["fdp-admin", "fdp-steward"]
+      "realmRoles": ["admin", "steward"]
     },
     {
       "username": "alice",
@@ -59,7 +59,7 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["fdp-steward"]
+      "realmRoles": ["steward"]
     },
     {
       "username": "bob",
@@ -108,6 +108,7 @@
         "+"
       ],
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
@@ -146,6 +147,7 @@
   ],
 
   "defaultDefaultClientScopes": [
+    "basic",
     "role_list",
     "profile",
     "email",
