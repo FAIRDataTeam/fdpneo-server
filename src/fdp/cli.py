@@ -117,11 +117,16 @@ def profile_apply(
         console.print(f"[red]apply failed:[/] {err.message}")
         raise typer.Exit(code=1) from err
 
+    rd_count = (
+        len(report.resource_definitions.all())
+        if report.resource_definitions is not None
+        else 0
+    )
     console.print(
         f"[green]applied[/] {profile.name} {profile.version} — "
         f"{len(report.schemas_written)} schemas, "
         f"{len(report.offers_written)} offers, "
-        f"{len(report.containers_written)} containers, "
+        f"{rd_count} resource definitions, "
         f"{len(report.seed_records_written)} seed records"
     )
 
