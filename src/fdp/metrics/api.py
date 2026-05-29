@@ -161,11 +161,11 @@ def build_metrics_router(
     @router.get("/summary", response_model=SummaryResponse, name="metrics_summary")
     async def summary(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[RequestContext, Depends(require_auth)],
-        reader: Annotated[MetricsReader, Depends(reader_dep)],
         since: Annotated[date | None, Query(description="Inclusive start date.")] = None,
         until: Annotated[date | None, Query(description="Inclusive end date.")] = None,
         resource_iri: Annotated[str | None, Query()] = None,
         event_type: Annotated[str | None, Query()] = None,
+        reader: MetricsReader = Depends(reader_dep),  # noqa: B008
     ) -> SummaryResponse:
         """Period totals: request count, unique visitors, status mix, mean latency."""
         del ctx  # presence enforces auth; not used in this query
@@ -194,11 +194,11 @@ def build_metrics_router(
     )
     async def daily_series(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[RequestContext, Depends(require_auth)],
-        reader: Annotated[MetricsReader, Depends(reader_dep)],
         since: Annotated[date | None, Query()] = None,
         until: Annotated[date | None, Query()] = None,
         resource_iri: Annotated[str | None, Query()] = None,
         event_type: Annotated[str | None, Query()] = None,
+        reader: MetricsReader = Depends(reader_dep),  # noqa: B008
     ) -> DailySeriesResponse:
         """One ``(bucket, request_count, unique_visitors)`` point per day."""
         del ctx
@@ -228,7 +228,6 @@ def build_metrics_router(
     )
     async def top_resources(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[RequestContext, Depends(require_auth)],
-        reader: Annotated[MetricsReader, Depends(reader_dep)],
         since: Annotated[date | None, Query()] = None,
         until: Annotated[date | None, Query()] = None,
         event_type: Annotated[str | None, Query()] = None,
@@ -236,6 +235,7 @@ def build_metrics_router(
             int,
             Query(ge=1, le=_MAX_TOP_LIMIT),
         ] = _DEFAULT_TOP_LIMIT,
+        reader: MetricsReader = Depends(reader_dep),  # noqa: B008
     ) -> TopResourcesResponse:
         """The ``limit`` most-requested resources, ordered by request count."""
         del ctx
@@ -267,11 +267,11 @@ def build_metrics_router(
     )
     async def geography(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[RequestContext, Depends(require_auth)],
-        reader: Annotated[MetricsReader, Depends(reader_dep)],
         since: Annotated[date | None, Query()] = None,
         until: Annotated[date | None, Query()] = None,
         resource_iri: Annotated[str | None, Query()] = None,
         event_type: Annotated[str | None, Query()] = None,
+        reader: MetricsReader = Depends(reader_dep),  # noqa: B008
     ) -> GeographyResponse:
         """Per-country counts, descending by request count."""
         del ctx

@@ -38,6 +38,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 
 from fdp.data.distributions import DistributionInfo, RecordReader, resolve_distribution
+from fdp.metadata.graphs import data_graph_uri
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Forbidden, NotFound, UnsupportedMediaType

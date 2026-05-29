@@ -1,4 +1,4 @@
-# Claude Code handoff — fdp-server
+continue# Claude Code handoff — fdp-server
 
 This file is the operator's note. It tells Claude Code (and any human picking
 this up) what's already in place and what to do first.

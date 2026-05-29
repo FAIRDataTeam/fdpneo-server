@@ -93,9 +93,14 @@ async def _drive(
         sent.append(message)
 
     await middleware(scope, receive, send)
-    # The middleware's finally schedules `asyncio.create_task(_publish_safe(...))`.
-    # One yield is enough to let that task run on the same loop.
-    await asyncio.sleep(0)
+    # The middleware's finally schedules `asyncio.create_task(_publish_safe(...))`,
+    # which awaits `bus.publish`, which awaits `asyncio.gather(handler(...))` —
+    # so the recorder.append runs in a grandchild task. Drain every pending
+    # non-current task so the assertions see a stable state.
+    current = asyncio.current_task()
+    pending = [t for t in asyncio.all_tasks() if t is not current]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
     return sent
 
 

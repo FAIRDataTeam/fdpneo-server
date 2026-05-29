@@ -26,7 +26,7 @@ def test_load_profile_parses_manifest_and_loads_referenced_files(
     assert len(profile.schemas[0].graph) > 0
     assert len(profile.offers) == 1
     assert profile.offers[0].entry.is_system_default is True
-    assert profile.manifest.containers[0].id == "repository"
+    assert profile.manifest.resource_definitions[0].name == "Repository"
 
 
 @pytest.mark.unit
