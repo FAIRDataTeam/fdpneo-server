@@ -44,6 +44,7 @@ from rdflib import Graph
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
 from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
+from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.ldp.negotiation import (
     SPARQL_UPDATE,
     SUPPORTED_TYPES,
@@ -146,6 +147,12 @@ def build_ldp_router(
         await event_bus.publish(event)
 
     async def _enforce(ctx: RequestContext, action: Action, resource_iri: str) -> None:
+        # Authorize against the canonical resource IRI. Storage normalizes the
+        # trailing slash via `record_graph_uri`, but the request URL for the
+        # repository root arrives as ".../" — without this the offer resolver
+        # looks for `dct:rights` at the slashed IRI, finds nothing, and
+        # default-denies writes to the root even for stewards.
+        resource_iri = str(record_graph_uri(resource_iri))
         decision = await pdp.authorize(ctx, action, resource_iri)
         if decision.outcome is Outcome.PERMIT:
             return

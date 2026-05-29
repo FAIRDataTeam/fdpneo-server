@@ -241,6 +241,20 @@ async def test_get_returns_turtle_with_etag_and_link_headers() -> None:
 
 
 @pytest.mark.unit
+async def test_authorization_normalises_trailing_slash_iri() -> None:
+    # Regression: the repository root is addressed as ".../" but stored (and its
+    # `dct:rights` offer keyed) at the no-slash IRI. Authorization must use the
+    # canonical IRI, else writes to the root are default-denied even for stewards.
+    repo, _ = _make_repo()
+    pdp = FakePDP()
+    app = _build_app(repo=repo, pdp=pdp)
+    with TestClient(app) as client:
+        client.get("/ldp/catalogs/")  # trailing slash; empty repo → 404 after authz
+
+    assert pdp.calls == [("read", "http://testserver/ldp/catalogs")]
+
+
+@pytest.mark.unit
 async def test_get_with_json_ld_accept_returns_json_ld() -> None:
     repo, _ = _make_repo()
     await _seed_record(repo, RECORD_IRI)
