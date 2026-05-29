@@ -133,7 +133,23 @@ _PROLOGUE_RE = re.compile(
     re.IGNORECASE,
 )
 _KEYWORD_RE = re.compile(r"\s*(\w+)")
-_COMMENT_RE = re.compile(r"#[^\n]*")
+# A `#` only begins a comment when it is NOT inside an IRI (`<…>`) or a quoted
+# string. We match IRIs/strings first and keep them, stripping only the `#…`
+# alternative — otherwise the `#` fragment in an IRI such as `<…/dcat#>` would
+# be eaten, corrupting the prologue and breaking keyword classification.
+_COMMENT_RE = re.compile(
+    r'"""(?:[^"\\]|\\.|"(?!""))*"""'  # triple-quoted string
+    r"|'''(?:[^'\\]|\\.|'(?!''))*'''"  # triple-quoted string (single)
+    r'|<[^>]*>'  # IRI
+    r'|"(?:[^"\\\n]|\\.)*"'  # short string
+    r"|'(?:[^'\\\n]|\\.)*'"  # short string (single)
+    r"|(#[^\n]*)",  # comment (the only captured group)
+)
+
+
+def _strip_comments(text: str) -> str:
+    """Remove SPARQL comments, leaving IRIs and quoted strings intact."""
+    return _COMMENT_RE.sub(lambda m: "" if m.group(1) is not None else m.group(0), text)
 _AMBIGUOUS_HINT = (
     "use WITH <graph> or place the triples inside GRAPH <graph> {…} "
     "(see architecture §9.3)"
@@ -272,7 +288,7 @@ def _quads_targets(node: CompValue) -> list[str] | None:
 
 def _first_keyword(body: str) -> str | None:
     """Return the first SPARQL keyword after BASE/PREFIX prologue + comments."""
-    stripped = _COMMENT_RE.sub("", body)
+    stripped = _strip_comments(body)
     pos = 0
     while True:
         match = _PROLOGUE_RE.match(stripped, pos)

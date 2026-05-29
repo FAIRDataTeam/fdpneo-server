@@ -119,6 +119,24 @@ def test_parse_handles_prologue_with_prefix_and_base() -> None:
     assert result.has_dataset_clause is True
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Single PREFIX whose IRI ends in a `#` fragment — the `#` must not be
+        # mistaken for a comment when classifying the operation.
+        "PREFIX dcat: <http://www.w3.org/ns/dcat#>\nSELECT ?c WHERE { ?c a dcat:Catalog }",
+        "PREFIX dcat: <http://www.w3.org/ns/dcat#> SELECT ?c WHERE { ?c a dcat:Catalog }",
+        # A genuine trailing comment is still stripped.
+        "PREFIX dct: <http://purl.org/dc/terms/>  # my prefixes\nSELECT * WHERE { ?s ?p ?o }",
+    ],
+)
+def test_parse_classifies_prefix_with_hash_iri(body: str) -> None:
+    result = parse(body)
+    assert isinstance(result, ParsedRead)
+    assert result.form is QueryForm.SELECT
+
+
 # --- update forms -----------------------------------------------------------
 
 
