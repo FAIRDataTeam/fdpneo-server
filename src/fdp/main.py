@@ -34,6 +34,7 @@ from fdp.metadata.profiles import (
     ResourceDefinitionCache,
     apply_profile,
     load_profile,
+    resolve_runtime_state,
 )
 from fdp.metadata.repository import MetadataRepository
 from fdp.metadata.shacl import ShaclValidator
@@ -43,6 +44,7 @@ from fdp.metrics.geo import open_geo_lookup
 from fdp.metrics.middleware import RequestObservationMiddleware
 from fdp.metrics.pipeline import MetricsPipeline
 from fdp.metrics.salt import SaltRotator
+from fdp.operational import build_info_router, build_readiness_router
 from fdp.policy.resolver import GraphBackedOfferResolver
 from fdp.policy.runtime import RequestScopedPDP
 from fdp.shared.errors import register_exception_handlers
@@ -192,12 +194,22 @@ def create_app() -> FastAPI:
     # Route-registration order matters: the LDP router catches /{path:path}
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
-    # cannot serve as a consequence: /healthz, /config, /metrics, /data, /sparql.
+    # cannot serve as a consequence: /healthz, /readyz, /info, /config,
+    # /metrics, /data, /sparql.
     @app.get("/healthz", tags=["internal"])
     async def healthz() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         """Liveness probe. Does not check downstream dependencies."""
         return {"status": "ok", "version": __version__}
 
+    app.include_router(build_info_router(settings=settings))
+    app.include_router(
+        build_readiness_router(
+            session_factory=app.state.session_factory,
+            adapter=app.state.triplestore,
+            http_client=app.state.http_client,
+            issuer=str(settings.oidc.issuer),
+        )
+    )
     app.include_router(
         build_bootstrap_router(
             settings=settings,
@@ -325,10 +337,22 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
     async with app.state.session_factory() as session:
         state = ProfileStateRepository(session)
         if await state.is_applied():
+            # Profile artifacts are already in the stores, but the runtime
+            # caches (offer-resolver fallback, container registry, OpenAPI,
+            # SHACL warm-up) live in `app.state` and are empty after a restart.
+            # Re-derive them from the profile (no writes) and publish, so the
+            # FDP is fully functional — without this, creating new records is
+            # default-denied because the system-default offer is unset.
             log.info(
                 "profile_auto_bootstrap_skipped",
                 reason="already_applied",
                 profile=profile.name,
+            )
+            system_default_offer_iri, resource_definitions = resolve_runtime_state(
+                profile, settings=settings
+            )
+            await _publish_runtime_state(
+                app, profile, system_default_offer_iri, resource_definitions
             )
             return
         report = await apply_profile(
@@ -340,23 +364,35 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
             force=False,
         )
 
-    # Publish what auto-bootstrap learned so the runtime stops returning
-    # the early-startup defaults:
-    #
-    # * ``system_default_offer_iri`` — read lazily by the offer resolver's
-    #   inheritance fallback (architecture §8.3).
-    # * ``resource_definitions`` — read by the LDP container registry
-    #   and the OpenAPI generator.
-    # * ``openapi_schema`` cleared so the next ``/openapi.json`` request
-    #   rebuilds the spec with the typed paths.
-    # * SHACL validator warmed against the declared schema IRIs so the
-    #   first write per type doesn't pay a triple-store roundtrip.
-    if report.system_default_offer_iri is not None:
-        app.state.system_default_offer_iri = report.system_default_offer_iri
-    if report.resource_definitions is not None:
-        app.state.resource_definitions = report.resource_definitions
+    await _publish_runtime_state(
+        app, profile, report.system_default_offer_iri, report.resource_definitions
+    )
+
+
+async def _publish_runtime_state(
+    app: FastAPI,
+    profile: object,
+    system_default_offer_iri: str | None,
+    resource_definitions: ResourceDefinitionCache | None,
+) -> None:
+    """Install profile-derived runtime state on ``app.state``.
+
+    Shared by the fresh-apply and already-applied startup paths:
+
+    * ``system_default_offer_iri`` — read lazily by the offer resolver's
+      inheritance fallback (architecture §8.3).
+    * ``resource_definitions`` — read by the LDP container registry and the
+      OpenAPI generator; clearing ``openapi_schema`` forces a rebuild.
+    * SHACL validator warmed against the declared schema IRIs so the first
+      write per type doesn't pay a triple-store roundtrip.
+    """
+    profile_name = getattr(profile, "name", "?")
+    if system_default_offer_iri is not None:
+        app.state.system_default_offer_iri = system_default_offer_iri
+    if resource_definitions is not None:
+        app.state.resource_definitions = resource_definitions
         app.openapi_schema = None  # type: ignore[assignment]
-        schema_iris = sorted({rd.schema_iri for rd in report.resource_definitions.all()})
+        schema_iris = sorted({rd.schema_iri for rd in resource_definitions.all()})
         try:
             await app.state.shacl_validator.bootstrap(schema_iris)
         except Exception as err:
@@ -366,11 +402,11 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
                 shape_iris=schema_iris,
             )
         log.info(
-            "profile_auto_bootstrap_completed",
-            profile=profile.name,
-            resource_definitions=len(report.resource_definitions.all()),
+            "profile_runtime_state_published",
+            profile=profile_name,
+            resource_definitions=len(resource_definitions.all()),
             shapes_warmed=len(schema_iris),
-            system_default_offer=report.system_default_offer_iri,
+            system_default_offer=system_default_offer_iri,
         )
 
 

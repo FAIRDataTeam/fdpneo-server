@@ -18,7 +18,12 @@ entrypoints into this package.
 
 from __future__ import annotations
 
-from fdp.metadata.profiles.applier import ApplyError, ApplyReport, apply_profile
+from fdp.metadata.profiles.applier import (
+    ApplyError,
+    ApplyReport,
+    apply_profile,
+    resolve_runtime_state,
+)
 from fdp.metadata.profiles.iri import IRIExpander
 from fdp.metadata.profiles.manifest import (
     ChildLink,
@@ -69,5 +74,6 @@ __all__ = [
     "apply_profile",
     "build_cache_from_manifest",
     "load_profile",
+    "resolve_runtime_state",
     "validate_profile",
 ]

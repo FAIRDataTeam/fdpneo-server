@@ -551,13 +551,13 @@ References: `MetadataStateService.java`, `MetaStateChangeDTO.java`.
 
 ## Phase 13 — Operational endpoints
 
-### 13.1 [ ] Build info / app info (`GET /info`)
+### 13.1 [x] Build info / app info (`GET /info`)
 
 Spring Boot's `/actuator/info` analogue. Returns build commit, version,
 profile name+version, enabled features (matches the `features` block in
 Phase 6.4). Unauthenticated. Used by `fdp-client`'s footer.
 
-### 13.2 [ ] Liveness vs. readiness split
+### 13.2 [x] Liveness vs. readiness split
 
 Today `/healthz` is liveness-only. Add `/readyz` that also checks
 the triple store, Postgres, and OIDC discovery reachability. Useful for

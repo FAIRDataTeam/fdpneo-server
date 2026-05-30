@@ -240,6 +240,32 @@ async def apply_profile(
     return report
 
 
+def resolve_runtime_state(
+    profile: DeploymentProfile,
+    *,
+    settings: Settings,
+) -> tuple[str | None, ResourceDefinitionCache | None]:
+    """Derive the runtime state an apply would publish, without touching storage.
+
+    Returns ``(system_default_offer_iri, resource_definitions)``. Used on
+    startup when the profile is *already applied* (so :func:`apply_profile` is
+    skipped) to repopulate the offer resolver's fallback, the LDP container
+    registry, and the OpenAPI generator — these live in ``app.state`` and would
+    otherwise be ``None`` after a restart. Pure: derives everything from the
+    loaded profile + IRI expansion, the same way ``apply_profile`` does.
+    """
+    expander = IRIExpander(settings=settings)
+    offer_iris = {offer.entry.id: _offer_iri_from_graph(offer.graph) for offer in profile.offers}
+    system_default_iri = _find_system_default_offer(profile.offers, offer_iris)
+    rd_cache: ResourceDefinitionCache | None = None
+    if profile.manifest.resource_definitions:
+        rd_cache = build_cache_from_manifest(
+            profile.manifest.resource_definitions,
+            expander=expander,
+        )
+    return system_default_iri, rd_cache
+
+
 # --- helpers --------------------------------------------------------------
 
 
