@@ -299,7 +299,7 @@ for the *sources* CRUD).
 References: `FormsAutocompleteService.java`,
 `SettingsAutocompleteSourceDTO.java`.
 
-### 6.3 [ ] User dashboard (`GET /me/dashboard`)
+### 6.3 [x] User dashboard (`GET /me/dashboard`)
 
 The reference impl's `DashboardController` returns the records the
 current user owns, can edit, or has recently modified — the data

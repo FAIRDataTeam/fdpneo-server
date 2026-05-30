@@ -73,6 +73,7 @@ dev = [
   "ruff>=0.6",
   "pyright>=1.1.380",
   "respx>=0.21",  # httpx mocking for OIDC tests
+  "aiosqlite>=0.20",  # in-memory async DB for unit tests that exercise SQL
 ]
 
 [project.scripts]

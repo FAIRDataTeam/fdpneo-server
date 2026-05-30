@@ -27,6 +27,7 @@ from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.identity.bootstrap import build_bootstrap_router
 from fdp.metadata.audit import AuditLog
+from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
@@ -133,6 +134,13 @@ def _build_shared_state(app: FastAPI) -> None:
     # from the cache.
     app.state.label_resolver = LabelResolver(adapter=app.state.triplestore)
 
+    # Dashboard service: SPARQL + audit-log + PDP composition. No state.
+    app.state.dashboard_service = DashboardService(
+        adapter=app.state.triplestore,
+        session_factory=app.state.session_factory,
+        pdp=app.state.pdp,
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -202,7 +210,7 @@ def create_app() -> FastAPI:
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
-    # /labels, /metrics, /data, /sparql, /spec, /expanded, /page, and
+    # /labels, /me, /metrics, /data, /sparql, /spec, /expanded, /page, and
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
@@ -227,6 +235,9 @@ def create_app() -> FastAPI:
         )
     )
     app.include_router(build_labels_router(resolver=app.state.label_resolver))
+    app.include_router(
+        build_dashboard_router(service=app.state.dashboard_service)
+    )
     app.include_router(
         build_metrics_router(session_factory=app.state.session_factory)
     )
