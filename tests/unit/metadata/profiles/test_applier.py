@@ -12,7 +12,7 @@ from pydantic import HttpUrl, PostgresDsn
 from rdflib import Graph, URIRef
 
 from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles import apply_profile, load_profile
+from fdp.metadata.profiles import apply_profile, load_profile, resolve_runtime_state
 from fdp.shared.errors import BadRequest, Conflict
 
 
@@ -144,6 +144,25 @@ async def test_apply_writes_schemas_then_offers_then_repository_seed(
 
 
 # --- already-initialized refusal ----------------------------------------
+
+
+@pytest.mark.unit
+def test_resolve_runtime_state_derives_offer_and_definitions_without_writes(
+    write_bundle: Callable[..., Path],
+) -> None:
+    # Regression: on restart the profile is already applied, so apply_profile is
+    # skipped. The runtime state (system-default offer IRI + resource-definition
+    # cache) must still be derivable from the profile alone — otherwise the
+    # offer-resolver fallback is unset and creating new records is default-denied.
+    profile = load_profile(write_bundle())
+
+    system_default_offer_iri, resource_definitions = resolve_runtime_state(
+        profile, settings=_settings()
+    )
+
+    assert system_default_offer_iri == "https://fdp.example/offers/system-default"
+    assert resource_definitions is not None
+    assert resource_definitions.root() is not None
 
 
 @pytest.mark.unit
