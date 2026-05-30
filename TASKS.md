@@ -140,6 +140,34 @@ References: architecture §10.3.
 
 References: architecture §6.2.
 
+### 2.6 [x] LDP read-extension endpoints (`/spec`, `/expanded`, `/page`)
+`metadata/openapi.py` already *documents* three read extensions per resource
+definition, but no runtime handler implements them — requests fall through to
+the catch-all `/{path:path}` LDP router and return 404/401. `fdp-client` needs
+at least `/spec` to render SHACL-driven create/edit forms (its task 7.5) and
+currently works around the missing `/expanded` / `/page` with SPARQL.
+
+- **`GET /{urlPrefix}/spec` (type-level) + `GET /spec` (root)** — return the SHACL
+  NodeShape graph that validates members of that type. **All the pieces already
+  exist:** shapes are stored at their CURIE-expanded class IRI (e.g.
+  `http://www.w3.org/ns/dcat#Catalog`, ~52 triples), `MetadataShapeProvider.fetch`
+  reads a shape graph, and the resource-definition cache maps each type → its
+  `schema_iri`. So: resolve type → `schema_iri` → fetch graph → content-negotiated
+  RDF, anonymous-readable. A *type-level* variant (no `{id}`) is what create forms
+  need, since no instance exists yet — the currently-documented `/{urlPrefix}/{id}/spec`
+  is instance-level only.
+- **`GET /{urlPrefix}/{id}/expanded`** — record + all `dct:isPartOf` ancestors.
+- **`GET /{urlPrefix}/page/{childPrefix}`** — paginated children listing. (The
+  client now lists via SPARQL `GRAPH ?g`; a real endpoint would remove that
+  workaround and the named-graph-name coupling.)
+
+Wire these as explicit routes registered **before** the `/{path:path}` catch-all
+so they aren't shadowed. `/spec` is the priority — it is the sole blocker for
+client task 7.5 (SHACL-driven forms); without it the client falls back to its
+config-driven `EntityForm`.
+
+References: `metadata/openapi.py` (already-documented paths), `metadata/shape_provider.py`, `metadata/profiles/registry.py` (resource-definition cache → `schema_iri`), architecture §10.
+
 ---
 
 ## Phase 3 — SPARQL endpoint

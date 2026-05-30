@@ -179,17 +179,26 @@ def _post_operation(rd: ResourceDefinition) -> dict[str, Any]:
     }
 
 
-def _spec_operation(rd: ResourceDefinition) -> dict[str, Any]:
+def _spec_operation(rd: ResourceDefinition, *, instance_level: bool) -> dict[str, Any]:
+    """Generate the ``GET .../spec`` operation.
+
+    Non-root resource definitions emit *two* paths: a type-level one
+    (no ``{id}``) used by create forms before an instance exists, and an
+    instance-level one (with ``{id}``) used to fetch the same shape from
+    an existing record's URL. Both return identical content; the dual
+    surface matches what runtime callers actually request.
+    """
+    suffix = "" if instance_level else "Type"
     return {
         "get": {
-            "operationId": f"get{rd.name}Spec",
+            "operationId": f"get{rd.name}{suffix}Spec",
             "summary": f"Get SHACL shape for {rd.name}",
             "description": (
                 f"Return the SHACL shape graph that validates {rd.name} "
                 f"instances ({rd.schema_iri})."
             ),
             "tags": [_tag_name(rd)],
-            "parameters": ([_id_param()] if not rd.is_root else []),
+            "parameters": ([_id_param()] if instance_level and not rd.is_root else []),
             "responses": _rdf_responses(),
         }
     }
@@ -237,6 +246,7 @@ def _page_operation(rd: ResourceDefinition) -> dict[str, Any]:
 def _emit_paths_for(rd: ResourceDefinition, paths: dict[str, Any]) -> None:
     """Add the per-RD path set to ``paths``."""
     ext = _rd_extension(rd)
+    type_spec_path: str | None = None
     if rd.is_root:
         crud_path = "/"
         spec_path = "/spec"
@@ -248,15 +258,22 @@ def _emit_paths_for(rd: ResourceDefinition, paths: dict[str, Any]) -> None:
         prefix = "/" + rd.url_prefix
         collection_path = prefix
         crud_path = f"{prefix}/{{id}}"
+        type_spec_path = f"{prefix}/spec"
         spec_path = f"{prefix}/{{id}}/spec"
         expanded_path = f"{prefix}/{{id}}/expanded"
         page_path = f"{prefix}/{{id}}/page/{{childPrefix}}"
         paths[collection_path] = {**_post_operation(rd), **ext}
         paths[crud_path] = {**_crud_operations(rd, with_id_param=True), **ext}
 
-    # Children-bearing types get /spec, /expanded, /page (the root may
-    # have no children, in which case /page is omitted).
-    paths[spec_path] = {**_spec_operation(rd), **ext}
+    # Type-level /spec (no {id}) — the surface the client uses to fetch
+    # a SHACL shape when no instance exists yet, e.g. on a create form.
+    # Root's /spec is already type-level since the root has no {id}.
+    if type_spec_path is not None:
+        paths[type_spec_path] = {
+            **_spec_operation(rd, instance_level=False),
+            **ext,
+        }
+    paths[spec_path] = {**_spec_operation(rd, instance_level=True), **ext}
     paths[expanded_path] = {**_expanded_operation(rd), **ext}
     if rd.children:
         paths[page_path] = {**_page_operation(rd), **ext}

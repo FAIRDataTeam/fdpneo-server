@@ -27,6 +27,7 @@ from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.identity.bootstrap import build_bootstrap_router
 from fdp.metadata.audit import AuditLog
+from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.ldp.router import build_ldp_router
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.profiles import (
@@ -195,7 +196,9 @@ def create_app() -> FastAPI:
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
-    # /metrics, /data, /sparql.
+    # /metrics, /data, /sparql, /spec, /expanded, /page, and the per-type
+    # /{prefix}/spec, /{prefix}/{id}/spec, /{prefix}/{id}/expanded,
+    # /{prefix}/{id}/page/{childPrefix} extension routes.
     @app.get("/healthz", tags=["internal"])
     async def healthz() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         """Liveness probe. Does not check downstream dependencies."""
@@ -233,6 +236,19 @@ def create_app() -> FastAPI:
         build_sparql_router(
             pdp=app.state.pdp,
             adapter=app.state.triplestore,
+        )
+    )
+    # LDP read-extensions (/spec, /expanded, /page) — registered AFTER
+    # the static routers above but BEFORE the LDP catch-all so they
+    # aren't shadowed by /{path:path}. The cache provider reads
+    # app.state.resource_definitions on every call, so a profile
+    # re-apply lights up the new types without a server restart.
+    app.include_router(
+        build_extensions_router(
+            repo=app.state.metadata_repository,
+            pdp=app.state.pdp,
+            cache_provider=lambda: app.state.resource_definitions,
+            base_url=str(settings.base_url),
         )
     )
     # LDP last — its /{path:path} catch-all matches every method/URL not
