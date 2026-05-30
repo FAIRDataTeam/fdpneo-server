@@ -248,7 +248,7 @@ async def test_get_settings_key_404_for_unknown_key(
 @pytest.mark.unit
 async def test_put_settings_requires_admin_role(session_factory: Any) -> None:
     repo = SettingsRepository(session_factory=session_factory)
-    app = _build_app(repo, ctx=_ctx(roles=frozenset({"fdp-steward"})))
+    app = _build_app(repo, ctx=_ctx(roles=frozenset({"steward"})))
     response = TestClient(app).put(
         "/settings/forms.autocomplete-sources", json={"sources": []}
     )
@@ -259,7 +259,7 @@ async def test_put_settings_requires_admin_role(session_factory: Any) -> None:
 @pytest.mark.unit
 async def test_put_settings_validates_against_schema(session_factory: Any) -> None:
     repo = SettingsRepository(session_factory=session_factory)
-    app = _build_app(repo, ctx=_ctx(roles=frozenset({"fdp-admin"})))
+    app = _build_app(repo, ctx=_ctx(roles=frozenset({"admin"})))
     response = TestClient(app).put(
         "/settings/forms.autocomplete-sources",
         json={"sources": [{"name": "x"}]},  # missing 'kind'
@@ -271,7 +271,7 @@ async def test_put_settings_validates_against_schema(session_factory: Any) -> No
 @pytest.mark.unit
 async def test_put_settings_writes_when_admin(session_factory: Any) -> None:
     repo = SettingsRepository(session_factory=session_factory)
-    app = _build_app(repo, ctx=_ctx(roles=frozenset({"fdp-admin"})))
+    app = _build_app(repo, ctx=_ctx(roles=frozenset({"admin"})))
     override = {
         "sources": [
             {
@@ -301,7 +301,7 @@ async def test_delete_settings_reverts_to_default(session_factory: Any) -> None:
         AutocompleteSources(sources=[AutocompleteSource(name="x", kind="inline")]),
         subject=None,
     )
-    app = _build_app(repo, ctx=_ctx(roles=frozenset({"fdp-admin"})))
+    app = _build_app(repo, ctx=_ctx(roles=frozenset({"admin"})))
     response = TestClient(app).delete("/settings/forms.autocomplete-sources")
     assert response.status_code == 204
     # Next read sees the default's "license" source again.
@@ -312,7 +312,7 @@ async def test_delete_settings_reverts_to_default(session_factory: Any) -> None:
 @pytest.mark.unit
 async def test_delete_settings_requires_admin(session_factory: Any) -> None:
     repo = SettingsRepository(session_factory=session_factory)
-    app = _build_app(repo, ctx=_ctx(roles=frozenset({"fdp-steward"})))
+    app = _build_app(repo, ctx=_ctx(roles=frozenset({"steward"})))
     assert (
         TestClient(app)
         .delete("/settings/forms.autocomplete-sources")

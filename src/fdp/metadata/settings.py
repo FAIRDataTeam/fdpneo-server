@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-_ADMIN_ROLE: Final = "fdp-admin"
+_ADMIN_ROLE: Final = "admin"
 
 
 # --- per-key Pydantic models ---------------------------------------------

@@ -404,7 +404,7 @@ def test_router_validates_limit_bounds() -> None:
 @pytest.mark.unit
 def test_router_rejects_as_admin_without_admin_role() -> None:
     """A non-admin caller passing ?as_admin=true gets 403."""
-    app = _build_app(_StubService(), ctx=_ctx(roles=frozenset({"fdp-steward"})))
+    app = _build_app(_StubService(), ctx=_ctx(roles=frozenset({"steward"})))
     response = TestClient(app).get("/me/dashboard?as_admin=true")
     assert response.status_code == 403
     assert response.json()["code"] == "fdp.forbidden"
@@ -413,7 +413,7 @@ def test_router_rejects_as_admin_without_admin_role() -> None:
 @pytest.mark.unit
 def test_router_accepts_as_admin_with_admin_role() -> None:
     stub = _StubService()
-    app = _build_app(stub, ctx=_ctx(roles=frozenset({"fdp-admin"})))
+    app = _build_app(stub, ctx=_ctx(roles=frozenset({"admin"})))
     response = TestClient(app).get("/me/dashboard?as_admin=true")
     assert response.status_code == 200
     assert stub.calls[0]["as_admin"] is True

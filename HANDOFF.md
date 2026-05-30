@@ -46,8 +46,8 @@ container start. **Dev-only — credentials are publicly known.**
 
 | user  | password | realm roles                     |
 |-------|----------|---------------------------------|
-| admin | admin    | `fdp-admin`, `fdp-steward`      |
-| alice | alice    | `fdp-steward`                   |
+| admin | admin    | `admin`, `steward`              |
+| alice | alice    | `steward`                       |
 | bob   | bob      | _(none — anonymous-equivalent)_ |
 
 OIDC settings for the FDP server against this realm:

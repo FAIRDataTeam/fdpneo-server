@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-_ADMIN_ROLE: Final = "fdp-admin"
+_ADMIN_ROLE: Final = "admin"
 
 _DEFAULT_OWNED_LIMIT: Final = 100
 _DEFAULT_RECENT_LIMIT: Final = 30
@@ -317,7 +317,7 @@ def build_dashboard_router(*, service: DashboardService) -> APIRouter:
     """Construct ``GET /me/dashboard``.
 
     Authentication is required (anonymous → 401). ``?as_admin=true``
-    requires the caller to hold the ``fdp-admin`` role; passing it
+    requires the caller to hold the ``admin`` role; passing it
     without the role surfaces a structured ``fdp.forbidden`` 403.
     """
     router = APIRouter(tags=["dashboard"])
