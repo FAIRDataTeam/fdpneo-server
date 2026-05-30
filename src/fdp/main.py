@@ -25,6 +25,7 @@ from fdp.access.router import build_sparql_router
 from fdp.config import get_settings
 from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
+from fdp.identity.bootstrap import build_bootstrap_router
 from fdp.metadata.audit import AuditLog
 from fdp.metadata.ldp.router import build_ldp_router
 from fdp.metadata.openapi import inject_resource_definition_paths
@@ -191,12 +192,18 @@ def create_app() -> FastAPI:
     # Route-registration order matters: the LDP router catches /{path:path}
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
-    # cannot serve as a consequence: /healthz, /metrics, /data, /sparql.
+    # cannot serve as a consequence: /healthz, /config, /metrics, /data, /sparql.
     @app.get("/healthz", tags=["internal"])
     async def healthz() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         """Liveness probe. Does not check downstream dependencies."""
         return {"status": "ok", "version": __version__}
 
+    app.include_router(
+        build_bootstrap_router(
+            settings=settings,
+            session_factory=app.state.session_factory,
+        )
+    )
     app.include_router(
         build_metrics_router(session_factory=app.state.session_factory)
     )

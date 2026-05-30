@@ -291,7 +291,7 @@ backing "My data" screens in the client.
 
 References: `DashboardService.java`, `DashboardItemDTO.java`.
 
-### 6.4 [ ] Bootstrap config (`GET /config`)
+### 6.4 [x] Bootstrap config (`GET /config`)
 
 The reference impl exposes `ConfigController` (`/api/v1/config`)
 returning `BootstrapConfigDTO` — the FDP's self-description that the
