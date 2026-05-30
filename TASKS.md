@@ -259,7 +259,7 @@ These four endpoints are the most visible gaps. Without them, the client
 can render lists and edit forms but cannot offer the kind of polish the
 existing FAIRDataPoint-client expects.
 
-### 6.1 [ ] Labels endpoint (`GET /labels`)
+### 6.1 [x] Labels endpoint (`GET /labels`)
 
 The reference impl exposes `LabelController` + `LabelService` (cache of
 IRI→human-readable label, populated from RDF graphs and remote
