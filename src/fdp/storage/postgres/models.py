@@ -34,6 +34,7 @@ def register_all_models() -> None:
     """
     import fdp.metadata.audit  # noqa: F401  # pyright: ignore[reportUnusedImport]
     import fdp.metadata.profiles.state  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    import fdp.metadata.settings  # noqa: F401  # pyright: ignore[reportUnusedImport]
     import fdp.metrics.repository  # noqa: F401  # pyright: ignore[reportUnusedImport]
     import fdp.policy.cache  # noqa: F401  # pyright: ignore[reportUnusedImport]
 

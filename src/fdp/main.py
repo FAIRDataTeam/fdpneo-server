@@ -27,6 +27,7 @@ from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.identity.bootstrap import build_bootstrap_router
 from fdp.metadata.audit import AuditLog
+from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.labels import LabelResolver, build_labels_router
@@ -40,6 +41,7 @@ from fdp.metadata.profiles import (
     resolve_runtime_state,
 )
 from fdp.metadata.repository import MetadataRepository
+from fdp.metadata.settings import SettingsRepository, build_settings_router
 from fdp.metadata.shacl import ShaclValidator
 from fdp.metadata.shape_provider import MetadataShapeProvider
 from fdp.metrics.api import build_metrics_router
@@ -141,6 +143,17 @@ def _build_shared_state(app: FastAPI) -> None:
         pdp=app.state.pdp,
     )
 
+    # Runtime settings repository + autocomplete service. Settings
+    # state lives in Postgres; the autocomplete service reads sources
+    # on every call so admin updates are visible without restart.
+    app.state.settings_repository = SettingsRepository(
+        session_factory=app.state.session_factory
+    )
+    app.state.autocomplete_service = AutocompleteService(
+        settings_repository=app.state.settings_repository,
+        adapter=app.state.triplestore,
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -210,7 +223,8 @@ def create_app() -> FastAPI:
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
-    # /labels, /me, /metrics, /data, /sparql, /spec, /expanded, /page, and
+    # /labels, /me, /metrics, /data, /sparql, /settings, /forms,
+    # /spec, /expanded, /page, and
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
@@ -237,6 +251,12 @@ def create_app() -> FastAPI:
     app.include_router(build_labels_router(resolver=app.state.label_resolver))
     app.include_router(
         build_dashboard_router(service=app.state.dashboard_service)
+    )
+    app.include_router(
+        build_settings_router(repository=app.state.settings_repository)
+    )
+    app.include_router(
+        build_autocomplete_router(service=app.state.autocomplete_service)
     )
     app.include_router(
         build_metrics_router(session_factory=app.state.session_factory)

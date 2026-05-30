@@ -278,7 +278,7 @@ vocabularies). The client uses this to render `dct:license` IRIs as
 References: `LabelService.java` (reference impl), architecture §10
 (public read surface).
 
-### 6.2 [ ] Form autocomplete (`GET /forms/autocomplete`)
+### 6.2 [x] Form autocomplete (`GET /forms/autocomplete`)
 
 The reference impl exposes `FormAutocompleteController` driving form
 widgets that let a curator pick a value from a managed list — e.g. pick
@@ -451,26 +451,26 @@ re-apply. Where the reference admin API adds genuine value is for things
 that change frequently (ping target list, search filter visibility,
 autocomplete sources) and shouldn't require touching the profile bundle.
 
-### 9.1 [ ] Settings storage and read API
+### 9.1 [x] Settings storage and read API
 
 Postgres table `runtime_settings(key, value_json, updated_by, updated_at)`.
 `GET /settings` returns the merged view (defaults from the profile,
 overlaid with runtime overrides). Public — the client reads it on every
 load.
 
-### 9.2 [ ] Settings update API (admin-only)
+### 9.2 [x] Settings update API (admin-only)
 
 `PUT /settings/<key>` with a JSON body. Validated against a Pydantic
 model per key. Audit-logged.
 
-### 9.3 [ ] Forms-autocomplete sources management
+### 9.3 [x] Forms-autocomplete sources management
 
 `GET/POST/PUT/DELETE /settings/forms/autocomplete-sources`. Each source
 declares its name, type (`inline | sparql | vocabulary-uri`), and the
 payload (the list of items, the SPARQL query, or the URI). Feeds Phase
 6.2.
 
-### 9.4 [ ] Search filter configuration
+### 9.4 [~] Search filter configuration
 
 `GET/PUT /settings/search/filters` — declare which filter dimensions are
 exposed on the search page, their labels, and their facet expansion.
