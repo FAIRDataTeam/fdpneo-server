@@ -11,6 +11,7 @@ dependencies (storage adapters, OIDC JWKS cache, event-bus subscribers).
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -30,6 +31,7 @@ from fdp.metadata.audit import AuditLog
 from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
+from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
 from fdp.metadata.openapi import inject_resource_definition_paths
@@ -50,8 +52,10 @@ from fdp.metrics.middleware import RequestObservationMiddleware
 from fdp.metrics.pipeline import MetricsPipeline
 from fdp.metrics.salt import SaltRotator
 from fdp.operational import build_info_router, build_readiness_router
+from fdp.policy.model import Action
 from fdp.policy.resolver import GraphBackedOfferResolver
 from fdp.policy.runtime import RequestScopedPDP
+from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.events import EventBus
 from fdp.shared.logging import configure_logging
@@ -169,8 +173,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.metrics_pipeline.start(app.state.event_bus)
     app.state.audit_log.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
-
-    # TODO: warm authorization cache for anonymous
+    await _warm_anonymous_authz_cache(app)
 
     try:
         yield
@@ -463,6 +466,63 @@ async def _publish_runtime_state(
             shapes_warmed=len(schema_iris),
             system_default_offer=system_default_offer_iri,
         )
+
+
+async def _warm_anonymous_authz_cache(app: FastAPI) -> None:
+    """Pre-populate the authz cache for anonymous READ on common targets.
+
+    The first anonymous request to a public resource otherwise pays a
+    cache-miss roundtrip (offer resolution + Postgres write) before
+    serving content. Warming a small set of high-traffic targets at
+    startup keeps that cost off the user's first page load.
+
+    Targets warmed:
+
+    * The FDP root (``settings.base_url``) — every anonymous client
+      lands here.
+    * Each non-root resource-definition container (``{base_url}/{prefix}``)
+      from the applied profile — these are the typed collection landing
+      pages the client navigates to.
+
+    Failures are logged and swallowed; a triple-store hiccup at
+    startup must not block the application coming up. The cost ceiling
+    is small: typical deployments have under 10 typed containers.
+    """
+    settings = get_settings()
+    anon_ctx = RequestContext.anonymous(trace_id="startup-warmup")
+
+    base = str(settings.base_url).rstrip("/")
+    targets: list[str] = [str(record_graph_uri(base + "/"))]
+    cache: ResourceDefinitionCache | None = getattr(
+        app.state, "resource_definitions", None
+    )
+    if cache is not None:
+        for rd in cache.all():
+            if not rd.is_root:
+                targets.append(str(record_graph_uri(f"{base}/{rd.url_prefix}")))
+
+    start = time.perf_counter()
+    warmed = 0
+    failed: list[str] = []
+    for iri in targets:
+        try:
+            await app.state.pdp.authorize(anon_ctx, Action.READ, iri)
+            warmed += 1
+        except Exception as err:
+            failed.append(iri)
+            log.warning(
+                "authz_warmup_target_failed",
+                resource=iri,
+                error=repr(err),
+            )
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    log.info(
+        "authz_warmup_completed",
+        targets=len(targets),
+        warmed=warmed,
+        failed=len(failed),
+        elapsed_ms=elapsed_ms,
+    )
 
 
 app = create_app()

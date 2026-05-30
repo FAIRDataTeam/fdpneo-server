@@ -169,32 +169,39 @@ class DashboardService:
     async def _read_owned(
         self, subject: str | None, limit: int
     ) -> list[DashboardItem]:
+        # Each OPTIONAL gets its own ``GRAPH ?gN`` binding so the
+        # enrichment lookups can find type and title in *any* named
+        # graph — not only the one carrying ``dct:creator``. Seed
+        # records typically split their content (creator, type) and
+        # their human label (title) across the record and meta graphs,
+        # so a single shared ``?g`` returned ``title: null`` for every
+        # owned item. Cross-graph cartesian products collapse to one
+        # item per IRI inside ``_select_to_items``.
+        creator_clause: str
         if subject is None:
             # ``as_admin`` path: enumerate every dct:creator. Bounded
             # by ``limit``; ordered by IRI for stability.
-            sparql = (
-                "SELECT ?iri ?type ?title WHERE {\n"
-                "  GRAPH ?g {\n"
-                "    ?iri <http://purl.org/dc/terms/creator> ?creator .\n"
-                "    OPTIONAL { ?iri a ?type }\n"
-                "    OPTIONAL { ?iri <http://purl.org/dc/terms/title> ?title }\n"
+            creator_clause = (
+                "  GRAPH ?g_creator {\n"
+                "    ?iri <http://purl.org/dc/terms/creator> ?creator\n"
                 "  }\n"
-                "} ORDER BY ?iri\n"
-                f"LIMIT {int(limit)}\n"
             )
         elif not is_safe_iri(subject):
             return []
         else:
-            sparql = (
-                "SELECT ?iri ?type ?title WHERE {\n"
-                "  GRAPH ?g {\n"
-                f"    ?iri <http://purl.org/dc/terms/creator> <{subject}> .\n"
-                "    OPTIONAL { ?iri a ?type }\n"
-                "    OPTIONAL { ?iri <http://purl.org/dc/terms/title> ?title }\n"
+            creator_clause = (
+                "  GRAPH ?g_creator {\n"
+                f"    ?iri <http://purl.org/dc/terms/creator> <{subject}>\n"
                 "  }\n"
-                "} ORDER BY ?iri\n"
-                f"LIMIT {int(limit)}\n"
             )
+        sparql = (
+            "SELECT ?iri ?type ?title WHERE {\n"
+            f"{creator_clause}"
+            "  OPTIONAL { GRAPH ?g_type { ?iri a ?type } }\n"
+            "  OPTIONAL { GRAPH ?g_title { ?iri <http://purl.org/dc/terms/title> ?title } }\n"
+            "} ORDER BY ?iri\n"
+            f"LIMIT {int(limit)}\n"
+        )
         return _select_to_items(await self._adapter.query(sparql))
 
     # --- recent (Postgres audit) -----------------------------------------
@@ -243,7 +250,13 @@ class DashboardService:
     # --- enrich (SPARQL VALUES on an IRI list) ---------------------------
 
     async def _enrich(self, iris: list[str]) -> list[DashboardItem]:
-        """Resolve ``rdf:type`` and ``dct:title`` for each IRI."""
+        """Resolve ``rdf:type`` and ``dct:title`` for each IRI.
+
+        Each OPTIONAL gets its own ``GRAPH ?gN`` so type and title can
+        live in different named graphs (record vs meta-metadata, for
+        instance) and still both surface. Duplicate rows from the
+        cross-graph join are collapsed in :func:`_select_to_items`.
+        """
         safe = [iri for iri in iris if is_safe_iri(iri)]
         if not safe:
             return [DashboardItem(record_iri=iri) for iri in iris]
@@ -251,10 +264,8 @@ class DashboardService:
         sparql = (
             "SELECT ?iri ?type ?title WHERE {\n"
             f"  VALUES ?iri {{ {values_block} }}\n"
-            "  GRAPH ?g {\n"
-            "    OPTIONAL { ?iri a ?type }\n"
-            "    OPTIONAL { ?iri <http://purl.org/dc/terms/title> ?title }\n"
-            "  }\n"
+            "  OPTIONAL { GRAPH ?g_type { ?iri a ?type } }\n"
+            "  OPTIONAL { GRAPH ?g_title { ?iri <http://purl.org/dc/terms/title> ?title } }\n"
             "}\n"
         )
         items_by_iri = {

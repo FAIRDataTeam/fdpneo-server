@@ -539,7 +539,7 @@ grant works but requires per-client Keycloak config).
   match populates `RequestContext` with the owner's identity.
 - Self-service CRUD under `/me/api-keys`. Admins can revoke any key.
 
-### 11.2 [ ] Anonymous read auth-cache warming (already TODO in main.py:142)
+### 11.2 [x] Anonymous read auth-cache warming (already TODO in main.py:142)
 
 Pre-populate `authz_index` for the anonymous subject at startup so the
 first anonymous read does not pay a cache-miss roundtrip. Currently a
