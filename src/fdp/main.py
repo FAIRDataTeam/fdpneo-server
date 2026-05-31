@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 import structlog
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from fdp import __version__
@@ -36,9 +37,11 @@ from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.profiles import (
+    RD_SHAPE_IRI,
     ProfileStateRepository,
     ResourceDefinitionCache,
     apply_profile,
+    build_cache_from_repository,
     load_profile,
     resolve_runtime_state,
 )
@@ -119,9 +122,7 @@ def _build_shared_state(app: FastAPI) -> None:
     # store (architecture §5.3). Bootstrap-warming happens after the
     # profile is applied so the validator's parsed-shape cache is
     # populated against the IRIs the profile declares.
-    app.state.shacl_validator = ShaclValidator(
-        MetadataShapeProvider(app.state.metadata_repository)
-    )
+    app.state.shacl_validator = ShaclValidator(MetadataShapeProvider(app.state.metadata_repository))
 
     # GeoLite2 lookup degrades to no-op if the DB is missing — safe for dev.
     app.state.geo = open_geo_lookup(settings.metrics.geoip_database_path)
@@ -150,9 +151,7 @@ def _build_shared_state(app: FastAPI) -> None:
     # Runtime settings repository + autocomplete service. Settings
     # state lives in Postgres; the autocomplete service reads sources
     # on every call so admin updates are visible without restart.
-    app.state.settings_repository = SettingsRepository(
-        session_factory=app.state.session_factory
-    )
+    app.state.settings_repository = SettingsRepository(session_factory=app.state.session_factory)
     app.state.autocomplete_service = AutocompleteService(
         settings_repository=app.state.settings_repository,
         adapter=app.state.triplestore,
@@ -221,13 +220,29 @@ def create_app() -> FastAPI:
         RequestObservationMiddleware,
         bus_provider=lambda: app.state.event_bus,
     )
+    # CORS must wrap everything else (outermost) so it can answer the browser's
+    # preflight OPTIONS directly — before auth — and so the Access-Control-*
+    # headers are attached even to error responses from the inner middleware.
+    # Starlette's add_middleware inserts at the head of the stack, so the LAST
+    # add_middleware call is the OUTERMOST layer; hence CORS is added last.
+    # Without this, the SPA (a different origin) is blocked on every write and
+    # reports the server as unreachable. See fdp.config.CORSSettings.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors.allow_origins,
+        allow_credentials=settings.cors.allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["ETag", "Location", "Link"],
+    )
 
     # Route-registration order matters: the LDP router catches /{path:path}
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
     # /labels, /me, /metrics, /data, /sparql, /settings, /forms,
-    # /spec, /expanded, /page, and
+    # /spec, /expanded, /page, /resource-definitions (the runtime
+    # resource-definition catalog + admin surface — ADR-0009), and
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
@@ -252,18 +267,10 @@ def create_app() -> FastAPI:
         )
     )
     app.include_router(build_labels_router(resolver=app.state.label_resolver))
-    app.include_router(
-        build_dashboard_router(service=app.state.dashboard_service)
-    )
-    app.include_router(
-        build_settings_router(repository=app.state.settings_repository)
-    )
-    app.include_router(
-        build_autocomplete_router(service=app.state.autocomplete_service)
-    )
-    app.include_router(
-        build_metrics_router(session_factory=app.state.session_factory)
-    )
+    app.include_router(build_dashboard_router(service=app.state.dashboard_service))
+    app.include_router(build_settings_router(repository=app.state.settings_repository))
+    app.include_router(build_autocomplete_router(service=app.state.autocomplete_service))
+    app.include_router(build_metrics_router(session_factory=app.state.session_factory))
     app.include_router(
         build_data_router(
             repository=app.state.metadata_repository,
@@ -335,9 +342,7 @@ def _install_openapi(app: FastAPI) -> None:
             description=app.description,
             routes=app.routes,
         )
-        cache: ResourceDefinitionCache | None = getattr(
-            app.state, "resource_definitions", None
-        )
+        cache: ResourceDefinitionCache | None = getattr(app.state, "resource_definitions", None)
         if cache is not None:
             inject_resource_definition_paths(spec, cache)
         app.openapi_schema = spec
@@ -406,9 +411,20 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
                 reason="already_applied",
                 profile=profile.name,
             )
-            system_default_offer_iri, resource_definitions = resolve_runtime_state(
+            # The resource-definition cache is a projection of the triple
+            # store (ADR-0009), so rebuild it from the RD records written at
+            # bootstrap — this is what makes runtime-added types survive a
+            # restart. Fall back to the manifest-derived cache only if the
+            # store has no RD records (a deployment bootstrapped before this
+            # feature shipped). The system-default offer IRI stays a manifest
+            # concept.
+            system_default_offer_iri, manifest_cache = resolve_runtime_state(
                 profile, settings=settings
             )
+            store_cache = await build_cache_from_repository(
+                app.state.triplestore, base_url=str(settings.base_url)
+            )
+            resource_definitions = store_cache if store_cache.all() else manifest_cache
             await _publish_runtime_state(
                 app, profile, system_default_offer_iri, resource_definitions
             )
@@ -450,7 +466,10 @@ async def _publish_runtime_state(
     if resource_definitions is not None:
         app.state.resource_definitions = resource_definitions
         app.openapi_schema = None  # type: ignore[assignment]
-        schema_iris = sorted({rd.schema_iri for rd in resource_definitions.all()})
+        # Warm the per-type instance shapes plus the predefined RD shape —
+        # the latter so admin writes of resource definitions validate without
+        # a first-write triple-store roundtrip (ADR-0009).
+        schema_iris = sorted({rd.schema_iri for rd in resource_definitions.all()} | {RD_SHAPE_IRI})
         try:
             await app.state.shacl_validator.bootstrap(schema_iris)
         except Exception as err:
@@ -493,9 +512,7 @@ async def _warm_anonymous_authz_cache(app: FastAPI) -> None:
 
     base = str(settings.base_url).rstrip("/")
     targets: list[str] = [str(record_graph_uri(base + "/"))]
-    cache: ResourceDefinitionCache | None = getattr(
-        app.state, "resource_definitions", None
-    )
+    cache: ResourceDefinitionCache | None = getattr(app.state, "resource_definitions", None)
     if cache is not None:
         for rd in cache.all():
             if not rd.is_root:

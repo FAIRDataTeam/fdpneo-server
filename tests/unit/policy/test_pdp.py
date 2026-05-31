@@ -242,6 +242,30 @@ async def test_authorized_graphs_is_scoped_to_subject_and_action() -> None:
     assert alice_modify == set()
 
 
+@pytest.mark.unit
+async def test_authorized_graphs_excludes_internal_graphs() -> None:
+    # Even when an internal graph (a resource-definition record, ADR-0009)
+    # is granted READ — e.g. so the client can fetch the type catalog over
+    # REST — it must never enter the SPARQL projection. The exclusion is
+    # structural in authorized_graphs, independent of what the cache holds.
+    rd_iri = "http://localhost:8000/resource-definitions/catalog"
+    meta_iri = RESOURCE + "/meta"
+    pdp, _cache, _ = _pdp(
+        offers={
+            RESOURCE: _permitting_offer(),
+            rd_iri: _permitting_offer(),
+            meta_iri: _permitting_offer(),
+        }
+    )
+    ctx = _ctx(subject=ALICE)
+    await pdp.authorize(ctx, Action.READ, RESOURCE)
+    await pdp.authorize(ctx, Action.READ, rd_iri)
+    await pdp.authorize(ctx, Action.READ, meta_iri)
+
+    # All three are cached as PERMIT, but only the public record is projected.
+    assert await pdp.authorized_graphs(ctx, Action.READ) == {RESOURCE}
+
+
 # --- invalidation ---------------------------------------------------------
 
 

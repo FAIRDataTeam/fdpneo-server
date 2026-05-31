@@ -16,6 +16,7 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0006](0006-odrl-profile-permission-prohibition.md) | ODRL profile: Permissions and Prohibitions | Accepted |
 | [0007](0007-one-graph-per-record.md) | One named graph per metadata record | Accepted |
 | [0008](0008-full-ldp-with-patch.md) | Full LDP implementation including PATCH | Accepted |
+| [0009](0009-runtime-resource-definitions.md) | Runtime-mutable resource definitions stored as RDF | Accepted |
 
 ## Format
 

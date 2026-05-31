@@ -40,15 +40,23 @@ from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.profiles.iri import IRIExpander
+from fdp.metadata.profiles.rd_records import (
+    RD_SHAPE_IRI,
+    predefined_shape_graph,
+    rd_record_slug,
+    record_to_graph,
+)
 from fdp.metadata.profiles.registry import (
     ResourceDefinitionCache,
     build_cache_from_manifest,
+    records_from_manifest,
 )
 from fdp.metadata.profiles.validator import (
     ValidationReport,
     validate_profile,
 )
 from fdp.shared.errors import BadRequest, Conflict, FDPError
+from fdp.shared.graphs import resource_definition_graph_uri
 from fdp.shared.namespaces import DCT, LDP, ODRL
 
 if TYPE_CHECKING:
@@ -94,6 +102,8 @@ class ApplyReport:
 
     schemas_written: list[str] = field(default_factory=list)
     offers_written: list[str] = field(default_factory=list)
+    rd_shape_iri: str | None = None
+    resource_definition_records: list[str] = field(default_factory=list)
     repository_iri: str | None = None
     seed_records_written: list[str] = field(default_factory=list)
     resource_definitions: ResourceDefinitionCache | None = None
@@ -105,6 +115,8 @@ class ApplyReport:
         return (
             len(self.schemas_written)
             + len(self.offers_written)
+            + (1 if self.rd_shape_iri else 0)
+            + len(self.resource_definition_records)
             + (1 if self.repository_iri else 0)
             + len(self.seed_records_written)
         )
@@ -159,6 +171,29 @@ async def apply_profile(
             offer_iris[offer.entry.id] = iri
             report.offers_written.append(iri)
             written.append(iri)
+
+        # 2a. Resource-definition records (ADR-0009). The predefined RD SHACL
+        #     shape (server-owned, fixed IRI) is stored so the validator can
+        #     resolve it, then each manifest resource definition is written as
+        #     an RDF record under the reserved resource-definitions namespace.
+        #     These are the runtime source of truth; the in-memory cache below
+        #     is a projection (task #3 rebuilds it from these records).
+        if profile.manifest.resource_definitions:
+            await repository.put_graph(RD_SHAPE_IRI, predefined_shape_graph(), subject=None)
+            report.rd_shape_iri = RD_SHAPE_IRI
+            written.append(RD_SHAPE_IRI)
+            records = records_from_manifest(
+                profile.manifest.resource_definitions, expander=expander
+            )
+            for record in records:
+                iri = str(
+                    resource_definition_graph_uri(
+                        expander.base_url, rd_record_slug(record.url_prefix, record.name)
+                    )
+                )
+                await repository.put_graph(iri, record_to_graph(record, iri), subject=None)
+                report.resource_definition_records.append(iri)
+                written.append(iri)
 
         # 3. Resource-definition cache — derived from the manifest, then
         #    handed to callers via ApplyReport for installation on app.state.
@@ -274,8 +309,7 @@ def _bad_validation(report: ValidationReport) -> BadRequest:
         "profile failed structural validation",
         details={
             "issues": [
-                {"where": i.where, "code": i.code, "message": i.message}
-                for i in report.issues
+                {"where": i.where, "code": i.code, "message": i.message} for i in report.issues
             ]
         },
     )

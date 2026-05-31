@@ -201,18 +201,24 @@ async def test_apply_writes_graphs_and_marker(
             settings=settings,
         )
 
-    assert report.total_written == 3
+    # schema + offer + RD shape + 1 RD record + Repository seed (ADR-0009).
+    assert report.total_written == 5
 
-    # Triple store: each of the three named graphs has triples.
+    # Triple store: each named graph has triples.
     schema_iri = "http://www.w3.org/ns/dcat#Catalog"
     # Offer IRI is the one declared inside the TTL file (intrinsic).
     offer_iri = "http://example.org/offers/public"
     # Repository seed lives at the API root (the configured base_url).
     repo_iri = str(settings.base_url).rstrip("/")
-    for iri in (schema_iri, offer_iri, repo_iri):
+    # The predefined RD shape and the root RD record were written too.
+    rd_shape_iri = "https://w3id.org/fdp/o#ResourceDefinitionShape"
+    rd_record_iri = f"{repo_iri}/resource-definitions/repository"
+    for iri in (schema_iri, offer_iri, repo_iri, rd_shape_iri, rd_record_iri):
         assert await adapter.ask(f"ASK {{ GRAPH <{iri}> {{ ?s ?p ?o }} }}") is True
 
     assert report.repository_iri == repo_iri
+    assert report.rd_shape_iri == rd_shape_iri
+    assert report.resource_definition_records == [rd_record_iri]
     assert report.resource_definitions is not None
     assert report.resource_definitions.root() is not None
 
@@ -291,4 +297,5 @@ async def test_force_clear_then_apply_succeeds(
             settings=settings,
             force=True,
         )
-    assert report.total_written == 3
+    # schema + offer + RD shape + 1 RD record + Repository seed (ADR-0009).
+    assert report.total_written == 5

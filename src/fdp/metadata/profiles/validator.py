@@ -120,6 +120,7 @@ def _check_unique_ids(profile: DeploymentProfile, report: ValidationReport) -> N
             message="at most one offer may set isSystemDefault: true",
         )
 
+
 def _check_shapes_parse(profile: DeploymentProfile, report: ValidationReport) -> None:
     """Run pySHACL against each shape graph with an empty data graph.
 
@@ -203,9 +204,7 @@ def _check_offers_conform(profile: DeploymentProfile, report: ValidationReport) 
             )
 
 
-def _check_resource_definitions(
-    profile: DeploymentProfile, report: ValidationReport
-) -> None:
+def _check_resource_definitions(profile: DeploymentProfile, report: ValidationReport) -> None:
     """Structural checks for the ``resourceDefinitions[]`` block.
 
     Skipped when the manifest declares no resource definitions — minimal
@@ -221,7 +220,7 @@ def _check_resource_definitions(
         report.add(
             where="resourceDefinitions",
             code="rd_missing_root",
-            message="resourceDefinitions must include exactly one entry with urlPrefix: \"\"",
+            message='resourceDefinitions must include exactly one entry with urlPrefix: ""',
         )
     elif len(roots) > 1:
         for i, rd in enumerate(rds):
@@ -230,7 +229,7 @@ def _check_resource_definitions(
                     where=f"resourceDefinitions[{i}]",
                     code="rd_multiple_roots",
                     message=(
-                        f"multiple resourceDefinitions declare urlPrefix \"\"; "
+                        f'multiple resourceDefinitions declare urlPrefix ""; '
                         f"first was {roots[0].name}, also: {rd.name}"
                     ),
                 )
@@ -278,9 +277,7 @@ def _check_resource_definitions(
                 )
 
 
-def _check_seed_records_validate(
-    profile: DeploymentProfile, report: ValidationReport
-) -> None:
+def _check_seed_records_validate(profile: DeploymentProfile, report: ValidationReport) -> None:
     schemas_by_id = {s.entry.id: s for s in profile.schemas}
     for i, record in enumerate(profile.seed_records):
         schema = schemas_by_id.get(record.entry.kind)
@@ -318,8 +315,7 @@ def _check_seed_records_validate(
                 where=f"seedRecords[{i}]",
                 code="seed_record_does_not_conform",
                 message=(
-                    f"seed record {record.entry.id} does not conform to schema "
-                    f"{record.entry.kind}"
+                    f"seed record {record.entry.id} does not conform to schema {record.entry.kind}"
                 ),
             )
 

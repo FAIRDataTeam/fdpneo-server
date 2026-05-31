@@ -1,11 +1,14 @@
 """In-memory snapshot of the applied profile's resource definitions.
 
 Mirrors the reference implementation's ``ResourceDefinitionService`` +
-``ResourceDefinitionCache`` (Java/Spring). One difference: our cache is
-populated at apply-time from the parsed profile manifest, not stored
-in Postgres as its own table. Live mutation (admin adds an Ontology
-type at runtime) is out of v1 scope; a future increment can persist
-the cache and add an admin REST surface.
+``ResourceDefinitionCache`` (Java/Spring). The cache is a *projection*:
+:func:`build_cache_from_manifest` builds it from the profile manifest at
+bootstrap, and :func:`fdp.metadata.profiles.rd_service.build_cache_from_repository`
+rebuilds it from the resource-definition records stored in the triple store
+(the runtime source of truth, ADR-0009). Both funnel through
+:func:`resolve_cache`. Runtime mutation (admin adds an Ontology type) swaps a
+freshly rebuilt cache onto ``app.state``; the cache object itself stays
+immutable.
 
 Two roles:
 
@@ -31,6 +34,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from fdp.metadata.profiles.iri import IRIExpander
+from fdp.metadata.profiles.rd_records import ChildLinkRecord, ResourceDefinitionRecord
 
 if TYPE_CHECKING:
     from fdp.metadata.profiles.manifest import ResourceDefinitionEntry
@@ -87,9 +91,7 @@ class ResourceDefinitionCache:
     ) -> None:
         ordered = tuple(items)
         self._items: tuple[ResourceDefinition, ...] = ordered
-        self._by_prefix: dict[str, ResourceDefinition] = {
-            rd.url_prefix: rd for rd in ordered
-        }
+        self._by_prefix: dict[str, ResourceDefinition] = {rd.url_prefix: rd for rd in ordered}
         self._base_url = base_url.rstrip("/")
 
     # --- read accessors ---------------------------------------------------
@@ -184,6 +186,80 @@ class ResourceDefinitionCache:
 # --- factory --------------------------------------------------------------
 
 
+def resolve_cache(
+    records: Iterable[ResourceDefinitionRecord],
+    *,
+    base_url: str,
+) -> ResourceDefinitionCache:
+    """Resolve unresolved RD records into a :class:`ResourceDefinitionCache`.
+
+    Pure. The cross-reference step turns each child link's *target prefix*
+    into the target definition's name and schema IRI, so cache readers never
+    have to look anything up. Shared by both the manifest path
+    (:func:`build_cache_from_manifest`) and the triple-store path
+    (:func:`fdp.metadata.profiles.rd_service.build_cache_from_repository`),
+    which is why it takes already-expanded :class:`ResourceDefinitionRecord`
+    rather than manifest entries or RDF.
+    """
+    records_list = list(records)
+    name_by_prefix: dict[str, str] = {r.url_prefix: r.name for r in records_list}
+    schema_by_prefix: dict[str, str] = {r.url_prefix: r.schema_iri for r in records_list}
+
+    items: list[ResourceDefinition] = []
+    for record in records_list:
+        children = tuple(
+            ChildLinkInfo(
+                relation_uri=link.relation_uri,
+                target_prefix=link.target_prefix,
+                target_name=name_by_prefix.get(link.target_prefix, link.target_prefix),
+                target_schema_iri=schema_by_prefix.get(link.target_prefix, ""),
+                title=link.title,
+                tags_uri=link.tags_uri,
+            )
+            for link in record.children
+        )
+        items.append(
+            ResourceDefinition(
+                url_prefix=record.url_prefix,
+                name=record.name,
+                schema_iri=record.schema_iri,
+                children=children,
+            )
+        )
+
+    return ResourceDefinitionCache(items, base_url=base_url)
+
+
+def records_from_manifest(
+    entries: Iterable[ResourceDefinitionEntry],
+    *,
+    expander: IRIExpander,
+) -> list[ResourceDefinitionRecord]:
+    """Expand manifest entries (CURIEs) into unresolved RD records (IRIs).
+
+    The single conversion point from the profile manifest's edge model to
+    the stored-record domain model; the bootstrap applier writes these to
+    the triple store and :func:`build_cache_from_manifest` resolves them.
+    """
+    return [
+        ResourceDefinitionRecord(
+            url_prefix=entry.url_prefix,
+            name=entry.name,
+            schema_iri=expander.schema_iri(entry.schema_id),
+            children=tuple(
+                ChildLinkRecord(
+                    relation_uri=expander.schema_iri(link.relation_uri),
+                    target_prefix=link.target,
+                    title=link.title,
+                    tags_uri=link.tags_uri,
+                )
+                for link in entry.children
+            ),
+        )
+        for entry in entries
+    ]
+
+
 def build_cache_from_manifest(
     entries: Iterable[ResourceDefinitionEntry],
     *,
@@ -191,42 +267,14 @@ def build_cache_from_manifest(
 ) -> ResourceDefinitionCache:
     """Translate manifest entries into a :class:`ResourceDefinitionCache`.
 
-    CURIE-expansion happens here (schemas and child relation URIs);
-    cross-reference resolution (``children[].target`` → target
-    definition's name/schema) happens here too, so cache readers never
-    have to look back at the manifest. The validator (sub-task 15a)
-    already enforces that every reference resolves, so we can trust
-    the lookup.
+    Thin composition of :func:`records_from_manifest` (CURIE expansion) and
+    :func:`resolve_cache` (cross-reference resolution). The validator
+    already enforces that every reference resolves, so the lookup is safe.
     """
-    entries_list = list(entries)
-    name_by_prefix: dict[str, str] = {e.url_prefix: e.name for e in entries_list}
-    schema_by_prefix: dict[str, str] = {
-        e.url_prefix: expander.schema_iri(e.schema_id) for e in entries_list
-    }
-
-    items: list[ResourceDefinition] = []
-    for entry in entries_list:
-        children = tuple(
-            ChildLinkInfo(
-                relation_uri=expander.schema_iri(link.relation_uri),
-                target_prefix=link.target,
-                target_name=name_by_prefix.get(link.target, link.target),
-                target_schema_iri=schema_by_prefix.get(link.target, ""),
-                title=link.title,
-                tags_uri=link.tags_uri,
-            )
-            for link in entry.children
-        )
-        items.append(
-            ResourceDefinition(
-                url_prefix=entry.url_prefix,
-                name=entry.name,
-                schema_iri=schema_by_prefix[entry.url_prefix],
-                children=children,
-            )
-        )
-
-    return ResourceDefinitionCache(items, base_url=expander.base_url)
+    return resolve_cache(
+        records_from_manifest(entries, expander=expander),
+        base_url=expander.base_url,
+    )
 
 
 __all__ = [
@@ -234,4 +282,6 @@ __all__ = [
     "ResourceDefinition",
     "ResourceDefinitionCache",
     "build_cache_from_manifest",
+    "records_from_manifest",
+    "resolve_cache",
 ]

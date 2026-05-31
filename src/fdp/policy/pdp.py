@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Protocol
 from fdp.policy.cache import CacheRepository, compute_subject_key
 from fdp.policy.evaluator import evaluate
 from fdp.policy.model import Action, Decision, Outcome
+from fdp.shared.graphs import is_internal_graph_uri
 
 if TYPE_CHECKING:
     from fdp.policy.model import Offer
@@ -98,9 +99,20 @@ class PDP:
         This is the bulk lookup the SPARQL endpoint uses to inject
         ``FROM NAMED`` clauses. The cache must be warmed for the subject
         first — entries the PDP has never evaluated do not appear here.
+
+        Internal graphs (meta-metadata, audit, resource-definition records —
+        see :func:`fdp.shared.graphs.is_internal_graph_uri`) are stripped
+        here regardless of cache contents. This is the single structural
+        guarantee that FDP machinery never enters a public knowledge-graph
+        query (ADR-0009): even if a resource definition is granted public
+        ``read`` so the client can fetch it over REST, it must not surface as
+        a graph in a SPARQL projection.
         """
         subject_key = compute_subject_key(ctx)
-        return await self._cache.authorized_resources(subject_key=subject_key, action=action.value)
+        permitted = await self._cache.authorized_resources(
+            subject_key=subject_key, action=action.value
+        )
+        return {g for g in permitted if not is_internal_graph_uri(g)}
 
     async def invalidate_resource(self, resource_iri: str) -> int:
         """Drop every cached decision against ``resource_iri``."""

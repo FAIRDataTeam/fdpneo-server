@@ -27,7 +27,6 @@ from rdflib import Graph
 
 from fdp.shared.errors import BadRequest
 
-
 # --- manifest models -------------------------------------------------------
 
 
@@ -233,8 +232,7 @@ def load_profile(bundle_root: Path | str) -> DeploymentProfile:
     if manifest.meta_metadata_schema is not None:
         meta_schema_graph = _load_turtle(root / manifest.meta_metadata_schema.path)
     offers = tuple(
-        LoadedOffer(entry=entry, graph=_load_turtle(root / entry.path))
-        for entry in manifest.offers
+        LoadedOffer(entry=entry, graph=_load_turtle(root / entry.path)) for entry in manifest.offers
     )
     seed_records = tuple(
         LoadedSeedRecord(entry=entry, graph=_load_turtle(root / entry.path))

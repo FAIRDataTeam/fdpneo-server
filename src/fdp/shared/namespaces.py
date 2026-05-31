@@ -39,6 +39,40 @@ XSD = Namespace("http://www.w3.org/2001/XMLSchema#")
 FDP_DEFAULT = Namespace("https://w3id.org/fdp/o#")
 """Fallback ``fdp:`` namespace when no settings override is configured."""
 
+# --- FDP ontology terms ----------------------------------------------------
+#
+# These are *fixed* vocabulary terms in the published FDP ontology, NOT
+# deployment-configurable. A deployment may rebrand the namespace it mints
+# record/schema IRIs in (``fdp_namespace``), but the ontology terms the FDP
+# itself stamps onto its own machinery records — resource definitions and
+# their child links (ADR-009) — always live at ``https://w3id.org/fdp/o#``,
+# the same way ``META_SHAPE_IRI`` does for meta-metadata. Keeping them here
+# makes the registry the single source of truth for the vocabulary.
+
+FDP_RESOURCE_DEFINITION = FDP_DEFAULT["ResourceDefinition"]
+"""``rdf:type`` of a resource-definition record."""
+
+FDP_URL_PREFIX = FDP_DEFAULT["urlPrefix"]
+"""Route segment a resource definition is exposed under (``""`` for root)."""
+
+FDP_NAME = FDP_DEFAULT["name"]
+"""Type name — drives OpenAPI tags and operation ids."""
+
+FDP_CHILD_LINK = FDP_DEFAULT["childLink"]
+"""Links a resource definition to a child-link node."""
+
+FDP_RELATION_URI = FDP_DEFAULT["relationUri"]
+"""Predicate a parent uses to point at members of the target type."""
+
+FDP_CHILD_TARGET = FDP_DEFAULT["childTarget"]
+"""``urlPrefix`` of the target resource definition of a child link."""
+
+FDP_CHILD_TITLE = FDP_DEFAULT["childTitle"]
+"""Human label rendered in the child-listing endpoint."""
+
+FDP_CHILD_TAGS_URI = FDP_DEFAULT["childTagsUri"]
+"""Optional predicate naming the tag vocabulary for a child listing."""
+
 PREFIXES: Mapping[str, Namespace] = MappingProxyType(
     {
         "dcat": DCAT,
@@ -78,7 +112,15 @@ def bind_all(graph: Graph, *, settings: Settings | None = None) -> None:
 __all__ = [
     "DCAT",
     "DCT",
+    "FDP_CHILD_LINK",
+    "FDP_CHILD_TAGS_URI",
+    "FDP_CHILD_TARGET",
+    "FDP_CHILD_TITLE",
     "FDP_DEFAULT",
+    "FDP_NAME",
+    "FDP_RELATION_URI",
+    "FDP_RESOURCE_DEFINITION",
+    "FDP_URL_PREFIX",
     "FOAF",
     "LDP",
     "ODRL",

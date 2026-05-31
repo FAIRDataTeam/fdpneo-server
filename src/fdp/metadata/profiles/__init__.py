@@ -36,11 +36,29 @@ from fdp.metadata.profiles.manifest import (
     SeedRecord,
     load_profile,
 )
+from fdp.metadata.profiles.rd_records import (
+    RD_SHAPE_IRI,
+    ChildLinkRecord,
+    ResourceDefinitionParseError,
+    ResourceDefinitionRecord,
+    predefined_shape_graph,
+    rd_record_slug,
+    record_from_graph,
+    record_to_graph,
+)
+from fdp.metadata.profiles.rd_service import (
+    ResourceDefinitionService,
+    build_cache_from_repository,
+    list_definition_iris,
+    load_definition_records,
+)
 from fdp.metadata.profiles.registry import (
     ChildLinkInfo,
     ResourceDefinition,
     ResourceDefinitionCache,
     build_cache_from_manifest,
+    records_from_manifest,
+    resolve_cache,
 )
 from fdp.metadata.profiles.state import (
     ProfileAppliedRow,
@@ -53,10 +71,12 @@ from fdp.metadata.profiles.validator import (
 )
 
 __all__ = [
+    "RD_SHAPE_IRI",
     "ApplyError",
     "ApplyReport",
     "ChildLink",
     "ChildLinkInfo",
+    "ChildLinkRecord",
     "DeploymentProfile",
     "IRIExpander",
     "OfferEntry",
@@ -67,13 +87,25 @@ __all__ = [
     "ResourceDefinition",
     "ResourceDefinitionCache",
     "ResourceDefinitionEntry",
+    "ResourceDefinitionParseError",
+    "ResourceDefinitionRecord",
+    "ResourceDefinitionService",
     "SchemaEntry",
     "SeedRecord",
     "ValidationIssue",
     "ValidationReport",
     "apply_profile",
     "build_cache_from_manifest",
+    "build_cache_from_repository",
+    "list_definition_iris",
+    "load_definition_records",
     "load_profile",
+    "predefined_shape_graph",
+    "rd_record_slug",
+    "record_from_graph",
+    "record_to_graph",
+    "records_from_manifest",
+    "resolve_cache",
     "resolve_runtime_state",
     "validate_profile",
 ]

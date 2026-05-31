@@ -128,6 +128,8 @@ Vendor-specific capabilities beyond SPARQL 1.1 Protocol (GraphDB repository mana
 
 A fixed component of the architecture. PostgreSQL 16+ stores everything operational: aggregated metrics, background-job state, the materialized authorization index used by the policy decision point, OIDC session bookkeeping, and an audit log of authorization decisions. None of this is part of the FDP's knowledge graph; the separation is enforced by design, so the triple store remains a pure metadata repository that can be dumped or migrated without operational noise.
 
+The line is "is it metadata describing the repository's content or structure?" versus "is it runtime bookkeeping?". The triple store holds the knowledge graph **and** the FDP's own RDF configuration records — SHACL schemas, ODRL Offers, and resource definitions (the typed-resource registry; see [Section 12](#12-deployment-profiles) and [ADR-009](../adr/0009-runtime-resource-definitions.md)). It does **not** hold operational state, which is the Postgres list above. Resource definitions are stored as ordinary RDF records under a reserved internal namespace rather than in Postgres so they are versioned, exportable, and managed through the same LDP machinery as the records they describe.
+
 Postgres is not optional. The architecture commits to it rather than treating it as one of several pluggable backends, because hard commitment removes a class of false-flexibility decisions (which connection pooler, which migration story per backend, which dialect of SQL) that distract from the FDP's actual job. See [ADR-003](../adr/0003-fixed-postgres-for-operational-state.md).
 
 ---
@@ -229,6 +231,10 @@ Audit graphs are not visible to anonymous users and are filtered from the public
 ### 6.4 Container graphs
 
 LDP containers are themselves RDF resources and have their own graphs, following the same one-graph-per-resource invariant. A container's graph contains its own metadata (title, description, `ldp:constrainedBy` pointing to the schema for its members) and the LDP membership triples linking it to its members.
+
+### 6.5 Internal graphs and the public dataset
+
+Some graphs are part of the FDP's machinery rather than its publicly queryable knowledge graph: meta-metadata graphs (`…/meta`), audit graphs (`…/audit`), and the resource-definition records that make up the typed-resource registry (under the reserved `…/resource-definitions/` namespace; see [Section 12](#12-deployment-profiles)). These share a **single, structural definition** of "internal": one set of reserved graph-URI patterns that both the SPARQL dataset construction ([Section 9.3](#93-query-rewriting)) and the authorization layer consult. The dataset builder always excludes internal graphs from the public/default dataset, and the authorization index never grants `read` on them to non-admin subjects. Keeping this as one shared set — rather than per-feature filtering — means there is exactly one place to get it right and one place to test that internal data never leaks into a knowledge-graph query. See [ADR-009](../adr/0009-runtime-resource-definitions.md).
 
 ---
 
@@ -358,6 +364,8 @@ The FDP does not support FDP-to-FDP federation (see [Section 2.2](#22-non-goals-
 ### 9.3 Query rewriting
 
 For read queries, the rewriter injects `FROM NAMED <g>` clauses for every graph `g` in the user's authorized read set, intersected with any graphs the query explicitly references. For update queries with explicit `WITH <graph>` or `GRAPH <uri>` blocks, the targets are validated against the authorized modify set.
+
+Internal graphs (meta-metadata, audit, and resource-definition records — see [Section 6.5](#65-internal-graphs-and-the-public-dataset)) are never in a non-admin subject's authorized set and are excluded from the default dataset, so a knowledge-graph query cannot return them. The exclusion uses the single shared set of reserved internal-graph patterns, not per-query logic.
 
 Updates of the form `DELETE { ?s ?p ?o } WHERE { ... }` without explicit graph specification are restricted in v1: they are rejected with an error message that explains how to rewrite the query with explicit graph targets. This is a real ergonomic cost on power users, but the alternative — running the `WHERE` in dry-run mode to enumerate target graphs before authorization — has its own information-leakage issues and is deferred. Updates issued through LDP `PATCH` are not subject to this restriction because the target graph is implicit in the resource URL.
 
@@ -518,6 +526,8 @@ A profile is a bundle:
 
 The FDP ships with a built-in default profile containing the standard FDP/DCAT schemas (Repository, Catalog, Dataset, DataService, Distribution) and a minimal seed populated from deployment config. Community profiles can replace the default entirely or, more commonly, import it and extend — adding biobank, sample, patient-registry, or publication types while keeping DCAT compatibility for federation with the future FDP Index.
 
+The profile's `resourceDefinitions` — the registry of typed resources and the child links between them — are the **seed** of the FDP's typed-resource registry, not its permanent definition. At bootstrap they are written into the triple store as RDF records (one named graph each, under the reserved `…/resource-definitions/` namespace); thereafter they are runtime-mutable through an admin API without re-bootstrap. Adding an `Ontology` type and making Catalogs contain Ontologies is a runtime curation act — register a SHACL shape, then register a resource definition that points at it and add a child link from the Catalog definition — and the LDP endpoints and OpenAPI surface for the new type appear immediately, with no restart. See [ADR-009](../adr/0009-runtime-resource-definitions.md).
+
 ### 12.2 Bootstrap behavior
 
 At startup the FDP checks Postgres for a "profile applied" marker:
@@ -530,6 +540,8 @@ If validation fails the FDP refuses to start — no partial bootstrap state.
 ### 12.3 Profile change requires re-bootstrap
 
 Once applied, the FDP refuses to apply another profile on top unless explicitly forced via an admin CLI command. Force-apply means wiping the triple store and Postgres operational state and starting from a clean slate. Migrating between profiles in place is not a v1 feature — schema evolution after bootstrap goes through the normal runtime API, which already supports versioning through meta-metadata.
+
+This applies to the *bootstrap profile bundle*. It does not mean the set of types is frozen: resource definitions and their child links are runtime-mutable through the admin API (see [Section 12.1](#121-what-a-profile-contains) and [ADR-009](../adr/0009-runtime-resource-definitions.md)). Re-bootstrap is only needed to swap the whole seed bundle, not to add or re-parent a type.
 
 ### 12.4 Profiles authored using the FDP
 
@@ -643,6 +655,7 @@ These are flagged for discussion and resolution before the architecture is consi
 6. **Policy-decision audit-log default.** Currently planned: on by default, using rotating-hash subject keys. Deployments may disable.
 7. **IdP role-to-FDP-role mapping.** Communities wanting to map IdP groups to FDP-internal roles via deployment configuration is a real need but intersects with AAI configuration in non-trivial ways; deferred to its own design pass for v1.x.
 8. **Profile distribution format.** Currently designed as a directory tree (git-friendly). OCI artifact distribution and signed bundles are possible v1.x additions.
+9. **Runtime resource-definition mutation.** Resolved by [ADR-009](../adr/0009-runtime-resource-definitions.md): resource definitions are runtime-mutable RDF records stored in the triple store under a reserved internal namespace, seeded from the profile and managed thereafter through an admin API. Adding or re-parenting a type no longer requires re-bootstrap. Open sub-question deferred to v1.x: whether publishing a SHACL shape should optionally *suggest* a resource definition (a guided one-step flow) on top of the explicit two-step model adopted here.
 
 ---
 

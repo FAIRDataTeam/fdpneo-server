@@ -13,10 +13,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DownloadMode = Literal["redirect", "stream"]
 
@@ -57,6 +57,58 @@ class OIDCSettings(BaseSettings):
     jwks_cache_ttl_seconds: int = 300
     roles_claim: str = "realm_access.roles"  # Keycloak default
     groups_claim: str = "groups"
+
+
+class CORSSettings(BaseSettings):
+    """Configuration for browser cross-origin access (CORS).
+
+    The reference web client (`fdp-client`) is a single-page app served from a
+    different origin than the API in every realistic deployment (separate dev
+    ports in development; separate hosts/subdomains in production). Browsers
+    therefore send a CORS preflight before any write (`PUT`/`PATCH`/`DELETE`)
+    and before reads that carry the bearer token. Without these headers the
+    browser blocks the request and the SPA reports the server as unreachable.
+
+    Defaults cover the local dev stack only (Vite on :5173). Production
+    deployments MUST set ``FDP_CORS_ALLOW_ORIGINS`` to the client's real
+    origin(s) — never widen this to ``*`` while credentials are allowed.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="FDP_CORS_", extra="ignore")
+
+    # ``NoDecode`` disables pydantic-settings' automatic JSON decoding of the
+    # env value, which otherwise runs *before* our validator and would reject a
+    # plain comma-separated string (the friendlier form we document). We parse
+    # both shapes ourselves in ``_split_origins``.
+    allow_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:5173"],
+        description=(
+            "Origins permitted to make browser requests. Accepts a JSON array or "
+            "a comma-separated string via FDP_CORS_ALLOW_ORIGINS."
+        ),
+    )
+    allow_credentials: bool = True
+    """Allow the browser to send credentials (the Authorization bearer). When
+    True the allowed origins must be explicit — the CORS spec forbids pairing
+    credentials with the ``*`` wildcard."""
+
+    @field_validator("allow_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        """Parse the env value into a list of origins.
+
+        Accepts both a JSON array (``["a","b"]``) and the friendlier
+        comma-separated string (``a,b``). A value that is already a list (the
+        default, or programmatic construction) passes through untouched.
+        """
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [origin.strip() for origin in text.split(",") if origin.strip()]
+        return value
 
 
 class MetricsSettings(BaseSettings):
@@ -152,6 +204,7 @@ class Settings(BaseSettings):
         default_factory=lambda: TripleStoreSettings(),  # type: ignore[call-arg]
     )
     oidc: OIDCSettings = Field(default_factory=lambda: OIDCSettings())  # type: ignore[call-arg]
+    cors: CORSSettings = Field(default_factory=lambda: CORSSettings())
     metrics: MetricsSettings = Field(default_factory=lambda: MetricsSettings())
     data: DataSettings = Field(default_factory=lambda: DataSettings())
     profile: ProfileSettings = Field(default_factory=lambda: ProfileSettings())
