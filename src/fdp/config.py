@@ -151,6 +151,66 @@ class ProfileSettings(BaseSettings):
     ``profile.yaml``). Resolved before the auto-bootstrap runs."""
 
 
+class SchemaSyncSettings(BaseSettings):
+    """Configuration for remote SHACL-schema synchronization (Phase 10.2).
+
+    A published schema may declare ``dct:source <remote-url>``; when sync is
+    enabled the server periodically refetches that URL and republishes the
+    shape (bumping its ``owl:versionInfo``) if the remote content changed.
+
+    Two independent gates, both off by default:
+
+    * ``enabled`` — the scheduled background sync. Off so a deployment never
+      makes outbound fetches it wasn't configured for. A manual
+      ``fdp schema sync`` run is an explicit operator action and ignores this.
+    * ``allowed_hosts`` — the allow-list of hostnames the syncer may fetch
+      from. **Empty means no host is allowed**, so even an explicit run is a
+      no-op until an operator lists the hosts. This is the structural "no
+      unauthenticated outbound fetches to arbitrary IRIs" boundary; it is
+      enforced on every fetch regardless of ``enabled``.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="FDP_SCHEMA_SYNC_", extra="ignore")
+
+    enabled: bool = False
+    """If True, a scheduled run (arq cron / external scheduler calling
+    ``fdp schema sync``) refetches remote-sourced schemas. Off by default."""
+
+    interval_seconds: int = 86400
+    """How often an external scheduler should invoke the sync. Daily by
+    default; the value is advisory (the CLI runs one pass per invocation)."""
+
+    # ``NoDecode`` for the same reason as ``CORSSettings.allow_origins``: accept
+    # a friendly comma-separated string in addition to a JSON array.
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Hostnames the schema syncer may fetch from. Empty denies all. "
+            "Accepts a JSON array or a comma-separated string via "
+            "FDP_SCHEMA_SYNC_ALLOWED_HOSTS."
+        ),
+    )
+
+    timeout_seconds: float = 30.0
+    """Per-fetch timeout when retrieving a remote shape."""
+
+    max_bytes: int = 5 * 1024 * 1024  # 5 MiB — shapes are small
+    """Hard cap on a fetched shape's size; oversize responses are rejected."""
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: object) -> object:
+        """Parse the env value into a list of hostnames (JSON array or CSV)."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [host.strip() for host in text.split(",") if host.strip()]
+        return value
+
+
 class DataSettings(BaseSettings):
     """Configuration for the simple data provider (architecture §5.6).
 
@@ -216,6 +276,7 @@ class Settings(BaseSettings):
     metrics: MetricsSettings = Field(default_factory=lambda: MetricsSettings())
     data: DataSettings = Field(default_factory=lambda: DataSettings())
     profile: ProfileSettings = Field(default_factory=lambda: ProfileSettings())
+    schema_sync: SchemaSyncSettings = Field(default_factory=lambda: SchemaSyncSettings())
 
 
 @lru_cache(maxsize=1)

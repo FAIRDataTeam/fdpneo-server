@@ -259,13 +259,20 @@ def _parse_shape(turtle: str) -> Graph:
             "not a SHACL shape: expected a sh:NodeShape or a sh:targetClass",
         )
     # Surface a malformed shape now rather than at first record write: pySHACL
-    # raises if the shapes graph itself is broken.
+    # raises if the shapes graph itself is broken. Validate against a *copy*:
+    # pySHACL normalizes the shapes graph in place (it injects RDFS/OWL
+    # axiomatic triples) even with ``inplace=False``, which would otherwise
+    # pollute the stored shape — leaking noise into ``GET /schemas/{id}`` and
+    # defeating the remote-sync change detection that compares stored vs fetched.
+    probe = Graph()
+    for triple in graph:
+        probe.add(triple)
     try:
         cast(
             tuple[bool, Graph, str],
             pyshacl.validate(  # pyright: ignore[reportUnknownMemberType]
                 data_graph=Graph(),
-                shacl_graph=graph,
+                shacl_graph=probe,
                 inference="none",
                 advanced=False,
                 meta_shacl=False,

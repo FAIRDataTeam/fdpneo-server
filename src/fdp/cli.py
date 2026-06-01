@@ -12,6 +12,7 @@ Subcommands:
 * ``fdp profile export <path>``   — deferred to v1.x.
 * ``fdp db migrate``              — run Alembic migrations.
 * ``fdp metrics rollup``          — run metrics rollups (cron-driven).
+* ``fdp schema sync``             — refetch remote-sourced schemas (cron-driven).
 
 The CLI is built with Typer for argument parsing and Rich for output.
 """
@@ -28,6 +29,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from fdp.metadata.profiles.applier import ApplyReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
+    from fdp.metadata.schema_sync import SyncReport
     from fdp.metrics.aggregation import RollupResult
 
 app = typer.Typer(
@@ -40,10 +42,12 @@ app = typer.Typer(
 profile_app = typer.Typer(help="Deployment-profile commands.", no_args_is_help=True)
 db_app = typer.Typer(help="Database commands.", no_args_is_help=True)
 metrics_app = typer.Typer(help="Metrics-pipeline commands.", no_args_is_help=True)
+schema_app = typer.Typer(help="Schema commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
 app.add_typer(metrics_app, name="metrics")
+app.add_typer(schema_app, name="schema")
 
 console = Console()
 
@@ -118,9 +122,7 @@ def profile_apply(
         raise typer.Exit(code=1) from err
 
     rd_count = (
-        len(report.resource_definitions.all())
-        if report.resource_definitions is not None
-        else 0
+        len(report.resource_definitions.all()) if report.resource_definitions is not None else 0
     )
     console.print(
         f"[green]applied[/] {profile.name} {profile.version} — "
@@ -223,6 +225,82 @@ def metrics_rollup(
             f"aggregates={daily_result.aggregates_written} "
             f"hourly_deleted={daily_result.source_rows_deleted}"
         )
+
+
+# --- schema commands -----------------------------------------------------
+
+
+@schema_app.command("sync")
+def schema_sync(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Run even when FDP_SCHEMA_SYNC_ENABLED is false (the allow-list still applies).",
+    ),
+) -> None:
+    """Refetch remote-sourced SHACL schemas and republish the changed ones.
+
+    Intended for an external scheduler (cron / k8s ``CronJob``) on the
+    ``FDP_SCHEMA_SYNC_INTERVAL_SECONDS`` cadence. The host allow-list
+    (``FDP_SCHEMA_SYNC_ALLOWED_HOSTS``) is always enforced; an empty allow-list
+    means every fetch is skipped.
+    """
+    from fdp.config import get_settings
+
+    settings = get_settings()
+    if not settings.schema_sync.enabled and not force:
+        console.print(
+            "[yellow]schema sync is disabled[/] (set FDP_SCHEMA_SYNC_ENABLED=true or pass --force)"
+        )
+        raise typer.Exit(code=0)
+
+    try:
+        report = asyncio.run(_run_schema_sync())
+    except Exception as err:
+        console.print(f"[red]schema sync failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    console.print(
+        f"[green]schema sync[/] "
+        f"updated={report.updated} unchanged={report.unchanged} "
+        f"skipped={report.skipped} failed={report.failed}"
+    )
+    if report.failed:
+        raise typer.Exit(code=1)
+
+
+async def _run_schema_sync() -> SyncReport:
+    """Build the runtime collaborators and run one sync pass."""
+    import httpx
+
+    from fdp.config import get_settings
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.schema_sync import SchemaSyncService
+    from fdp.metadata.schemas import SchemaService
+    from fdp.metadata.shacl import ShaclValidator
+    from fdp.metadata.shape_provider import MetadataShapeProvider
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with (
+        TripleStoreAdapter.from_settings(settings.triplestore) as adapter,
+        httpx.AsyncClient() as http_client,
+    ):
+        repository = MetadataRepository(adapter)
+        schema_service = SchemaService(
+            repository=repository,
+            adapter=adapter,
+            validator=ShaclValidator(MetadataShapeProvider(repository)),
+            base_url=str(settings.base_url),
+        )
+        syncer = SchemaSyncService(
+            schema_service=schema_service,
+            adapter=adapter,
+            http_client=http_client,
+            settings=settings.schema_sync,
+            base_url=str(settings.base_url),
+        )
+        return await syncer.sync_all()
 
 
 async def _run_rollup(

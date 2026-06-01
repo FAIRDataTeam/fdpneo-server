@@ -522,11 +522,53 @@ router auth gating); live-smoked on the GraphDB dev stack.
 Deferred (overlaps Phase 12 publication-state, not needed for the two-step
 flow): draft/released lifecycle, version-history browsing, rollback.
 
-### 10.2 [ ] Remote schema synchronization
+### 10.2 [x] Remote schema synchronization
 
 A schema can declare `dct:source <remote URL>` and the server
 periodically refetches and bumps the version. Disabled by default;
 opt-in per-schema.
+
+Delivered in `src/fdp/metadata/schema_sync.py` (`SchemaSyncService`):
+
+- **Discovery** — a SPARQL scan of `{base}/schemas/*` for a `dct:source` IRI;
+  schemas without one are never touched (per-schema opt-in).
+- **Refetch + change detection** — fetches the source (size-capped streamed
+  read; Turtle/RDF-XML/JSON-LD by content-type), and compares against the
+  stored shape by **RDF graph isomorphism** (`rdflib.compare`), not bytes —
+  SHACL shapes are blank-node heavy, so a byte/ETag compare would report false
+  changes on every run. The bookkeeping `dct:source` triple is excluded from
+  the comparison and re-stamped canonically on the schema record IRI when
+  republishing, so it neither triggers a spurious change nor gets lost.
+- **Version bump** — a real change is republished through the 10.1
+  `SchemaService.put` admin path, which bumps `owl:versionInfo` at the stable
+  IRI (resource-definition `schema` refs stay valid) and re-warms the validator.
+- **Disabled by default, two gates** — `FDP_SCHEMA_SYNC_ENABLED=false` (the
+  scheduled pass) and `FDP_SCHEMA_SYNC_ALLOWED_HOSTS` (empty ⇒ no fetch
+  allowed). The host allow-list is the structural "no unauthenticated outbound
+  fetches to arbitrary IRIs" boundary and is enforced on **every** fetch,
+  including a manual run. Per-schema failures are collected/logged, never
+  aborting the batch (`SyncReport` with updated/unchanged/skipped/failed).
+- **Scheduling** — a plain async pass invoked by `fdp schema sync` (new CLI
+  command) from an external scheduler (cron / k8s `CronJob`) on
+  `FDP_SCHEMA_SYNC_INTERVAL_SECONDS`, mirroring how `fdp metrics rollup` is
+  scheduled. `--force` runs it past the `enabled` gate (allow-list still applies).
+- New `SchemaSyncSettings` config group (`FDP_SCHEMA_SYNC_*`).
+
+Side fix in `schemas.py` (10.1 latent bug): `_parse_shape` let pySHACL
+normalize the shapes graph **in place** (injecting RDFS/OWL axioms) even with
+`inplace=False`, so the *stored* shape was polluted vs. the authored one —
+leaking noise into `GET /schemas/{id}` and defeating sync's stored-vs-fetched
+compare. Now validates against a throwaway copy; the stored graph is pristine.
+
+Tests: `tests/unit/metadata/test_schema_sync.py` (10 — discovery, allow-list
+gate, isomorphic-UNCHANGED on a re-serialized blank-node shape, UPDATED +
+source re-stamp, HTTP/parse failures, aggregate counts, config defaults/CSV)
+over the real `SchemaService` with `respx`-mocked fetches. Full unit suite
+green (678).
+
+Remote-sync of a schema that is itself remotely-versioned (chained sources)
+and an in-process scheduler are out of scope; the CLI + external scheduler is
+the shipped cadence, consistent with metrics.
 
 ### 10.3 [x] ResourceDefinition admin API
 
