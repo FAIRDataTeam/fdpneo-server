@@ -494,19 +494,33 @@ yet built. The profile bundle remains the *seed* and the reproducibility
 artefact: bootstrap writes its `resourceDefinitions` into the store, and
 runtime changes layer on top without a re-apply.
 
-### 10.1 [~] Schema admin API
+### 10.1 [x] Schema admin API
 
-`POST /admin/schemas` to upload a new SHACL shape (Turtle body). Stored
-as a versioned IRI in the triple store; the in-memory cache is
-invalidated. Drafts are first-class — a shape can be saved as a draft,
-previewed against a sample record, then released.
+Runtime SHACL-shape management in `src/fdp/metadata/schemas.py`
+(`SchemaService` + `build_schema_router`), mounted at `/schemas` before the
+LDP catch-all. Surfaces:
 
-Partial: shapes can already be published as ordinary LDP records (PUT the
-shape graph to a deployment-relative IRI, e.g. `{base}/shapes/Ontology`),
-and 10.3's RD-create validates that a definition's `schema` resolves to a
-published `sh:NodeShape`/`sh:targetClass` (ADR-0009's two-step flow). Still
-to do for a full 10.1: a dedicated `/admin/schemas` surface with versioning,
-drafts, sample-record preview, and release.
+- `GET  /schemas` — list published shapes (id, IRI, target class); public.
+- `GET  /schemas/{id}` — the shape as Turtle; public.
+- `PUT  /schemas/{id}` — create/replace (Turtle body); **admin**. Validates
+  the body parses and is a SHACL shape (`sh:NodeShape`/`sh:targetClass`, plus
+  a pySHACL load-check), stores it as a record at `{base}/schemas/{id}`, and
+  invalidates + re-warms the validator cache.
+- `DELETE /schemas/{id}` — **admin**; refused (409) if a resource definition
+  still references the shape via `ldp:constrainedBy`.
+- `POST /schemas/{id}/validate` — dry-run a sample record against the shape,
+  returns the SHACL report; authenticated.
+
+Versioning comes from the meta-writer (`owl:versionInfo` bumps per write) at a
+**stable IRI**, so resource-definition `schema` references stay valid across
+edits. Closes the two-step-flow gap: a steward can now publish a shape, then
+register a type pointing at it (10.3) entirely through the API. Auth mirrors
+settings/resource-definitions (public reads, admin writes). Tests:
+`tests/unit/metadata/test_schemas.py` (15 — service with real pySHACL +
+router auth gating); live-smoked on the GraphDB dev stack.
+
+Deferred (overlaps Phase 12 publication-state, not needed for the two-step
+flow): draft/released lifecycle, version-history browsing, rollback.
 
 ### 10.2 [ ] Remote schema synchronization
 

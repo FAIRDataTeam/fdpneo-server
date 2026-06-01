@@ -48,6 +48,7 @@ from fdp.metadata.profiles import (
 )
 from fdp.metadata.rd_api import build_resource_definition_router
 from fdp.metadata.repository import MetadataRepository
+from fdp.metadata.schemas import SchemaService, build_schema_router
 from fdp.metadata.settings import SettingsRepository, build_settings_router
 from fdp.metadata.shacl import ShaclValidator
 from fdp.metadata.shape_provider import MetadataShapeProvider
@@ -138,6 +139,16 @@ def _build_shared_state(app: FastAPI) -> None:
         base_url=str(settings.base_url),
         validator=app.state.shacl_validator,
         on_rebuilt=lambda cache: _publish_resource_definitions(app, cache),
+    )
+
+    # Runtime SHACL-shape admin (Phase 10.1). Stores shapes as records and
+    # keeps the validator cache coherent; the resource-definition admin API
+    # requires the shapes it publishes.
+    app.state.schema_service = SchemaService(
+        repository=app.state.metadata_repository,
+        adapter=app.state.triplestore,
+        validator=app.state.shacl_validator,
+        base_url=str(settings.base_url),
     )
 
     # GeoLite2 lookup degrades to no-op if the DB is missing — safe for dev.
@@ -258,7 +269,8 @@ def create_app() -> FastAPI:
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
     # /labels, /me, /metrics, /data, /sparql, /settings, /forms,
     # /spec, /expanded, /page, /resource-definitions (the runtime
-    # resource-definition catalog + admin surface — ADR-0009), and
+    # resource-definition catalog + admin surface — ADR-0009), /schemas
+    # (runtime SHACL-shape admin — Phase 10.1), and
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
@@ -326,6 +338,10 @@ def create_app() -> FastAPI:
             cache_provider=lambda: app.state.resource_definitions,
         )
     )
+    # Schema admin (Phase 10.1) — runtime SHACL-shape management. Registered
+    # before the LDP catch-all so /schemas isn't swallowed by /{path:path};
+    # the shapes themselves are stored at {base}/schemas/{id}.
+    app.include_router(build_schema_router(service=app.state.schema_service))
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the

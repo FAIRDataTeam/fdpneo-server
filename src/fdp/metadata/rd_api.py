@@ -79,6 +79,7 @@ RESERVED_PREFIXES: Final = frozenset(
         "expanded",
         "page",
         "resource-definitions",
+        "schemas",
     }
 )
 
