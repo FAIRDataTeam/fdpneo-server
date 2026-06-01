@@ -282,6 +282,16 @@ class SettingsRepository:
     ) -> None:
         self._session_factory = session_factory
 
+    @property
+    def session_factory(self) -> async_sessionmaker[AsyncSession]:
+        """Expose the session factory for collaborators that need their own session.
+
+        The factory-reset service (Phase 10.4) shares this repository's
+        Postgres session factory so its profile re-apply runs against the same
+        engine as the settings truncation.
+        """
+        return self._session_factory
+
     async def read(self, key: str) -> BaseModel | None:
         registered = SETTINGS_REGISTRY.get(key)
         if registered is None:
@@ -390,6 +400,19 @@ class SettingsRepository:
         removed = (result.rowcount or 0) > 0
         if removed:
             log.info("settings_deleted", key=key)
+        return removed
+
+    async def clear_all(self, *, subject: str | None = None) -> int:
+        """Truncate every runtime override so all keys revert to their default.
+
+        Used by the factory-reset flow (Phase 10.4). Returns the number of
+        override rows removed. Audit-logged via structlog.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(delete(RuntimeSettingRow))
+            await session.commit()
+        removed = result.rowcount or 0
+        log.info("settings_cleared_all", removed=removed, subject=subject)
         return removed
 
     @staticmethod

@@ -589,11 +589,42 @@ injection in the rewriter (works on Oxigraph — verified), or a capability flag
 that selects the projection strategy per backend. Not done here — it's an
 ADR-0004/0005 decision, not part of the RD feature.
 
-### 10.4 [ ] Reset to factory defaults
+### 10.4 [x] Reset to factory defaults
 
 `POST /admin/reset` — admin-only and destructive. Truncates the
 Postgres `runtime_settings` table and re-applies the bundled profile
 with force. Confirmation token required in body. Audit-logged.
+
+Delivered in `src/fdp/metadata/admin.py` (`ResetService` +
+`build_admin_router`), mounted at `/admin` before the LDP catch-all (added
+to the reserved-prefix list in `rd_api.py` and the `main.py` comment):
+
+- `POST /admin/reset` — **admin** (role check, like settings / resource
+  definitions; not the ODRL PDP). Body must carry the fixed confirmation
+  token `reset-to-factory-defaults` (`RESET_CONFIRMATION_TOKEN`); a
+  missing/wrong token is rejected **before** anything is touched (422 / 400).
+- Flow: load + structurally validate the bundle first (a broken bundle fails
+  the request without having wiped anything) → truncate `runtime_settings`
+  (`SettingsRepository.clear_all`) → `ProfileStateRepository.clear()` →
+  `apply_profile(force=True)` → republish profile-derived runtime state via
+  the same `_publish_runtime_state` hook auto-bootstrap uses (offer-resolver
+  fallback, RD cache, OpenAPI drop, SHACL + anonymous-authz warm-up), so the
+  reset takes effect with no restart.
+- Returns a report (profile name/version + counts of settings cleared,
+  schemas / offers / resource-definitions / seed-records re-applied).
+  Audit-logged via structlog (`admin_reset_completed` + `settings_cleared_all`),
+  consistent with the settings audit approach.
+
+**Scope note:** "factory defaults" = profile-managed state. The force
+re-apply overwrites the profile's graphs in place (matching `fdp profile
+apply --force` CLI semantics) and reverts runtime RD edits via the rewritten
+seed records; it does **not** blanket-wipe operator-created records — there
+is no drop-all-graphs capability in the SPARQL 1.1 adapter (ADR-0005), and a
+full triple-store wipe is a heavier, separate concern.
+
+Tests: `tests/unit/metadata/test_admin.py` (9 — `clear_all` against SQLite,
+router auth/confirmation gating, happy-path report + subject threading,
+no-bundle guard). Full unit suite green (668).
 
 References: `MetadataSchemaService.java`, `ResourceDefinitionService.java`,
 `ResetService.java`, `FactoryDefaults.java`.

@@ -28,6 +28,7 @@ from fdp.config import get_settings
 from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.identity.bootstrap import build_bootstrap_router
+from fdp.metadata.admin import ResetService, build_admin_router
 from fdp.metadata.audit import AuditLog
 from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
@@ -184,6 +185,17 @@ def _build_shared_state(app: FastAPI) -> None:
         adapter=app.state.triplestore,
     )
 
+    # Factory-reset coordinator (Phase 10.4). Truncates runtime settings and
+    # force re-applies the bundled profile, then republishes the profile-derived
+    # runtime state via the same hook auto-bootstrap uses, so the reset takes
+    # effect without a restart.
+    app.state.reset_service = ResetService(
+        settings=settings,
+        settings_repository=app.state.settings_repository,
+        repository=app.state.metadata_repository,
+        on_published=lambda sdoi, rd: _publish_runtime_state(app, sdoi, rd),
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -267,7 +279,8 @@ def create_app() -> FastAPI:
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
-    # /labels, /me, /metrics, /data, /sparql, /settings, /forms,
+    # /labels, /me, /metrics, /data, /sparql, /settings, /admin (the
+    # factory-reset surface — Phase 10.4), /forms,
     # /spec, /expanded, /page, /resource-definitions (the runtime
     # resource-definition catalog + admin surface — ADR-0009), /schemas
     # (runtime SHACL-shape admin — Phase 10.1), and
@@ -297,6 +310,7 @@ def create_app() -> FastAPI:
     app.include_router(build_labels_router(resolver=app.state.label_resolver))
     app.include_router(build_dashboard_router(service=app.state.dashboard_service))
     app.include_router(build_settings_router(repository=app.state.settings_repository))
+    app.include_router(build_admin_router(service=app.state.reset_service))
     app.include_router(build_autocomplete_router(service=app.state.autocomplete_service))
     app.include_router(build_metrics_router(session_factory=app.state.session_factory))
     app.include_router(
