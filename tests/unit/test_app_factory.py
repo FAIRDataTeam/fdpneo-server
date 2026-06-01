@@ -70,6 +70,29 @@ def test_cors_headers_on_simple_request() -> None:
 
 
 @pytest.mark.unit
+def test_cors_allows_loopback_ip_origin() -> None:
+    """``127.0.0.1`` is allowed alongside ``localhost``.
+
+    Browsers treat the two loopback spellings as distinct origins; the SPA may
+    be opened under either, so both must be permitted or writes fail with a
+    CORS rejection that surfaces as "server unreachable".
+    """
+    from fdp.main import create_app
+
+    client = TestClient(create_app())
+    response = client.options(
+        "/meta",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "authorization,content-type,if-match",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
+@pytest.mark.unit
 def test_cors_rejects_unconfigured_origin() -> None:
     """An origin that isn't allow-listed gets no allow-origin header echoed back."""
     from fdp.main import create_app

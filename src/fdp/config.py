@@ -81,7 +81,15 @@ class CORSSettings(BaseSettings):
     # plain comma-separated string (the friendlier form we document). We parse
     # both shapes ourselves in ``_split_origins``.
     allow_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:5173"],
+        # Both loopback spellings of the Vite dev server: browsers treat
+        # ``localhost`` and ``127.0.0.1`` as distinct origins, and depending on
+        # how the SPA (or an OIDC redirect) is opened either may be the one
+        # making requests. Allowing both avoids a "server unreachable" failure
+        # that is really a CORS rejection.
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
         description=(
             "Origins permitted to make browser requests. Accepts a JSON array or "
             "a comma-separated string via FDP_CORS_ALLOW_ORIGINS."
