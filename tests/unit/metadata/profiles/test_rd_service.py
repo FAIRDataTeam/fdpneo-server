@@ -16,7 +16,8 @@ import re
 from dataclasses import dataclass, field
 
 import pytest
-from rdflib import Graph
+from rdflib import Graph, URIRef
+from rdflib.namespace import RDF
 
 from fdp.metadata.profiles.rd_records import (
     ChildLinkRecord,
@@ -30,7 +31,7 @@ from fdp.metadata.profiles.rd_service import (
 )
 from fdp.metadata.profiles.registry import resolve_cache
 from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION
+from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, SH
 
 BASE = "http://localhost:8000"
 DCAT = "http://www.w3.org/ns/dcat#"
@@ -112,6 +113,22 @@ class _FakeStore:
         assert match is not None
         graph = self.graphs.get(match.group(1), Graph())
         return graph.serialize(format="turtle").encode("utf-8")
+
+    async def ask(self, sparql: str) -> bool:
+        # Used by schema_exists: does the named graph hold a SHACL shape?
+        match = re.search(r"GRAPH <([^>]+)>", sparql)
+        assert match is not None
+        graph = self.graphs.get(match.group(1), Graph())
+        has_node_shape = (None, RDF.type, SH.NodeShape) in graph
+        has_target_class = any(graph.triples((None, SH.targetClass, None)))
+        return has_node_shape or has_target_class
+
+    def seed_shape(self, iri: str) -> None:
+        """Store a minimal SHACL shape graph at ``iri``."""
+        graph = Graph()
+        subject = URIRef(iri)
+        graph.add((subject, RDF.type, SH.NodeShape))
+        self.graphs[iri] = graph
 
     # repository surface
     async def put_graph(self, record_uri: str, graph: Graph, *, subject: str | None) -> str:
@@ -242,3 +259,22 @@ async def test_service_root_record_iri_uses_name_slug() -> None:
         url_prefix="", name="Repository", schema_iri="https://w3id.org/fdp/o#Repository"
     )
     assert service.record_iri(root) == _rd_iri("repository")
+
+
+@pytest.mark.unit
+async def test_schema_exists_true_for_published_shape() -> None:
+    store = _FakeStore()
+    store.seed_shape(f"{DCAT}Ontology")
+    service, _ = _service(store)
+    assert await service.schema_exists(f"{DCAT}Ontology") is True
+
+
+@pytest.mark.unit
+async def test_schema_exists_false_for_missing_or_nonshape() -> None:
+    store = _FakeStore()
+    store.seed(CATALOG, "catalog")  # an RD record, not a SHACL shape
+    service, _ = _service(store)
+    # Unknown IRI → no shape.
+    assert await service.schema_exists(f"{DCAT}Ontology") is False
+    # A non-shape record (the RD record graph) doesn't count as a schema.
+    assert await service.schema_exists(_rd_iri("catalog")) is False

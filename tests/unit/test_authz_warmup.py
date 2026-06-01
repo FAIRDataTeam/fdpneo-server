@@ -1,16 +1,17 @@
-"""Unit tests for the anonymous authz-cache warmup (task 11.2).
+"""Unit tests for the anonymous authz-cache warmup (task 11.2 / ADR-0009).
 
 The warmup pre-populates the PDP's cache for the anonymous subject
 against a small set of high-traffic IRIs so the first anonymous read
-doesn't pay a cache-miss roundtrip. Covered here:
+doesn't pay a cache-miss roundtrip. Since ADR-0009 the warming is split:
 
-* Root IRI is always warmed.
-* Each non-root resource-definition container is warmed when the
-  cache is populated.
-* When the resource-definition cache is None (profile not yet
-  applied), only the root is warmed.
-* PDP failures on individual targets are logged and swallowed; the
-  warmup continues with the next target.
+* :func:`_warm_anonymous_authz_cache` warms just the FDP root (the
+  universal landing page) at startup.
+* Typed container prefixes are warmed by ``_publish_resource_definitions``
+  (startup *and* every runtime resource-definition mutation), via
+  :func:`_container_targets` + :func:`_warm_authz`.
+
+Covered here: root warming, container-target derivation, and that the
+shared :func:`_warm_authz` loop swallows per-target failures.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 
-from fdp.main import _warm_anonymous_authz_cache
+from fdp.main import _container_targets, _warm_anonymous_authz_cache, _warm_authz
 from fdp.metadata.profiles.registry import (
     ResourceDefinition,
     ResourceDefinitionCache,
@@ -34,9 +35,7 @@ class _FakePDP:
         self._fail_on = fail_on or set()
         self.calls: list[tuple[bool, Action, str]] = []
 
-    async def authorize(
-        self, ctx: RequestContext, action: Action, resource_iri: str
-    ) -> Decision:
+    async def authorize(self, ctx: RequestContext, action: Action, resource_iri: str) -> Decision:
         self.calls.append((ctx.is_anonymous, action, resource_iri))
         if resource_iri in self._fail_on:
             raise RuntimeError(f"backend down for {resource_iri}")
@@ -77,10 +76,8 @@ async def test_warmup_calls_authorize_for_root_when_cache_is_none() -> None:
     assert resource_iri.startswith("http://")
 
 
-@pytest.mark.unit
-async def test_warmup_warms_each_typed_container_when_cache_present() -> None:
-    pdp = _FakePDP()
-    cache = ResourceDefinitionCache(
+def _three_type_cache() -> ResourceDefinitionCache:
+    return ResourceDefinitionCache(
         [
             ResourceDefinition(
                 url_prefix="",
@@ -103,49 +100,39 @@ async def test_warmup_warms_each_typed_container_when_cache_present() -> None:
         ],
         base_url="http://localhost:8000",
     )
-    app = _build_app_with(pdp=pdp, cache=cache)
-    await _warm_anonymous_authz_cache(app)
-    # Root + catalog + dataset = 3 calls.
-    assert len(pdp.calls) == 3
-    iris = sorted(c[2] for c in pdp.calls)
-    assert "http://localhost:8000/catalog" in iris
-    assert "http://localhost:8000/dataset" in iris
-    # Root: trailing slash stripped by record_graph_uri.
-    assert "http://localhost:8000" in iris
 
 
 @pytest.mark.unit
-async def test_warmup_continues_when_one_target_fails() -> None:
+def test_container_targets_lists_non_root_containers() -> None:
+    targets = set(_container_targets(_three_type_cache()))
+    assert targets == {
+        "http://localhost:8000/catalog",
+        "http://localhost:8000/dataset",
+    }
+
+
+@pytest.mark.unit
+async def test_warm_authz_warms_each_given_target() -> None:
+    pdp = _FakePDP()
+    app = _build_app_with(pdp=pdp, cache=None)
+    await _warm_authz(app, _container_targets(_three_type_cache()))
+    iris = sorted(c[2] for c in pdp.calls)
+    assert iris == ["http://localhost:8000/catalog", "http://localhost:8000/dataset"]
+    assert all(is_anon and action is Action.READ for is_anon, action, _ in pdp.calls)
+
+
+@pytest.mark.unit
+async def test_warm_authz_continues_when_one_target_fails() -> None:
     """A single PDP failure must not abort warming the rest."""
     pdp = _FakePDP(fail_on={"http://localhost:8000/catalog"})
-    cache = ResourceDefinitionCache(
-        [
-            ResourceDefinition(
-                url_prefix="",
-                name="Repository",
-                schema_iri="urn:r",
-                children=(),
-            ),
-            ResourceDefinition(
-                url_prefix="catalog",
-                name="Catalog",
-                schema_iri="urn:c",
-                children=(),
-            ),
-            ResourceDefinition(
-                url_prefix="dataset",
-                name="Dataset",
-                schema_iri="urn:d",
-                children=(),
-            ),
-        ],
-        base_url="http://localhost:8000",
-    )
-    app = _build_app_with(pdp=pdp, cache=cache)
+    app = _build_app_with(pdp=pdp, cache=None)
     # Should NOT raise.
-    await _warm_anonymous_authz_cache(app)
-    # All three were attempted; the failure was caught.
-    assert len(pdp.calls) == 3
+    await _warm_authz(
+        app,
+        ["http://localhost:8000/catalog", "http://localhost:8000/dataset"],
+    )
+    # Both were attempted; the failure was caught.
+    assert len(pdp.calls) == 2
 
 
 @pytest.mark.unit

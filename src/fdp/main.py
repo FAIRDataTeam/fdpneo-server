@@ -40,11 +40,13 @@ from fdp.metadata.profiles import (
     RD_SHAPE_IRI,
     ProfileStateRepository,
     ResourceDefinitionCache,
+    ResourceDefinitionService,
     apply_profile,
     build_cache_from_repository,
     load_profile,
     resolve_runtime_state,
 )
+from fdp.metadata.rd_api import build_resource_definition_router
 from fdp.metadata.repository import MetadataRepository
 from fdp.metadata.settings import SettingsRepository, build_settings_router
 from fdp.metadata.shacl import ShaclValidator
@@ -123,6 +125,20 @@ def _build_shared_state(app: FastAPI) -> None:
     # profile is applied so the validator's parsed-shape cache is
     # populated against the IRIs the profile declares.
     app.state.shacl_validator = ShaclValidator(MetadataShapeProvider(app.state.metadata_repository))
+
+    # Resource-definition mutation coordinator (ADR-0009). Each runtime
+    # create/replace/delete writes through the repository, rebuilds the cache
+    # from the store, and publishes it via the on_rebuilt callback below —
+    # which swaps app.state.resource_definitions, drops the cached OpenAPI,
+    # and warms the validator + authz caches so the new type's endpoints and
+    # docs light up immediately.
+    app.state.resource_definition_service = ResourceDefinitionService(
+        repository=app.state.metadata_repository,
+        adapter=app.state.triplestore,
+        base_url=str(settings.base_url),
+        validator=app.state.shacl_validator,
+        on_rebuilt=lambda cache: _publish_resource_definitions(app, cache),
+    )
 
     # GeoLite2 lookup degrades to no-op if the DB is missing — safe for dev.
     app.state.geo = open_geo_lookup(settings.metrics.geoip_database_path)
@@ -300,6 +316,16 @@ def create_app() -> FastAPI:
             base_url=str(settings.base_url),
         )
     )
+    # Resource-definition catalog + admin (ADR-0009). Reads serve the
+    # current cache; admin mutations drive the service, whose on_rebuilt
+    # republishes the cache. Registered before the LDP catch-all so
+    # /resource-definitions isn't swallowed by /{path:path}.
+    app.include_router(
+        build_resource_definition_router(
+            service=app.state.resource_definition_service,
+            cache_provider=lambda: app.state.resource_definitions,
+        )
+    )
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the
@@ -425,9 +451,7 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
                 app.state.triplestore, base_url=str(settings.base_url)
             )
             resource_definitions = store_cache if store_cache.all() else manifest_cache
-            await _publish_runtime_state(
-                app, profile, system_default_offer_iri, resource_definitions
-            )
+            await _publish_runtime_state(app, system_default_offer_iri, resource_definitions)
             return
         report = await apply_profile(
             profile,
@@ -438,108 +462,107 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
             force=False,
         )
 
-    await _publish_runtime_state(
-        app, profile, report.system_default_offer_iri, report.resource_definitions
-    )
+    await _publish_runtime_state(app, report.system_default_offer_iri, report.resource_definitions)
 
 
 async def _publish_runtime_state(
     app: FastAPI,
-    profile: object,
     system_default_offer_iri: str | None,
     resource_definitions: ResourceDefinitionCache | None,
 ) -> None:
     """Install profile-derived runtime state on ``app.state``.
 
-    Shared by the fresh-apply and already-applied startup paths:
-
-    * ``system_default_offer_iri`` — read lazily by the offer resolver's
-      inheritance fallback (architecture §8.3).
-    * ``resource_definitions`` — read by the LDP container registry and the
-      OpenAPI generator; clearing ``openapi_schema`` forces a rebuild.
-    * SHACL validator warmed against the declared schema IRIs so the first
-      write per type doesn't pay a triple-store roundtrip.
+    Shared by the fresh-apply and already-applied startup paths. Sets the
+    offer-resolver fallback (architecture §8.3) and, when a cache is present,
+    publishes it via :func:`_publish_resource_definitions`.
     """
-    profile_name = getattr(profile, "name", "?")
     if system_default_offer_iri is not None:
         app.state.system_default_offer_iri = system_default_offer_iri
     if resource_definitions is not None:
-        app.state.resource_definitions = resource_definitions
-        app.openapi_schema = None  # type: ignore[assignment]
-        # Warm the per-type instance shapes plus the predefined RD shape —
-        # the latter so admin writes of resource definitions validate without
-        # a first-write triple-store roundtrip (ADR-0009).
-        schema_iris = sorted({rd.schema_iri for rd in resource_definitions.all()} | {RD_SHAPE_IRI})
-        try:
-            await app.state.shacl_validator.bootstrap(schema_iris)
-        except Exception as err:
-            log.warning(
-                "shacl_validator_bootstrap_failed",
-                error=repr(err),
-                shape_iris=schema_iris,
-            )
-        log.info(
-            "profile_runtime_state_published",
-            profile=profile_name,
-            resource_definitions=len(resource_definitions.all()),
-            shapes_warmed=len(schema_iris),
-            system_default_offer=system_default_offer_iri,
+        await _publish_resource_definitions(app, resource_definitions)
+
+
+async def _publish_resource_definitions(app: FastAPI, cache: ResourceDefinitionCache) -> None:
+    """Swap the resource-definition cache onto ``app.state`` and refresh derived state.
+
+    The single publish path, shared by startup and the runtime admin
+    mutation flow (the :class:`ResourceDefinitionService` ``on_rebuilt``
+    callback). It:
+
+    * swaps ``app.state.resource_definitions`` (read per-call by the LDP
+      container registry and the OpenAPI generator);
+    * drops the cached OpenAPI so the next ``/openapi.json`` rebuilds the
+      per-type paths;
+    * warms the SHACL validator for every instance shape plus the predefined
+      RD shape, so the first write per type — and admin RD writes — skip a
+      triple-store roundtrip;
+    * warms the anonymous authz cache for each typed container, so the first
+      public read of a freshly added type doesn't pay a cache miss.
+    """
+    app.state.resource_definitions = cache
+    app.openapi_schema = None  # type: ignore[assignment]
+    schema_iris = sorted({rd.schema_iri for rd in cache.all()} | {RD_SHAPE_IRI})
+    try:
+        await app.state.shacl_validator.bootstrap(schema_iris)
+    except Exception as err:
+        log.warning(
+            "shacl_validator_bootstrap_failed",
+            error=repr(err),
+            shape_iris=schema_iris,
         )
+    await _warm_authz(app, _container_targets(cache))
+    log.info(
+        "resource_definitions_published",
+        resource_definitions=len(cache.all()),
+        shapes_warmed=len(schema_iris),
+    )
 
 
-async def _warm_anonymous_authz_cache(app: FastAPI) -> None:
-    """Pre-populate the authz cache for anonymous READ on common targets.
+def _container_targets(cache: ResourceDefinitionCache) -> list[str]:
+    """Graph IRIs of the typed (non-root) collection containers."""
+    base = cache.base_url
+    return [
+        str(record_graph_uri(f"{base}/{rd.url_prefix}")) for rd in cache.all() if not rd.is_root
+    ]
+
+
+async def _warm_authz(app: FastAPI, iris: list[str]) -> None:
+    """Pre-populate the anonymous READ authz cache for ``iris``.
 
     The first anonymous request to a public resource otherwise pays a
-    cache-miss roundtrip (offer resolution + Postgres write) before
-    serving content. Warming a small set of high-traffic targets at
-    startup keeps that cost off the user's first page load.
-
-    Targets warmed:
-
-    * The FDP root (``settings.base_url``) — every anonymous client
-      lands here.
-    * Each non-root resource-definition container (``{base_url}/{prefix}``)
-      from the applied profile — these are the typed collection landing
-      pages the client navigates to.
-
-    Failures are logged and swallowed; a triple-store hiccup at
-    startup must not block the application coming up. The cost ceiling
-    is small: typical deployments have under 10 typed containers.
+    cache-miss roundtrip (offer resolution + Postgres write). Failures are
+    logged and swallowed — a triple-store hiccup must not block startup or a
+    mutation. The cost ceiling is small (typically under 10 containers).
     """
-    settings = get_settings()
-    anon_ctx = RequestContext.anonymous(trace_id="startup-warmup")
-
-    base = str(settings.base_url).rstrip("/")
-    targets: list[str] = [str(record_graph_uri(base + "/"))]
-    cache: ResourceDefinitionCache | None = getattr(app.state, "resource_definitions", None)
-    if cache is not None:
-        for rd in cache.all():
-            if not rd.is_root:
-                targets.append(str(record_graph_uri(f"{base}/{rd.url_prefix}")))
-
+    if not iris:
+        return
+    anon_ctx = RequestContext.anonymous(trace_id="authz-warmup")
     start = time.perf_counter()
     warmed = 0
-    failed: list[str] = []
-    for iri in targets:
+    for iri in iris:
         try:
             await app.state.pdp.authorize(anon_ctx, Action.READ, iri)
             warmed += 1
         except Exception as err:
-            failed.append(iri)
-            log.warning(
-                "authz_warmup_target_failed",
-                resource=iri,
-                error=repr(err),
-            )
-    elapsed_ms = int((time.perf_counter() - start) * 1000)
+            log.warning("authz_warmup_target_failed", resource=iri, error=repr(err))
     log.info(
         "authz_warmup_completed",
-        targets=len(targets),
+        targets=len(iris),
         warmed=warmed,
-        failed=len(failed),
-        elapsed_ms=elapsed_ms,
+        elapsed_ms=int((time.perf_counter() - start) * 1000),
     )
+
+
+async def _warm_anonymous_authz_cache(app: FastAPI) -> None:
+    """Warm the anonymous READ authz cache for the FDP root at startup.
+
+    The root is the universal anonymous landing page. Typed container
+    prefixes are warmed by :func:`_publish_resource_definitions` (during
+    auto-bootstrap and on every runtime mutation), so this only needs the
+    root.
+    """
+    base = str(get_settings().base_url).rstrip("/")
+    await _warm_authz(app, [str(record_graph_uri(base + "/"))])
 
 
 app = create_app()

@@ -25,7 +25,6 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
-from urllib.parse import urlencode
 
 import httpx
 from rdflib import Graph
@@ -35,9 +34,9 @@ if TYPE_CHECKING:
 
 
 SPARQL_JSON: str = "application/sparql-results+json"
+SPARQL_QUERY: str = "application/sparql-query"
 SPARQL_UPDATE: str = "application/sparql-update"
 TURTLE: str = "text/turtle"
-_FORM_ENCODED: str = "application/x-www-form-urlencoded"
 
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
 
@@ -100,16 +99,22 @@ class TripleStoreAdapter:
         Turtle / RDF/XML / N-Triples media type for ``CONSTRUCT`` and
         ``DESCRIBE`` queries.
 
-        ``default_graph_uris`` and ``named_graph_uris`` are forwarded as
-        repeated form fields per SPARQL 1.1 Protocol §2.1.4. Per the spec,
-        if the query body itself contains ``FROM`` or ``FROM NAMED``, the
-        server ignores these parameters — they only apply when the query
-        does not describe its own dataset.
+        The query is sent via SPARQL 1.1 Protocol "query via POST directly"
+        (§2.1.3): the SPARQL text is the request body
+        (``application/sparql-query``) and ``default_graph_uris`` /
+        ``named_graph_uris`` ride in the URL query string as repeated
+        ``default-graph-uri`` / ``named-graph-uri`` parameters. We avoid the
+        URL-encoded-form variant (§2.1.2) because some backends (Oxigraph)
+        reject *repeated* dataset parameters in a form body. Per §2.1.4 the
+        server ignores these parameters when the query body itself contains
+        ``FROM`` / ``FROM NAMED``.
         """
+        params = _dataset_params(default_graph_uris, named_graph_uris)
         response = await self._client.post(
             str(self._settings.query_endpoint),
-            content=_query_form(sparql, default_graph_uris, named_graph_uris),
-            headers={"Accept": accept, "Content-Type": _FORM_ENCODED},
+            content=sparql.encode("utf-8"),
+            headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
+            params=httpx.QueryParams(params) if params else None,
         )
         response.raise_for_status()
         return response.content
@@ -128,12 +133,16 @@ class TripleStoreAdapter:
         don't buffer the entire RDF dump in memory. Consume via
         ``async for chunk in adapter.query_stream(...)``; when the
         consumer exits, the underlying connection is released.
+
+        Uses the same "query via POST directly" form as :meth:`query`.
         """
+        params = _dataset_params(default_graph_uris, named_graph_uris)
         async with self._client.stream(
             "POST",
             str(self._settings.query_endpoint),
-            content=_query_form(sparql, default_graph_uris, named_graph_uris),
-            headers={"Accept": accept, "Content-Type": _FORM_ENCODED},
+            content=sparql.encode("utf-8"),
+            headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
+            params=httpx.QueryParams(params) if params else None,
         ) as response:
             response.raise_for_status()
             async for chunk in response.aiter_bytes():
@@ -245,23 +254,22 @@ class TripleStoreAdapter:
         return data.serialize(format=_rdflib_format_for(mime)).encode("utf-8")
 
 
-def _query_form(
-    sparql: str,
+def _dataset_params(
     default_graph_uris: Sequence[str],
     named_graph_uris: Sequence[str],
-) -> str:
-    """URL-encode the form body for a SPARQL Protocol POST.
+) -> tuple[tuple[str, str], ...]:
+    """Build the URL query-string dataset parameters for a query.
 
-    Manual encoding (vs httpx ``data=``) so we can include repeated
-    ``default-graph-uri`` / ``named-graph-uri`` fields without httpx
-    routing the call through its raw-content compatibility shim.
+    Repeated ``default-graph-uri`` / ``named-graph-uri`` pairs per SPARQL
+    1.1 Protocol §2.1.4, carried in the URL query string (not the body) so
+    repeated values are accepted by every tested backend.
     """
-    fields: list[tuple[str, str]] = [("query", sparql)]
+    params: list[tuple[str, str]] = []
     for graph_uri in default_graph_uris:
-        fields.append(("default-graph-uri", graph_uri))
+        params.append(("default-graph-uri", graph_uri))
     for graph_uri in named_graph_uris:
-        fields.append(("named-graph-uri", graph_uri))
-    return urlencode(fields)
+        params.append(("named-graph-uri", graph_uri))
+    return tuple(params)
 
 
 def _update_params(
@@ -289,4 +297,4 @@ def _rdflib_format_for(mime: str) -> str:
     return mapping.get(mime, "turtle")
 
 
-__all__ = ["SPARQL_JSON", "SPARQL_UPDATE", "TURTLE", "TripleStoreAdapter"]
+__all__ = ["SPARQL_JSON", "SPARQL_QUERY", "SPARQL_UPDATE", "TURTLE", "TripleStoreAdapter"]

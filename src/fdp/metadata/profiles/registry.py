@@ -99,6 +99,11 @@ class ResourceDefinitionCache:
     def all(self) -> Sequence[ResourceDefinition]:
         return self._items
 
+    @property
+    def base_url(self) -> str:
+        """The deployment base URL the definitions were resolved against."""
+        return self._base_url
+
     def by_prefix(self, prefix: str) -> ResourceDefinition | None:
         return self._by_prefix.get(prefix)
 

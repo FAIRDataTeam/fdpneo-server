@@ -12,6 +12,7 @@ from pydantic import HttpUrl, SecretStr
 from fdp.config import TripleStoreSettings
 from fdp.storage.triplestore.adapter import (
     SPARQL_JSON,
+    SPARQL_QUERY,
     SPARQL_UPDATE,
     TURTLE,
     TripleStoreAdapter,
@@ -43,7 +44,7 @@ def async_client() -> httpx.AsyncClient:
 
 @pytest.mark.unit
 @respx.mock
-async def test_query_posts_form_encoded_with_accept_header(
+async def test_query_posts_sparql_query_directly_with_accept_header(
     async_client: httpx.AsyncClient,
 ) -> None:
     route = respx.post(QUERY_URL).respond(
@@ -54,9 +55,11 @@ async def test_query_posts_form_encoded_with_accept_header(
     body = await _adapter(_settings(), async_client).query("SELECT ?s WHERE { ?s ?p ?o }")
     assert json.loads(body)["results"]["bindings"] == [{"s": {"value": "x"}}]
 
+    # "Query via POST directly" (§2.1.3): raw query body, sparql-query type.
     sent = route.calls.last.request
     assert sent.headers["accept"] == SPARQL_JSON
-    assert b"query=SELECT" in sent.content
+    assert sent.headers["content-type"] == SPARQL_QUERY
+    assert sent.content == b"SELECT ?s WHERE { ?s ?p ?o }"
 
 
 @pytest.mark.unit
@@ -172,9 +175,12 @@ async def test_query_forwards_named_graph_uris(async_client: httpx.AsyncClient) 
         "SELECT * { ?s ?p ?o }",
         named_graph_uris=("https://example.org/g1", "https://example.org/g2"),
     )
-    body = route.calls.last.request.content.decode("utf-8")
-    assert "named-graph-uri=https%3A%2F%2Fexample.org%2Fg1" in body
-    assert "named-graph-uri=https%3A%2F%2Fexample.org%2Fg2" in body
+    # Repeated dataset params ride in the URL query string (not the body), so
+    # backends that reject repeated form-body params (Oxigraph) accept them.
+    params = route.calls.last.request.url.params.multi_items()
+    assert ("named-graph-uri", "https://example.org/g1") in params
+    assert ("named-graph-uri", "https://example.org/g2") in params
+    assert route.calls.last.request.content == b"SELECT * { ?s ?p ?o }"
 
 
 @pytest.mark.unit
@@ -185,8 +191,8 @@ async def test_query_forwards_default_graph_uris(async_client: httpx.AsyncClient
         "SELECT * { ?s ?p ?o }",
         default_graph_uris=("https://example.org/d",),
     )
-    body = route.calls.last.request.content.decode("utf-8")
-    assert "default-graph-uri=https%3A%2F%2Fexample.org%2Fd" in body
+    params = route.calls.last.request.url.params.multi_items()
+    assert ("default-graph-uri", "https://example.org/d") in params
 
 
 @pytest.mark.unit

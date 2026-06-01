@@ -484,20 +484,29 @@ References: `SettingsController.java`, `SettingsService.java`,
 
 The reference impl exposes `MetadataSchemaController` (CRUD over SHACL
 shapes with versions and drafts) and `ResourceDefinitionController` (CRUD
-over the typed-record definitions). Right now the new server treats both
-as profile-bundle artefacts — to change them you re-apply the profile.
+over the typed-record definitions).
 
-The trade-off: runtime admin is faster for iterating, but the profile
-bundle is what makes a deployment reproducible. A compromise is to
-allow runtime *additions* but require the profile to be re-applied to
-*remove* anything declared by the active profile.
+ResourceDefinitions are now runtime-mutable (10.3, done — see
+[ADR-0009](docs/adr/0009-runtime-resource-definitions.md)). SHACL schemas
+are still published as ordinary LDP records (PUT to a deployment-relative
+IRI); a dedicated schema-admin surface with drafts/release (10.1) is not
+yet built. The profile bundle remains the *seed* and the reproducibility
+artefact: bootstrap writes its `resourceDefinitions` into the store, and
+runtime changes layer on top without a re-apply.
 
-### 10.1 [ ] Schema admin API
+### 10.1 [~] Schema admin API
 
 `POST /admin/schemas` to upload a new SHACL shape (Turtle body). Stored
 as a versioned IRI in the triple store; the in-memory cache is
 invalidated. Drafts are first-class — a shape can be saved as a draft,
 previewed against a sample record, then released.
+
+Partial: shapes can already be published as ordinary LDP records (PUT the
+shape graph to a deployment-relative IRI, e.g. `{base}/shapes/Ontology`),
+and 10.3's RD-create validates that a definition's `schema` resolves to a
+published `sh:NodeShape`/`sh:targetClass` (ADR-0009's two-step flow). Still
+to do for a full 10.1: a dedicated `/admin/schemas` surface with versioning,
+drafts, sample-record preview, and release.
 
 ### 10.2 [ ] Remote schema synchronization
 
@@ -505,12 +514,66 @@ A schema can declare `dct:source <remote URL>` and the server
 periodically refetches and bumps the version. Disabled by default;
 opt-in per-schema.
 
-### 10.3 [ ] ResourceDefinition admin API
+### 10.3 [x] ResourceDefinition admin API
 
-`POST /admin/resource-definitions` to add a new typed-record kind at
-runtime. Validates that the referenced schema exists and that the
-`urlPrefix` doesn't collide. The OpenAPI generator must refresh
-(`app.openapi_schema = None`) after a successful add.
+Done, and broader than originally scoped — see
+[ADR-0009](docs/adr/0009-runtime-resource-definitions.md). Delivered:
+
+- Resource definitions are stored as RDF records (one named graph each,
+  reserved `…/resource-definitions/` namespace), seeded at bootstrap and
+  runtime-mutable thereafter — `metadata/profiles/rd_records.py` (vocab +
+  predefined SHACL shape), `rd_service.py` (store reads + the
+  `ResourceDefinitionService` mutation coordinator), `registry.resolve_cache`
+  (cache is now a projection of the store, rebuilt on startup + every mutation).
+- Router `metadata/rd_api.py` (`/resource-definitions`): public read catalog
+  (`GET` list + `GET /{slug}`, anonymous — feeds the client's dynamic type
+  catalog) and admin-gated `POST`/`PUT`/`DELETE`. `PUT` replaces a definition
+  including its child links — that's how a child link is added to an existing
+  type (Catalog → a new Ontology type). Validates schema existence + url-prefix
+  uniqueness + reserved-path collisions; protects the root from deletion.
+- On a successful mutation the cache is swapped, `app.openapi_schema` cleared,
+  and the validator + anonymous-authz caches warmed, so the new type's LDP
+  endpoints and OpenAPI paths light up with no restart
+  (`main._publish_resource_definitions`).
+- Internal-graph isolation invariant: a single `is_internal_graph_uri`
+  (`shared/graphs.py`) keeps RD/meta/audit graphs out of the public SPARQL
+  projection (`PDP.authorized_graphs`) even though RD records are REST-readable.
+- Auth: mutations require the `admin` role (RDs are deployment config, like
+  runtime settings), not the ODRL PDP.
+
+Tests: unit coverage complete (rd_records, rd_service, rd_api, graphs,
+pdp-exclusion). Integration tests in
+`tests/integration/metadata/test_runtime_resource_definitions.py`
+(testcontainers Oxigraph + Postgres) **pass (4/4)** — covering the
+end-to-end ontology scenario, member creation, restart-from-store
+persistence, and internal-graph isolation (RD record REST-readable but its
+graph forbidden to anonymous SPARQL via §9.5).
+
+Side finding (investigated; NOT an RD-feature bug): the `/sparql` access
+endpoint mis-behaved against **Oxigraph** for multi-graph projected reads.
+Root-caused to two Oxigraph SPARQL-Protocol non-conformances with repeated
+`named-graph-uri`:
+
+1. **Rejected in the form body** — the adapter sent the query + dataset params
+   as a urlencoded POST body (§2.1.2); Oxigraph 400s on repeated
+   `named-graph-uri` there. **Fixed:** `TripleStoreAdapter.query` /
+   `query_stream` now use "query via POST directly" (§2.1.3) — raw query body
+   + dataset params in the URL query string (matching `update()`). Unit +
+   access-router tests updated.
+2. **No dataset union in the URL either** — given multiple `named-graph-uri`
+   Oxigraph honours only the *last* one, so an authorized set of >1 graph
+   under-projects. Verified this is Oxigraph-specific: **Fuseki unions
+   correctly** (tested), as do GraphDB (recommended default) and the SPARQL
+   1.1 Protocol spec. So the named-graph-projection design (ADR-0004) is sound
+   on conformant stores; Oxigraph's protocol layer is the outlier.
+
+Consequence: the access-control `/sparql` endpoint requires a backend that
+unions repeated `named-graph-uri` (GraphDB, Fuseki). **Oxigraph is dev-only
+for this endpoint** (consistent with ADR-0005's "Oxigraph for development").
+Follow-up options if Oxigraph must be fully supported: textual `FROM NAMED`
+injection in the rewriter (works on Oxigraph — verified), or a capability flag
+that selects the projection strategy per backend. Not done here — it's an
+ADR-0004/0005 decision, not part of the RD feature.
 
 ### 10.4 [ ] Reset to factory defaults
 

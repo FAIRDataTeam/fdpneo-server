@@ -39,7 +39,7 @@ from fdp.metadata.profiles.rd_records import (
 )
 from fdp.metadata.profiles.registry import ResourceDefinitionCache, resolve_cache
 from fdp.shared.graphs import record_graph_uri, resource_definition_graph_uri
-from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION
+from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, SH
 from fdp.storage.triplestore.adapter import SPARQL_JSON, TURTLE
 
 if TYPE_CHECKING:
@@ -142,6 +142,23 @@ class ResourceDefinitionService:
             resource_definition_graph_uri(
                 self._base_url, rd_record_slug(record.url_prefix, record.name)
             )
+        )
+
+    async def schema_exists(self, schema_iri: str) -> bool:
+        """True iff a published SHACL shape lives at ``schema_iri``.
+
+        A type may only point at a shape that has actually been published as a
+        record (ADR-0009's explicit two-step flow: publish the shape, then
+        register the definition). The check is stronger than "graph is
+        non-empty": the graph must declare a ``sh:NodeShape`` or carry a
+        ``sh:targetClass``, so a definition can't be wired to an arbitrary
+        non-shape record. pySHACL infers a node shape from ``sh:targetClass``
+        even without the explicit ``rdf:type``, so both forms count.
+        """
+        return await self._adapter.ask(
+            f"ASK {{ GRAPH <{schema_iri}> {{"
+            f" {{ ?s a <{SH.NodeShape}> }} UNION {{ ?s <{SH.targetClass}> ?c }}"
+            f" }} }}"
         )
 
     async def rebuild(self) -> ResourceDefinitionCache:

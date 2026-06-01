@@ -143,10 +143,11 @@ def test_get_select_projects_authorized_dataset(async_client: httpx.AsyncClient)
     with TestClient(app) as client:
         response = client.get("/sparql", params={"query": "SELECT * WHERE { ?s ?p ?o }"})
     assert response.status_code == 200
-    body = route.calls.last.request.content.decode("utf-8")
-    # The full authorized set is forwarded as named-graph-uri params.
-    assert "named-graph-uri=https%3A%2F%2Fexample.org%2Fg1" in body
-    assert "named-graph-uri=https%3A%2F%2Fexample.org%2Fg2" in body
+    # The full authorized set is forwarded as named-graph-uri query params
+    # (URL, not body — see adapter "query via POST directly").
+    params = route.calls.last.request.url.params.multi_items()
+    assert ("named-graph-uri", G1) in params
+    assert ("named-graph-uri", G2) in params
 
 
 @pytest.mark.unit

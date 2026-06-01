@@ -528,6 +528,8 @@ The FDP ships with a built-in default profile containing the standard FDP/DCAT s
 
 The profile's `resourceDefinitions` — the registry of typed resources and the child links between them — are the **seed** of the FDP's typed-resource registry, not its permanent definition. At bootstrap they are written into the triple store as RDF records (one named graph each, under the reserved `…/resource-definitions/` namespace); thereafter they are runtime-mutable through an admin API without re-bootstrap. Adding an `Ontology` type and making Catalogs contain Ontologies is a runtime curation act — register a SHACL shape, then register a resource definition that points at it and add a child link from the Catalog definition — and the LDP endpoints and OpenAPI surface for the new type appear immediately, with no restart. See [ADR-009](../adr/0009-runtime-resource-definitions.md).
 
+Describing a type (a SHACL shape) and exposing it (a resource definition) are kept **separate**, mirroring the reference implementation: publishing a shape never auto-exposes a type, so draft and reusable (`sh:node`) shapes don't leak into the URL space. The two-step flow is therefore: (1) publish the shape as an ordinary LDP record at a deployment-relative IRI (e.g. `{base}/shapes/Ontology`) so it is itself versioned and manageable through the API; (2) `POST` a resource definition whose `schema` points at that shape IRI. The admin API rejects a definition whose `schema` does not resolve to a published SHACL shape, so the steps cannot be done out of order. Schema *lifecycle* (versioning, release) beyond create is a separate concern tracked with the client's schema-management surface.
+
 ### 12.2 Bootstrap behavior
 
 At startup the FDP checks Postgres for a "profile applied" marker:
