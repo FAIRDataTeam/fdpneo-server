@@ -24,19 +24,30 @@ class Base(DeclarativeBase):
     """Shared SQLAlchemy declarative base for fdp Postgres tables."""
 
 
+_MODEL_MODULES: tuple[str, ...] = (
+    "fdp.identity.api_keys",
+    "fdp.identity.principal",
+    "fdp.metadata.audit",
+    "fdp.metadata.profiles.state",
+    "fdp.metadata.settings",
+    "fdp.metrics.repository",
+    "fdp.policy.cache",
+)
+
+
 def register_all_models() -> None:
     """Import every module that defines ORM models against ``Base``.
 
     Alembic's ``env.py`` calls this so ``Base.metadata`` is fully populated
-    before migrations run; the imports are intentionally lazy to avoid
-    pulling SQLAlchemy state into modules that don't need it at import
-    time.
+    before migrations run; the imports are intentionally lazy (driven through
+    :func:`importlib.import_module` so they register for their side effects
+    without an unused-import dance) to avoid pulling SQLAlchemy state into
+    modules that don't need it at import time.
     """
-    import fdp.metadata.audit  # noqa: F401  # pyright: ignore[reportUnusedImport]
-    import fdp.metadata.profiles.state  # noqa: F401  # pyright: ignore[reportUnusedImport]
-    import fdp.metadata.settings  # noqa: F401  # pyright: ignore[reportUnusedImport]
-    import fdp.metrics.repository  # noqa: F401  # pyright: ignore[reportUnusedImport]
-    import fdp.policy.cache  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    import importlib
+
+    for module in _MODEL_MODULES:
+        importlib.import_module(module)
 
 
 __all__ = ["Base", "register_all_models"]

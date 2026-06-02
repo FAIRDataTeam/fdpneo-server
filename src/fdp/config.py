@@ -151,6 +151,31 @@ class ProfileSettings(BaseSettings):
     ``profile.yaml``). Resolved before the auto-bootstrap runs."""
 
 
+class ApiKeySettings(BaseSettings):
+    """Configuration for machine-to-machine API keys (Phase 11.1, ADR-0011).
+
+    Keys are an alternate credential for an existing OIDC subject — they mint
+    no new identity. Freshness of a long-lived key's authorization is handled
+    by the ``subject_principal`` record (refreshed on interactive login), not
+    by forcing expiry; these settings bound issuance.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="FDP_API_KEYS_", extra="ignore")
+
+    enabled: bool = True
+    """When False, the ``/me/api-keys`` surface 404s and ``fdpk_`` bearer
+    tokens are rejected — deployments that prefer per-client ``client_credentials``
+    can turn the feature off entirely."""
+
+    max_per_user: int = 20
+    """Cap on the number of *active* (non-revoked) keys one subject may hold."""
+
+    max_ttl_days: int | None = None
+    """Optional ceiling on a key's lifetime. ``None`` allows non-expiring keys;
+    set it to force every key to carry an ``expires_at`` no further out than
+    this many days."""
+
+
 class SchemaSyncSettings(BaseSettings):
     """Configuration for remote SHACL-schema synchronization (Phase 10.2).
 
@@ -277,6 +302,7 @@ class Settings(BaseSettings):
     data: DataSettings = Field(default_factory=lambda: DataSettings())
     profile: ProfileSettings = Field(default_factory=lambda: ProfileSettings())
     schema_sync: SchemaSyncSettings = Field(default_factory=lambda: SchemaSyncSettings())
+    api_keys: ApiKeySettings = Field(default_factory=lambda: ApiKeySettings())
 
 
 @lru_cache(maxsize=1)

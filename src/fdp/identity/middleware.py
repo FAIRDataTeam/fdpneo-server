@@ -27,14 +27,16 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import jwt
 import structlog
 from jwt import InvalidTokenError
 
+from fdp.identity.api_keys import TOKEN_PREFIX
 from fdp.identity.jwks import JWKSError
 from fdp.shared.context import RequestContext, reset_current, set_current
 from fdp.shared.errors import Unauthenticated
@@ -51,6 +53,24 @@ log = structlog.get_logger(__name__)
 
 _ALLOWED_ALGS: Final = ("RS256", "RS384", "RS512", "ES256", "ES384")
 
+# How long an unchanged (subject, roles, groups) tuple is cached before the
+# middleware re-records it. A *change* records immediately regardless.
+_PRINCIPAL_REFRESH_SECONDS: Final = 300.0
+
+
+class ApiKeyAuthenticator(Protocol):
+    """Resolves a ``fdpk_`` bearer token to a context, or ``None`` if invalid."""
+
+    async def authenticate(self, token: str, *, trace_id: str) -> RequestContext | None: ...
+
+
+class PrincipalRecorder(Protocol):
+    """Records a subject's freshest IdP-asserted roles/groups (ADR-0011 §4)."""
+
+    async def record(
+        self, subject: str, *, roles: frozenset[str], groups: frozenset[str]
+    ) -> None: ...
+
 
 class AuthenticationMiddleware:
     """ASGI middleware that authenticates a request and binds the context."""
@@ -61,11 +81,19 @@ class AuthenticationMiddleware:
         *,
         oidc: OIDCSettings,
         jwks_client_provider: Callable[[], JWKSClient],
+        api_key_authenticator_provider: Callable[[], ApiKeyAuthenticator] | None = None,
+        principal_recorder_provider: Callable[[], PrincipalRecorder] | None = None,
     ) -> None:
         self._app = app
         self._oidc = oidc
         self._issuer = str(oidc.issuer).rstrip("/")
         self._jwks_client_provider = jwks_client_provider
+        self._api_key_authenticator_provider = api_key_authenticator_provider
+        self._principal_recorder_provider = principal_recorder_provider
+        # In-memory throttle for the principal upsert: subject → (roles, groups,
+        # monotonic timestamp). Bounds writes on the JWT hot path; a role change
+        # still records immediately.
+        self._principal_seen: dict[str, tuple[frozenset[str], frozenset[str], float]] = {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -97,6 +125,13 @@ class AuthenticationMiddleware:
         token = raw_token.strip()
         if not token:
             raise Unauthenticated("empty bearer token")
+
+        # Dispatch by prefix (ADR-0011 §3): an ``fdpk_`` bearer is an API key,
+        # resolved against Postgres; anything else is validated as a JWT. This
+        # keeps the JWT path DB-free and avoids API-key lookups on malformed
+        # JWTs.
+        if token.startswith(TOKEN_PREFIX):
+            return await self._resolve_api_key(token, trace_id)
 
         try:
             unverified = jwt.get_unverified_header(token)
@@ -131,12 +166,55 @@ class AuthenticationMiddleware:
         subject = f"{self._issuer}#{payload['sub']}"
         roles = frozenset(_get_nested_claim(payload, self._oidc.roles_claim))
         groups = frozenset(_get_nested_claim(payload, self._oidc.groups_claim))
-        return RequestContext(
+        ctx = RequestContext(
             subject=subject,
             roles=roles,
             groups=groups,
             trace_id=trace_id,
         )
+        await self._maybe_record_principal(ctx)
+        return ctx
+
+    async def _resolve_api_key(self, token: str, trace_id: str) -> RequestContext:
+        """Resolve an ``fdpk_`` token, or 401 if the feature is off / token invalid."""
+        provider = self._api_key_authenticator_provider
+        if provider is None:
+            raise Unauthenticated("API key authentication is not enabled")
+        ctx = await provider().authenticate(token, trace_id=trace_id)
+        if ctx is None:
+            raise Unauthenticated("invalid API key")
+        return ctx
+
+    async def _maybe_record_principal(self, ctx: RequestContext) -> None:
+        """Opportunistically refresh the subject's principal record (throttled).
+
+        This is what lets a long-lived API key track its owner's current roles
+        (ADR-0011 §4). Best-effort: a failure here must never reject a valid
+        login.
+        """
+        provider = self._principal_recorder_provider
+        if provider is None or ctx.subject is None:
+            return
+        if not self._should_record(ctx):
+            return
+        try:
+            await provider().record(ctx.subject, roles=ctx.roles, groups=ctx.groups)
+        except Exception as exc:
+            log.warning("principal_record_failed", subject=ctx.subject, error=repr(exc))
+
+    def _should_record(self, ctx: RequestContext) -> bool:
+        assert ctx.subject is not None
+        now = time.monotonic()
+        prev = self._principal_seen.get(ctx.subject)
+        if (
+            prev is not None
+            and prev[0] == ctx.roles
+            and prev[1] == ctx.groups
+            and now - prev[2] < _PRINCIPAL_REFRESH_SECONDS
+        ):
+            return False
+        self._principal_seen[ctx.subject] = (ctx.roles, ctx.groups, now)
+        return True
 
 
 def _extract_authorization(scope: Scope) -> str | None:

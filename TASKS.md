@@ -675,19 +675,47 @@ References: `MetadataSchemaService.java`, `ResourceDefinitionService.java`,
 
 ## Phase 11 — Authentication extensions
 
-### 11.1 [ ] API Keys (`POST /me/api-keys`)
+### 11.1 [x] API Keys (`POST /me/api-keys`)
 
 The reference impl issues long-lived API keys per user, suitable for
 scripts / CI. Our server is OIDC-only today, which makes
 machine-to-machine flows harder than they need to be (a client_credentials
 grant works but requires per-client Keycloak config).
 
-- Postgres `api_keys(id, owner_subject, label, hash, created_at,
-  expires_at, last_used_at, revoked_at)`. Storing the hash, not the key.
-- `Authorization: Bearer <api-key>` is accepted by the auth middleware
-  as a fallback when the token doesn't validate as a JWT. Successful
-  match populates `RequestContext` with the owner's identity.
-- Self-service CRUD under `/me/api-keys`. Admins can revoke any key.
+Delivered per [ADR-0011](docs/adr/0011-api-keys.md) — a key is an *alternate
+credential for an IdP-owned identity*, not a new identity (keeps ADR-0001
+intact). `src/fdp/identity/api_keys.py` (model + repository + `ApiKeyService` +
+`/me/api-keys` router) and migration `0007`:
+
+- **Token + storage**: `fdpk_` + ~190-bit random, shown **once**; only
+  `sha256(token)` is stored (fast hash is correct for high-entropy keys).
+  Postgres `api_keys(id, owner_subject, label, key_hash, display_prefix,
+  roles_json, groups_json, created_at, expires_at, last_used_at, revoked_at)`.
+- **Middleware**: an `Authorization: Bearer fdpk_…` is dispatched by prefix to
+  the key authenticator (Postgres lookup); everything else stays the JWT path
+  (kept DB-free). An unknown/revoked/expired/disabled key → 401, like a bad JWT.
+- **Live roles, not a frozen grant** (the refinement from the planning Q&A):
+  a new `subject_principal` table records each subject's freshest IdP roles,
+  upserted (throttled) by the middleware on every JWT login. API-key auth
+  resolves roles from there (mint-time snapshot is only a seed/fallback), so a
+  long-lived key tracks the owner's current roles — a role change reflects on
+  the owner's next interactive login, and the PDP evaluates live per request.
+  Per-key revoke (owner **or admin**) is the immediate kill switch. Known
+  bound (documented in ADR-0011): a *pure* service account that never logs in
+  interactively refreshes only via the deferred IdP-sync (§15) or re-mint;
+  `subject_principal` is the seam that work plugs into.
+- **CRUD** under `/me/api-keys`: `POST` (mint; plaintext returned once),
+  `GET` (own keys, secret-free), `DELETE /{id}` (owner or admin). Bounded by
+  `FDP_API_KEYS_{ENABLED,MAX_PER_USER,MAX_TTL_DAYS}`; no forced expiry.
+
+Tests: `tests/unit/identity/test_api_keys.py` (14) +
+`tests/unit/identity/test_middleware_api_keys.py` (prefix dispatch + throttled
+principal recording + role-change-records-immediately) — full unit suite green
+(719). Integration `tests/integration/identity/test_api_keys.py` (testcontainers
+Postgres + Oxigraph, **no** `current_context` override so the real middleware
+runs): a seeded key authenticates as its owner, gains admin live the moment its
+`subject_principal` is updated (403→200 on the admin dashboard view), and is
+401 after revoke.
 
 ### 11.2 [x] Anonymous read auth-cache warming (already TODO in main.py:142)
 

@@ -28,7 +28,9 @@ from fdp.access.router import build_sparql_router
 from fdp.config import get_settings
 from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
+from fdp.identity.api_keys import ApiKeyRepository, ApiKeyService, build_api_keys_router
 from fdp.identity.bootstrap import build_bootstrap_router
+from fdp.identity.principal import SubjectPrincipalRepository
 from fdp.metadata.admin import ResetService, build_admin_router
 from fdp.metadata.audit import AuditLog
 from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
@@ -96,6 +98,18 @@ def _build_shared_state(app: FastAPI) -> None:
     engine = build_engine(settings)
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
+
+    # API keys (Phase 11.1 / ADR-0011). The principal repository records each
+    # subject's freshest IdP roles on JWT login (via the middleware) so a
+    # long-lived key resolves current roles, not a frozen snapshot.
+    app.state.subject_principal_repo = SubjectPrincipalRepository(
+        session_factory=app.state.session_factory
+    )
+    app.state.api_key_service = ApiKeyService(
+        repository=ApiKeyRepository(session_factory=app.state.session_factory),
+        principals=app.state.subject_principal_repo,
+        settings=settings.api_keys,
+    )
 
     app.state.event_bus = EventBus()
 
@@ -274,6 +288,8 @@ def create_app() -> FastAPI:
         AuthenticationMiddleware,
         oidc=settings.oidc,
         jwks_client_provider=lambda: app.state.jwks_client,
+        api_key_authenticator_provider=lambda: app.state.api_key_service,
+        principal_recorder_provider=lambda: app.state.subject_principal_repo,
     )
     app.add_middleware(
         RequestObservationMiddleware,
@@ -330,6 +346,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(build_labels_router(resolver=app.state.label_resolver))
     app.include_router(build_dashboard_router(service=app.state.dashboard_service))
+    app.include_router(build_api_keys_router(service=app.state.api_key_service))
     app.include_router(build_settings_router(repository=app.state.settings_repository))
     app.include_router(build_admin_router(service=app.state.reset_service))
     app.include_router(build_autocomplete_router(service=app.state.autocomplete_service))
