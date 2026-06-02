@@ -30,7 +30,12 @@ import structlog
 from sqlalchemy import BigInteger, DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
+from fdp.metadata.events import (
+    RecordCreated,
+    RecordDeleted,
+    RecordModified,
+    RecordStateChanged,
+)
 from fdp.storage.postgres.models import Base
 
 if TYPE_CHECKING:
@@ -47,6 +52,7 @@ class AuditOperation(StrEnum):
     CREATE = "create"
     MODIFY = "modify"
     DELETE = "delete"
+    STATE_CHANGE = "state_change"
 
 
 class RecordAuditRow(Base):
@@ -99,6 +105,7 @@ class AuditLog:
                 bus.subscribe(RecordCreated, self._on_created),
                 bus.subscribe(RecordModified, self._on_modified),
                 bus.subscribe(RecordDeleted, self._on_deleted),
+                bus.subscribe(RecordStateChanged, self._on_state_changed),
             ]
         )
         log.info("audit_log_started")
@@ -135,6 +142,17 @@ class AuditLog:
             operation=AuditOperation.DELETE,
             subject=event.subject,
             etag=None,  # no post-delete content to fingerprint
+            occurred_at=event.timestamp,
+        )
+
+    async def _on_state_changed(self, event: RecordStateChanged) -> None:
+        await self._persist(
+            record_iri=event.record_iri,
+            operation=AuditOperation.STATE_CHANGE,
+            subject=event.subject,
+            # No content fingerprint for a lifecycle change; the etag column
+            # carries the transition for at-a-glance audit reads.
+            etag=f"{event.from_state}->{event.to_state}",
             occurred_at=event.timestamp,
         )
 

@@ -25,8 +25,10 @@ class _FakeRepo:
     fail_on_put: str | None = None
     """If set to an IRI, the put_graph call for that IRI raises."""
 
-    async def put_graph(self, record_uri: str, graph: Graph, *, subject: str | None) -> str:
-        del subject
+    async def put_graph(
+        self, record_uri: str, graph: Graph, *, subject: str | None, initial_state: object = None
+    ) -> str:
+        del subject, initial_state
         if self.fail_on_put is not None and record_uri == self.fail_on_put:
             raise RuntimeError("simulated triple-store failure")
         self.put_calls.append((record_uri, len(graph)))

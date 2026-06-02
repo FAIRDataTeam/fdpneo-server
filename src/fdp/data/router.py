@@ -45,6 +45,7 @@ from fdp.shared.graphs import data_graph_uri
 
 if TYPE_CHECKING:
     from fdp.config import DataSettings
+    from fdp.metadata.lifecycle import StateReader
     from fdp.policy.pdp import PDP
     from fdp.storage.triplestore import TripleStoreAdapter
 
@@ -64,6 +65,7 @@ def build_data_router(
     settings: DataSettings,
     base_url: str,
     http_client: httpx.AsyncClient,
+    state_reader: StateReader | None = None,
     prefix: str = "/data",
 ) -> APIRouter:
     """Construct the data-provider router.
@@ -72,6 +74,10 @@ def build_data_router(
     combines with the ``{distribution_id}`` path segment to form the
     distribution IRI. ``http_client`` is reused across stream-mode
     downloads to keep connection pooling sane.
+
+    ``state_reader`` is optional (Phase 12 / ADR-0010). When supplied, a
+    distribution is served only when its publication state is ``PUBLISHED`` —
+    the provider is anonymous-only, so a draft/archived distribution is hidden.
     """
     router = APIRouter(prefix=prefix, tags=["data"])
 
@@ -86,6 +92,7 @@ def build_data_router(
             pdp=pdp,
             base_url=base_url,
             trace_id=_trace_id(request),
+            state_reader=state_reader,
         )
         if info.download_url is None:
             raise NotFound(
@@ -114,6 +121,7 @@ def build_data_router(
             pdp=pdp,
             base_url=base_url,
             trace_id=_trace_id(request),
+            state_reader=state_reader,
         )
         if info.access_url is None:
             raise NotFound(
@@ -136,6 +144,7 @@ def build_data_router(
             pdp=pdp,
             base_url=base_url,
             trace_id=_trace_id(request),
+            state_reader=state_reader,
         )
         if info.access_url is None:
             raise NotFound(
@@ -158,6 +167,7 @@ async def _resolve_and_authorize(
     pdp: PDP,
     base_url: str,
     trace_id: str,
+    state_reader: StateReader | None = None,
 ) -> DistributionInfo:
     """Look up the distribution and gate it through the anonymous-read check."""
     iri = _distribution_iri(base_url, distribution_id)
@@ -176,6 +186,14 @@ async def _resolve_and_authorize(
         raise Forbidden(
             "this distribution is not open-access",
             details={"iri": info.iri, "reason": decision.reason},
+        )
+    # Publication-state gate (ADR-0010): the provider is anonymous-only, so a
+    # distribution that is not PUBLISHED is hidden (404) — its existence does
+    # not leak even when its Offer permits anonymous read.
+    if state_reader is not None and not await state_reader.is_published(info.iri):
+        raise NotFound(
+            "distribution not found",
+            details={"iri": info.iri},
         )
     return info
 

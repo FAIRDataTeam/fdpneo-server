@@ -71,6 +71,7 @@ from fdp.shared.errors import (
 )
 
 if TYPE_CHECKING:
+    from fdp.metadata.lifecycle import StateGate
     from fdp.metadata.repository import MetadataRepository
     from fdp.metadata.shacl import ShaclValidator
     from fdp.policy.pdp import PDP
@@ -130,6 +131,7 @@ def build_ldp_router(
     validator: ShaclValidator | None = None,
     containers: ContainerRegistry | None = None,
     event_bus: EventBus | None = None,
+    state_gate: StateGate | None = None,
     prefix: str = "/ldp",
 ) -> APIRouter:
     """Build the LDP router wired with ``repo`` + ``pdp`` + optional helpers.
@@ -137,6 +139,11 @@ def build_ldp_router(
     ``event_bus`` is optional. When supplied, successful PATCH commits
     publish :class:`RecordModified`. PUT/POST/DELETE will gain events in
     ticket 2.5 along with the meta-metadata schema work.
+
+    ``state_gate`` is optional (Phase 12 / ADR-0010). When supplied, ``GET`` /
+    ``HEAD`` additionally enforce publication-state visibility *after* the ODRL
+    read decision: a ``DRAFT``/``ARCHIVED`` record is 404 to anyone but its
+    owner or an admin. Writes are unaffected — an owner edits their own drafts.
     """
     router = APIRouter(prefix=prefix, tags=["ldp"])
     registry: ContainerRegistry = containers or DefaultContainerRegistry()
@@ -199,6 +206,8 @@ def build_ldp_router(
         graph = await repo.get_graph(iri)
         if len(graph) == 0:
             raise NotFound(f"resource not found: {iri}")
+        if state_gate is not None:
+            await state_gate.ensure_visible(ctx, iri)
         body = serialize(graph, media)
         etag = compute_etag(graph)
         headers = _response_headers(etag, registry.is_container(iri))
@@ -217,6 +226,8 @@ def build_ldp_router(
         graph = await repo.get_graph(iri)
         if len(graph) == 0:
             raise NotFound(f"resource not found: {iri}")
+        if state_gate is not None:
+            await state_gate.ensure_visible(ctx, iri)
         etag = compute_etag(graph)
         headers = _response_headers(etag, registry.is_container(iri))
         headers["Content-Type"] = media

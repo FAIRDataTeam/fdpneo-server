@@ -73,6 +73,14 @@ FDP_CHILD_TITLE = FDP_DEFAULT["childTitle"]
 FDP_CHILD_TAGS_URI = FDP_DEFAULT["childTagsUri"]
 """Optional predicate naming the tag vocabulary for a child listing."""
 
+FDP_METADATA_STATE = FDP_DEFAULT["metadataState"]
+"""Publication-state predicate stamped on a record's meta graph (ADR-0010).
+
+Object is one of the literal values ``DRAFT`` / ``PUBLISHED`` / ``ARCHIVED``.
+Lives in ``<record>/meta`` alongside ``dct:modified`` and ``owl:versionInfo``;
+changed only through the ``POST /{record}/state`` transition API, never by a
+record-content edit."""
+
 PREFIXES: Mapping[str, Namespace] = MappingProxyType(
     {
         "dcat": DCAT,

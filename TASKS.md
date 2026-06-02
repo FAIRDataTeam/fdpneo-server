@@ -706,24 +706,73 @@ The reference impl tracks a state per record (`DRAFT | PUBLISHED |
 ARCHIVED`) via `MetadataStateService`. The client renders a publish
 button and gates visibility per state.
 
-### 12.1 [ ] State storage
+Decided and recorded in [ADR-0010](docs/adr/0010-metadata-publication-state.md):
+state lives in the record's meta graph, and visibility is enforced as a
+structural gate **layered over** the ODRL decision (in the same slot as the
+`is_internal_graph_uri` filter) rather than folded into `authorize()` / the
+authz cache — so a transition needs no cache invalidation and the ODRL
+evaluator stays a pure function. The ADR's "Alternatives considered" explains
+why the literal "thread state into `authorize()`" wording was not taken.
 
-Add `meta:state` to the meta-metadata graph. Default for new records
-created via the LDP layer: `DRAFT`. State is part of the meta-metadata,
-not a separate table — it travels with the record.
+### 12.1 [x] State storage
 
-### 12.2 [ ] State transition API
+`fdp:metadataState` ("DRAFT" | "PUBLISHED" | "ARCHIVED") lives in the record's
+`<record>/meta` graph (not a Postgres table — it travels with the record).
+Delivered:
 
-`POST /<record-iri>/state` with `{to: "PUBLISHED"}`. Validated:
-- Only the record's owner (per ODRL Offer) or an admin can transition.
-- `DRAFT → PUBLISHED` is allowed; `PUBLISHED → ARCHIVED` is allowed;
-  `ARCHIVED → DRAFT` requires admin.
-- The PDP read decision must consult the state: anonymous reads
-  succeed only for `PUBLISHED`. This is a bigger change — it requires
-  threading `state` into the `authorize()` call. Consider a new ADR
-  before implementing.
+- `metadata/states.py` (leaf module: the `MetadataState` enum + the
+  transition table, depended on by both `meta` and `lifecycle` with no cycle).
+- `meta.build_meta_graph` now stamps state: **default `DRAFT`** on create,
+  **preserved** across content edits (a `PUT`/`PATCH` never resets it — only the
+  transition API does), and an `initial_state` arg the applier passes as
+  **`PUBLISHED`** for the root Repository + every seeded record (so the root is
+  anonymously readable). Threaded through `MetaWriter.write` →
+  `MetadataRepository.put_graph`.
+- The default meta-metadata SHACL shape requires the field
+  (`sh:in (DRAFT PUBLISHED ARCHIVED)`, `minCount 1`), so every record always
+  carries exactly one state. No migration (development re-bootstrap, per the
+  scope decision).
 
-References: `MetadataStateService.java`, `MetaStateChangeDTO.java`.
+### 12.2 [x] State transition API + read gating
+
+`POST /{record}/state` with `{"to": "PUBLISHED"}` — `metadata/lifecycle.py`
+(`StateService` + `build_state_router`), mounted before the LDP catch-all
+(root `/state` + `/{path}/state`; `state` added to the reserved RD prefixes).
+State machine (delivered with the requested **PUBLISHED → DRAFT unpublish**
+added):
+
+| From → To | Who |
+|---|---|
+| `DRAFT → PUBLISHED` | owner (ODRL `modify`) or admin |
+| `PUBLISHED → DRAFT` | owner or admin |
+| `PUBLISHED → ARCHIVED` | owner or admin |
+| `ARCHIVED → DRAFT` | admin only |
+
+Anything else / a same-state no-op → 409; anonymous → 401; non-owner → 403.
+"Owner" reuses the PDP (`authorize(ctx, MODIFY, record) == PERMIT`). A
+transition writes only the meta graph (swaps the state triple, bumps
+`dct:modified`; no content-ETag/version change), emits `RecordStateChanged`,
+and is audited (`record_audit.operation = "state_change"`).
+
+**Read gating** — one `StateGate`/`StateReader` consulted at every read PEP:
+- LDP `GET`/`HEAD`: after the ODRL read decision, a non-visible record → **404**
+  (hides existence). Visible = PUBLISHED, or the caller is admin / holds `modify`.
+- SPARQL projection (`StateGate.visible_read_graphs`): the ODRL read set
+  intersected with (published ∪ the subject's modify set); anonymous collapses
+  to read-and-published. Updates are unaffected.
+- `/expanded` + `/page` (draft ancestors/children drop out, not 404 the whole
+  response) and the anonymous data provider (a non-published distribution 404s).
+- The dashboard surfaces each item's `state`.
+
+Tests: `tests/unit/metadata/test_lifecycle.py` (22 — states table, meta
+default/preserve/seed, reader/gate/service/router over a real rdflib `Dataset`
+fake) + `tests/integration/metadata/test_metadata_lifecycle.py` (5,
+testcontainers Oxigraph + Postgres: seeded-root readable, draft hidden→publish→
+archive, anonymous-401, disallowed-409, **SPARQL excludes drafts for anon**).
+Full unit suite green (700); integration 5/5.
+
+References: `MetadataStateService.java`, `MetaStateChangeDTO.java`,
+[ADR-0010](docs/adr/0010-metadata-publication-state.md).
 
 ---
 

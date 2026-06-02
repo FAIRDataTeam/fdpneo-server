@@ -14,6 +14,7 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -36,6 +37,12 @@ from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
+from fdp.metadata.lifecycle import (
+    StateGate,
+    StateReader,
+    StateService,
+    build_state_router,
+)
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.profiles import (
     RD_SHAPE_IRI,
@@ -114,6 +121,19 @@ def _build_shared_state(app: FastAPI) -> None:
     app.state.pdp = RequestScopedPDP(
         session_factory=app.state.session_factory,
         offer_resolver=app.state.offer_resolver,
+    )
+
+    # Publication-state lifecycle (Phase 12 / ADR-0010). The reader fronts the
+    # meta-graph state triples; the gate layers state visibility over the ODRL
+    # read decision at every read PEP; the service drives the transition API.
+    app.state.state_reader = StateReader(app.state.triplestore)
+    app.state.state_gate = StateGate(reader=app.state.state_reader, pdp=app.state.pdp)
+    app.state.state_service = StateService(
+        adapter=app.state.triplestore,
+        reader=app.state.state_reader,
+        pdp=app.state.pdp,
+        event_bus=app.state.event_bus,
+        clock=lambda: datetime.now(UTC),
     )
 
     # Resource-definition cache — populated by the profile applier (CLI
@@ -280,7 +300,8 @@ def create_app() -> FastAPI:
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
     # /labels, /me, /metrics, /data, /sparql, /settings, /admin (the
-    # factory-reset surface — Phase 10.4), /forms,
+    # factory-reset surface — Phase 10.4), /forms, /state and
+    # /{record}/state (publication-state transitions — Phase 12),
     # /spec, /expanded, /page, /resource-definitions (the runtime
     # resource-definition catalog + admin surface — ADR-0009), /schemas
     # (runtime SHACL-shape admin — Phase 10.1), and
@@ -321,12 +342,14 @@ def create_app() -> FastAPI:
             settings=settings.data,
             base_url=str(settings.base_url),
             http_client=app.state.http_client,
+            state_reader=app.state.state_reader,
         )
     )
     app.include_router(
         build_sparql_router(
             pdp=app.state.pdp,
             adapter=app.state.triplestore,
+            state_gate=app.state.state_gate,
         )
     )
     # LDP read-extensions (/spec, /expanded, /page) — registered AFTER
@@ -339,6 +362,15 @@ def create_app() -> FastAPI:
             repo=app.state.metadata_repository,
             pdp=app.state.pdp,
             cache_provider=lambda: app.state.resource_definitions,
+            base_url=str(settings.base_url),
+            state_gate=app.state.state_gate,
+        )
+    )
+    # Publication-state transitions (Phase 12 / ADR-0010). Registered before the
+    # LDP catch-all so the POST /{record}/state suffix isn't swallowed.
+    app.include_router(
+        build_state_router(
+            service=app.state.state_service,
             base_url=str(settings.base_url),
         )
     )
@@ -370,6 +402,7 @@ def create_app() -> FastAPI:
             validator=app.state.shacl_validator,
             containers=_DynamicContainerRegistry(app),
             event_bus=app.state.event_bus,
+            state_gate=app.state.state_gate,
             prefix="",
         )
     )

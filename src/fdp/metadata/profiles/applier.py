@@ -55,6 +55,7 @@ from fdp.metadata.profiles.validator import (
     ValidationReport,
     validate_profile,
 )
+from fdp.metadata.states import SEED_STATE
 from fdp.shared.errors import BadRequest, Conflict, FDPError
 from fdp.shared.graphs import resource_definition_graph_uri
 from fdp.shared.namespaces import DCT, LDP, ODRL
@@ -159,7 +160,7 @@ async def apply_profile(
         # 1. SHACL schemas — stored at their CURIE-expanded IRI.
         for loaded in profile.schemas:
             iri = expander.schema_iri(loaded.entry.id)
-            await repository.put_graph(iri, loaded.graph, subject=None)
+            await repository.put_graph(iri, loaded.graph, subject=None, initial_state=SEED_STATE)
             report.schemas_written.append(iri)
             written.append(iri)
 
@@ -167,7 +168,7 @@ async def apply_profile(
         offer_iris: dict[str, str] = {}  # offer-entry id → IRI
         for offer in profile.offers:
             iri = _offer_iri_from_graph(offer.graph)
-            await repository.put_graph(iri, offer.graph, subject=None)
+            await repository.put_graph(iri, offer.graph, subject=None, initial_state=SEED_STATE)
             offer_iris[offer.entry.id] = iri
             report.offers_written.append(iri)
             written.append(iri)
@@ -179,7 +180,7 @@ async def apply_profile(
         #     These are the runtime source of truth; the in-memory cache below
         #     is a projection (task #3 rebuilds it from these records).
         if profile.manifest.resource_definitions:
-            await repository.put_graph(RD_SHAPE_IRI, predefined_shape_graph(), subject=None)
+            await repository.put_graph(RD_SHAPE_IRI, predefined_shape_graph(), subject=None, initial_state=SEED_STATE)
             report.rd_shape_iri = RD_SHAPE_IRI
             written.append(RD_SHAPE_IRI)
             records = records_from_manifest(
@@ -191,7 +192,7 @@ async def apply_profile(
                         expander.base_url, rd_record_slug(record.url_prefix, record.name)
                     )
                 )
-                await repository.put_graph(iri, record_to_graph(record, iri), subject=None)
+                await repository.put_graph(iri, record_to_graph(record, iri), subject=None, initial_state=SEED_STATE)
                 report.resource_definition_records.append(iri)
                 written.append(iri)
 
@@ -221,14 +222,14 @@ async def apply_profile(
                     title=profile.name,
                     rights_iri=system_default_iri,
                 )
-                await repository.put_graph(repo_iri, graph, subject=None)
+                await repository.put_graph(repo_iri, graph, subject=None, initial_state=SEED_STATE)
                 report.repository_iri = repo_iri
                 written.append(repo_iri)
 
         # 5. Explicit seed records.
         for seed in profile.seed_records:
             iri = expander.seed_record_iri(seed.entry.id)
-            await repository.put_graph(iri, seed.graph, subject=None)
+            await repository.put_graph(iri, seed.graph, subject=None, initial_state=SEED_STATE)
             report.seed_records_written.append(iri)
             written.append(iri)
 

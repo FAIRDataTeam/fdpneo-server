@@ -70,4 +70,26 @@ class RecordDeleted(Event):
     timestamp: datetime
 
 
-__all__ = ["RecordCreated", "RecordDeleted", "RecordModified"]
+@dataclass(frozen=True)
+class RecordStateChanged(Event):
+    """A record's publication state transitioned (POST /{record}/state; ADR-0010).
+
+    A lifecycle change, not a content edit — there is no new content ETag to
+    carry. ``from_state`` / ``to_state`` are the literal state values
+    (``DRAFT`` / ``PUBLISHED`` / ``ARCHIVED``); the audit subscriber persists
+    the transition.
+    """
+
+    record_iri: str
+    subject: str | None
+    from_state: str
+    to_state: str
+    timestamp: datetime
+
+
+__all__ = [
+    "RecordCreated",
+    "RecordDeleted",
+    "RecordModified",
+    "RecordStateChanged",
+]

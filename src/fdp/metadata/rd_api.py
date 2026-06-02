@@ -76,6 +76,7 @@ RESERVED_PREFIXES: Final = frozenset(
         "settings",
         "admin",
         "forms",
+        "state",
         "spec",
         "expanded",
         "page",

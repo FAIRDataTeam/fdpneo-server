@@ -32,7 +32,8 @@ from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.graphs import meta_graph_uri, record_graph_uri
-from fdp.shared.namespaces import DCT, FDP_DEFAULT, OWL, PROV
+from fdp.metadata.states import DEFAULT_STATE, MetadataState
+from fdp.shared.namespaces import DCT, FDP_DEFAULT, FDP_METADATA_STATE, OWL, PROV
 
 if TYPE_CHECKING:
     from fdp.metadata.shacl import ShaclValidator
@@ -62,6 +63,7 @@ class MetaResult:
     graph: Graph
     operation: Operation
     version: int
+    state: MetadataState
 
 
 def build_meta_graph(
@@ -70,6 +72,7 @@ def build_meta_graph(
     prior: Graph,
     subject: str | None,
     now: datetime,
+    initial_state: MetadataState = DEFAULT_STATE,
 ) -> MetaResult:
     """Build the next meta graph for ``record_iri``.
 
@@ -78,6 +81,11 @@ def build_meta_graph(
         prior: The current meta graph for the record (empty graph on first write).
         subject: The current acting principal's URI; ``None`` if anonymous.
         now: The write timestamp; supplied by the caller for determinism.
+        initial_state: Publication state for a *new* record (ADR-0010). LDP
+            creates default to ``DRAFT``; the profile applier passes
+            ``PUBLISHED`` for seeded records. On MODIFY the prior state is
+            preserved and this argument is ignored — a content edit never
+            changes publication state; only the transition API does.
 
     Returns:
         A :class:`MetaResult` whose ``graph`` is ready to replace whatever
@@ -91,6 +99,11 @@ def build_meta_graph(
     operation = Operation.CREATE if is_creation else Operation.MODIFY
     effective_created = created_at or now
     effective_creator = prior_creator if not is_creation else subject
+    # State is server-managed lifecycle metadata: set it on create, preserve
+    # it across content edits. Only the transition API (lifecycle.py) changes
+    # an existing record's state.
+    prior_state = _extract_state(prior, record_subject)
+    effective_state = initial_state if is_creation else (prior_state or initial_state)
 
     graph = Graph()
     graph.add((record_subject, RDF.type, PROV.Entity))
@@ -99,6 +112,7 @@ def build_meta_graph(
         graph.add((record_subject, DCT.creator, URIRef(effective_creator)))
     graph.add((record_subject, DCT.modified, Literal(now)))
     graph.add((record_subject, OWL.versionInfo, Literal(version)))
+    graph.add((record_subject, FDP_METADATA_STATE, Literal(effective_state.value)))
 
     activity = BNode()
     graph.add((record_subject, PROV.wasGeneratedBy, activity))
@@ -114,7 +128,7 @@ def build_meta_graph(
     if subject is not None:
         graph.add((activity, PROV.wasAssociatedWith, URIRef(subject)))
 
-    return MetaResult(graph=graph, operation=operation, version=version)
+    return MetaResult(graph=graph, operation=operation, version=version, state=effective_state)
 
 
 class MetaWriter:
@@ -144,6 +158,7 @@ class MetaWriter:
         prior: Graph,
         subject: str | None,
         now: datetime,
+        initial_state: MetadataState = DEFAULT_STATE,
     ) -> MetaResult:
         """Run the full build → validate → commit cycle."""
         result = build_meta_graph(
@@ -151,6 +166,7 @@ class MetaWriter:
             prior=prior,
             subject=subject,
             now=now,
+            initial_state=initial_state,
         )
         if self._validator is not None and self._shape_iri is not None:
             report = await self._validator.validate_against(result.graph, self._shape_iri)
@@ -206,6 +222,16 @@ def _extract_creation(
             creator = str(value)
             break
     return created, creator
+
+
+def _extract_state(prior: Graph, record_subject: URIRef) -> MetadataState | None:
+    """Return the prior publication state, or ``None`` if not present/invalid."""
+    for value in prior.objects(record_subject, FDP_METADATA_STATE):
+        try:
+            return MetadataState(str(value))
+        except ValueError:
+            return None
+    return None
 
 
 __all__ = [

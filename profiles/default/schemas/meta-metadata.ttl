@@ -36,6 +36,15 @@ fdp:MetaMetadataShape
         sh:datatype xsd:integer ;
     ] ;
     sh:property [
+        # Publication state (ADR-0010). Server-managed: set on create
+        # (DRAFT for LDP records, PUBLISHED for profile-seeded ones) and
+        # changed only via the POST /{record}/state transition API.
+        sh:path fdp:metadataState ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "DRAFT" "PUBLISHED" "ARCHIVED" ) ;
+    ] ;
+    sh:property [
         sh:path prov:wasGeneratedBy ;
         sh:minCount 1 ;
         sh:nodeKind sh:BlankNodeOrIRI ;

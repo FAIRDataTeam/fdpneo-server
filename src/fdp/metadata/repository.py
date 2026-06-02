@@ -34,6 +34,7 @@ from fdp.metadata.graphs import (
     record_graph_uri,
 )
 from fdp.metadata.meta import MetaResult, MetaWriter
+from fdp.metadata.states import DEFAULT_STATE, MetadataState
 
 if TYPE_CHECKING:
     from fdp.storage.triplestore import TripleStoreAdapter
@@ -78,12 +79,20 @@ class MetadataRepository:
         graph: Graph,
         *,
         subject: str | None,
+        initial_state: MetadataState = DEFAULT_STATE,
     ) -> str:
-        """Replace the record graph; return the post-write ETag."""
+        """Replace the record graph; return the post-write ETag.
+
+        ``initial_state`` is the publication state for a *new* record
+        (ADR-0010); ignored when the record already exists, since the meta
+        builder preserves the prior state across content edits. The profile
+        applier passes ``PUBLISHED`` for seeded records; the LDP layer leaves
+        the ``DRAFT`` default.
+        """
         graph_uri = record_graph_uri(record_uri)
         nt = graph.serialize(format="nt")
         await self._adapter.replace_graph(str(graph_uri), nt, mime="application/n-triples")
-        await self._refresh_meta(record_uri, subject=subject)
+        await self._refresh_meta(record_uri, subject=subject, initial_state=initial_state)
         return compute_etag(graph)
 
     async def patch_graph(
@@ -124,6 +133,7 @@ class MetadataRepository:
         record_uri: str | URIRef,
         *,
         subject: str | None,
+        initial_state: MetadataState = DEFAULT_STATE,
     ) -> MetaResult:
         prior = await self._get_meta(meta_graph_uri(record_uri))
         return await self._meta.write(
@@ -132,6 +142,7 @@ class MetadataRepository:
             prior=prior,
             subject=subject,
             now=self._clock(),
+            initial_state=initial_state,
         )
 
     async def _get_meta(self, meta_uri: URIRef) -> Graph:

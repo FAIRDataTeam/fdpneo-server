@@ -58,6 +58,7 @@ from fdp.shared.errors import (
 )
 
 if TYPE_CHECKING:
+    from fdp.metadata.lifecycle import StateGate
     from fdp.metadata.profiles.registry import ResourceDefinitionCache
     from fdp.metadata.repository import MetadataRepository
     from fdp.policy.pdp import PDP
@@ -82,6 +83,7 @@ def build_extensions_router(
     pdp: PDP,
     cache_provider: Callable[[], ResourceDefinitionCache | None],
     base_url: str,
+    state_gate: StateGate | None = None,
 ) -> APIRouter:
     """Construct the read-extensions router.
 
@@ -146,16 +148,21 @@ def build_extensions_router(
         ctx: RequestContext, resource_iri: str
     ) -> None:
         decision = await pdp.authorize(ctx, Action.READ, resource_iri)
-        if decision.outcome is Outcome.PERMIT:
-            return
-        if ctx.is_anonymous:
-            raise Unauthenticated(
-                f"authentication required for read on {resource_iri}"
+        if decision.outcome is not Outcome.PERMIT:
+            if ctx.is_anonymous:
+                raise Unauthenticated(
+                    f"authentication required for read on {resource_iri}"
+                )
+            raise PolicyViolation(
+                f"policy denies read on {resource_iri}",
+                details={"action": "read", "resource": resource_iri},
             )
-        raise PolicyViolation(
-            f"policy denies read on {resource_iri}",
-            details={"action": "read", "resource": resource_iri},
-        )
+        # Publication-state gate (ADR-0010): a draft/archived record is not
+        # visible to a non-owner even when ODRL permits read. Raises NotFound;
+        # the ancestor/child walks below catch it so a hidden relative simply
+        # drops out of the response instead of 404-ing the whole request.
+        if state_gate is not None:
+            await state_gate.ensure_visible(ctx, resource_iri)
 
     async def _serve_expanded(record_iri: str, ctx: RequestContext, request: Request) -> Response:
         await _read_authorised(ctx, record_iri)
@@ -180,7 +187,7 @@ def build_extensions_router(
                 visited.add(parent_iri)
                 try:
                     await _read_authorised(ctx, parent_iri)
-                except (Unauthenticated, Forbidden, PolicyViolation):
+                except (Unauthenticated, Forbidden, PolicyViolation, NotFound):
                     continue
                 parent_graph = await repo.get_graph(parent_iri)
                 for s, p, o in parent_graph:
@@ -266,7 +273,7 @@ def build_extensions_router(
         for child_iri in page:
             try:
                 await _read_authorised(ctx, child_iri)
-            except (Unauthenticated, Forbidden, PolicyViolation):
+            except (Unauthenticated, Forbidden, PolicyViolation, NotFound):
                 continue
             child_ref = URIRef(child_iri)
             result.add((parent_ref, relation_ref, child_ref))

@@ -60,6 +60,7 @@ from fdp.shared.errors import (
 )
 
 if TYPE_CHECKING:
+    from fdp.metadata.lifecycle import StateGate
     from fdp.policy.pdp import PDP
     from fdp.storage.triplestore import TripleStoreAdapter
 
@@ -75,9 +76,16 @@ def build_sparql_router(
     *,
     pdp: PDP,
     adapter: TripleStoreAdapter,
+    state_gate: StateGate | None = None,
     prefix: str = "/sparql",
 ) -> APIRouter:
-    """Build the SPARQL endpoint router wired with ``pdp`` + ``adapter``."""
+    """Build the SPARQL endpoint router wired with ``pdp`` + ``adapter``.
+
+    ``state_gate`` is optional (Phase 12 / ADR-0010). When supplied, the read
+    projection is the publication-state-visible subset of the ODRL read set
+    (anonymous sees only ``PUBLISHED`` graphs); updates are unaffected — an
+    authenticated writer's WHERE still observes their full authorized-read set.
+    """
     router = APIRouter(prefix=prefix, tags=["sparql"])
 
     async def _serve(
@@ -121,7 +129,11 @@ def build_sparql_router(
                 f"no supported result media type for {parsed.form.value}",
                 details={"form": parsed.form.value},
             )
-        authorized_read = await pdp.authorized_graphs(ctx, Action.READ)
+        authorized_read = (
+            await state_gate.visible_read_graphs(ctx)
+            if state_gate is not None
+            else await pdp.authorized_graphs(ctx, Action.READ)
+        )
         rewritten = rewrite_read(parsed, authorized_read=authorized_read)
         if parsed.form in (QueryForm.CONSTRUCT, QueryForm.DESCRIBE):
             return _stream_graph_response(sparql, parsed, rewritten, media)

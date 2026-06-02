@@ -68,6 +68,9 @@ class DashboardItem(BaseModel):
     record_iri: str
     type_iri: str | None = None
     title: str | None = None
+    state: str | None = None
+    """Publication state (ADR-0010): DRAFT / PUBLISHED / ARCHIVED. ``None`` when
+    the store has no state for the record (e.g. it was deleted)."""
     last_modified: datetime | None = None
 
 
@@ -166,9 +169,7 @@ class DashboardService:
 
     # --- owned (SPARQL: dct:creator) -------------------------------------
 
-    async def _read_owned(
-        self, subject: str | None, limit: int
-    ) -> list[DashboardItem]:
+    async def _read_owned(self, subject: str | None, limit: int) -> list[DashboardItem]:
         # Each OPTIONAL gets its own ``GRAPH ?gN`` binding so the
         # enrichment lookups can find type and title in *any* named
         # graph — not only the one carrying ``dct:creator``. Seed
@@ -182,9 +183,7 @@ class DashboardService:
             # ``as_admin`` path: enumerate every dct:creator. Bounded
             # by ``limit``; ordered by IRI for stability.
             creator_clause = (
-                "  GRAPH ?g_creator {\n"
-                "    ?iri <http://purl.org/dc/terms/creator> ?creator\n"
-                "  }\n"
+                "  GRAPH ?g_creator {\n    ?iri <http://purl.org/dc/terms/creator> ?creator\n  }\n"
             )
         elif not is_safe_iri(subject):
             return []
@@ -195,10 +194,11 @@ class DashboardService:
                 "  }\n"
             )
         sparql = (
-            "SELECT ?iri ?type ?title WHERE {\n"
+            "SELECT ?iri ?type ?title ?state WHERE {\n"
             f"{creator_clause}"
             "  OPTIONAL { GRAPH ?g_type { ?iri a ?type } }\n"
             "  OPTIONAL { GRAPH ?g_title { ?iri <http://purl.org/dc/terms/title> ?title } }\n"
+            "  OPTIONAL { GRAPH ?g_state { ?iri <https://w3id.org/fdp/o#metadataState> ?state } }\n"
             "} ORDER BY ?iri\n"
             f"LIMIT {int(limit)}\n"
         )
@@ -206,9 +206,7 @@ class DashboardService:
 
     # --- recent (Postgres audit) -----------------------------------------
 
-    async def _read_recent(
-        self, subject: str | None, limit: int
-    ) -> list[DashboardItem]:
+    async def _read_recent(self, subject: str | None, limit: int) -> list[DashboardItem]:
         async with self._session_factory() as session:
             # Group by record_iri so we get one row per record with
             # its most-recent timestamp. Exclude delete events: a
@@ -234,14 +232,13 @@ class DashboardService:
         by_iri = {item.record_iri: item for item in enriched}
         items: list[DashboardItem] = []
         for record_iri, last_at in rows:
-            base = by_iri.get(str(record_iri)) or DashboardItem(
-                record_iri=str(record_iri)
-            )
+            base = by_iri.get(str(record_iri)) or DashboardItem(record_iri=str(record_iri))
             items.append(
                 DashboardItem(
                     record_iri=base.record_iri,
                     type_iri=base.type_iri,
                     title=base.title,
+                    state=base.state,
                     last_modified=_ensure_utc(last_at),
                 )
             )
@@ -262,21 +259,19 @@ class DashboardService:
             return [DashboardItem(record_iri=iri) for iri in iris]
         values_block = " ".join(f"<{iri}>" for iri in safe)
         sparql = (
-            "SELECT ?iri ?type ?title WHERE {\n"
+            "SELECT ?iri ?type ?title ?state WHERE {\n"
             f"  VALUES ?iri {{ {values_block} }}\n"
             "  OPTIONAL { GRAPH ?g_type { ?iri a ?type } }\n"
             "  OPTIONAL { GRAPH ?g_title { ?iri <http://purl.org/dc/terms/title> ?title } }\n"
+            "  OPTIONAL { GRAPH ?g_state { ?iri <https://w3id.org/fdp/o#metadataState> ?state } }\n"
             "}\n"
         )
         items_by_iri = {
-            item.record_iri: item
-            for item in _select_to_items(await self._adapter.query(sparql))
+            item.record_iri: item for item in _select_to_items(await self._adapter.query(sparql))
         }
         # Preserve the input order; fill in placeholders for IRIs the
         # store knows nothing about so the response stays stable.
-        return [
-            items_by_iri.get(iri, DashboardItem(record_iri=iri)) for iri in iris
-        ]
+        return [items_by_iri.get(iri, DashboardItem(record_iri=iri)) for iri in iris]
 
 
 # --- helpers ---------------------------------------------------------------
@@ -300,11 +295,16 @@ def _select_to_items(body: bytes) -> list[DashboardItem]:
             continue
         type_term = row.get("type", {})
         title_term = row.get("title", {})
+        state_term = row.get("state", {})
         existing = by_iri.get(iri)
         type_iri = (existing.type_iri if existing else None) or type_term.get("value")
         title = (existing.title if existing else None) or title_term.get("value")
+        state = (existing.state if existing else None) or state_term.get("value")
         by_iri[iri] = DashboardItem(
-            record_iri=iri, type_iri=type_iri or None, title=title or None
+            record_iri=iri,
+            type_iri=type_iri or None,
+            title=title or None,
+            state=state or None,
         )
     return list(by_iri.values())
 
