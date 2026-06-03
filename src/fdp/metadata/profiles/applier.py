@@ -39,6 +39,7 @@ import structlog
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
+from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.profiles.iri import IRIExpander
 from fdp.metadata.profiles.rd_records import (
     RD_SHAPE_IRI,
@@ -103,6 +104,7 @@ class ApplyReport:
 
     schemas_written: list[str] = field(default_factory=list)
     offers_written: list[str] = field(default_factory=list)
+    meta_shape_iri: str | None = None
     rd_shape_iri: str | None = None
     resource_definition_records: list[str] = field(default_factory=list)
     repository_iri: str | None = None
@@ -116,6 +118,7 @@ class ApplyReport:
         return (
             len(self.schemas_written)
             + len(self.offers_written)
+            + (1 if self.meta_shape_iri else 0)
             + (1 if self.rd_shape_iri else 0)
             + len(self.resource_definition_records)
             + (1 if self.repository_iri else 0)
@@ -157,6 +160,20 @@ async def apply_profile(
     expander = IRIExpander(settings=settings)
 
     try:
+        # 0. Meta-metadata shape — stored at its fixed IRI (META_SHAPE_IRI) so
+        #    runtime meta validation (MetaWriter) can fetch it. Written first so
+        #    the very next meta refresh has a shape to validate against. Without
+        #    this the shape exists only for bootstrap-time profile validation.
+        if profile.meta_metadata_schema is not None:
+            await repository.put_graph(
+                META_SHAPE_IRI,
+                profile.meta_metadata_schema,
+                subject=None,
+                initial_state=SEED_STATE,
+            )
+            report.meta_shape_iri = META_SHAPE_IRI
+            written.append(META_SHAPE_IRI)
+
         # 1. SHACL schemas — stored at their CURIE-expanded IRI.
         for loaded in profile.schemas:
             iri = expander.schema_iri(loaded.entry.id)
@@ -180,7 +197,9 @@ async def apply_profile(
         #     These are the runtime source of truth; the in-memory cache below
         #     is a projection (task #3 rebuilds it from these records).
         if profile.manifest.resource_definitions:
-            await repository.put_graph(RD_SHAPE_IRI, predefined_shape_graph(), subject=None, initial_state=SEED_STATE)
+            await repository.put_graph(
+                RD_SHAPE_IRI, predefined_shape_graph(), subject=None, initial_state=SEED_STATE
+            )
             report.rd_shape_iri = RD_SHAPE_IRI
             written.append(RD_SHAPE_IRI)
             records = records_from_manifest(
@@ -192,7 +211,9 @@ async def apply_profile(
                         expander.base_url, rd_record_slug(record.url_prefix, record.name)
                     )
                 )
-                await repository.put_graph(iri, record_to_graph(record, iri), subject=None, initial_state=SEED_STATE)
+                await repository.put_graph(
+                    iri, record_to_graph(record, iri), subject=None, initial_state=SEED_STATE
+                )
                 report.resource_definition_records.append(iri)
                 written.append(iri)
 

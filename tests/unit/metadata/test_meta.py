@@ -30,11 +30,7 @@ NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
 LATER = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
 
 META_SHAPE_TTL = (
-    Path(__file__).resolve().parents[3]
-    / "profiles"
-    / "default"
-    / "schemas"
-    / "meta-metadata.ttl"
+    Path(__file__).resolve().parents[3] / "profiles" / "default" / "schemas" / "meta-metadata.ttl"
 ).read_text(encoding="utf-8")
 
 
@@ -106,9 +102,7 @@ def test_anonymous_first_write_skips_creator_and_actor() -> None:
 @pytest.mark.unit
 def test_modified_timestamp_updates_each_write() -> None:
     first = build_meta_graph(record_iri=RECORD, prior=_empty(), subject=ALICE, now=NOW)
-    second = build_meta_graph(
-        record_iri=RECORD, prior=first.graph, subject=ALICE, now=LATER
-    )
+    second = build_meta_graph(record_iri=RECORD, prior=first.graph, subject=ALICE, now=LATER)
     first_modified = next(first.graph.objects(RECORD_URI, DCT.modified))
     second_modified = next(second.graph.objects(RECORD_URI, DCT.modified))
     assert str(first_modified) != str(second_modified)
@@ -194,6 +188,28 @@ async def test_writer_raises_schema_violation_when_required_field_stripped() -> 
     with pytest.raises(SchemaViolation):
         report.raise_if_failed()
     assert adapter.writes == []
+
+
+@pytest.mark.unit
+async def test_writer_tolerates_missing_meta_shape() -> None:
+    """A validator is configured but the shape isn't stored → skip, still write.
+
+    Server-generated meta must never be blocked by a missing/misconfigured meta
+    shape (e.g. a profile that omits ``metaMetadataSchema``).
+    """
+    adapter = _RecordingAdapter()
+    writer = MetaWriter(
+        validator=ShaclValidator(InMemoryShapeProvider({})), shape_iri=META_SHAPE_IRI
+    )
+    result = await writer.write(
+        adapter,  # type: ignore[arg-type]
+        record_iri=RECORD,
+        prior=_empty(),
+        subject=ALICE,
+        now=NOW,
+    )
+    assert result.operation is Operation.CREATE
+    assert adapter.writes  # the meta graph was still committed
 
 
 @pytest.mark.unit

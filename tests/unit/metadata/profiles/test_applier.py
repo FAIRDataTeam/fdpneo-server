@@ -149,6 +149,59 @@ async def test_apply_writes_schemas_then_offers_then_repository_seed(
     assert report.resource_definitions.root() is not None
 
 
+_MANIFEST_WITH_META = """\
+apiVersion: fdp/v1
+kind: DeploymentProfile
+metadata:
+  name: test
+  version: 0.1.0
+schemas:
+  - id: dcat:Catalog
+    path: schemas/catalog.ttl
+metaMetadataSchema:
+  path: schemas/meta-metadata.ttl
+offers:
+  - id: system-default
+    path: offers/system-default.ttl
+    isSystemDefault: true
+resourceDefinitions:
+  - urlPrefix: ""
+    name: Repository
+    schema: dcat:Catalog
+"""
+
+_META_SHAPE_TTL = """\
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+<https://w3id.org/fdp/o#MetaMetadataShape>
+    a sh:NodeShape ; sh:targetClass prov:Entity .
+"""
+
+
+@pytest.mark.unit
+async def test_apply_stores_meta_shape_first_so_runtime_can_validate(
+    write_bundle: Callable[..., Path],
+) -> None:
+    bundle = write_bundle(
+        manifest_text=_MANIFEST_WITH_META,
+        extra_files={"schemas/meta-metadata.ttl": _META_SHAPE_TTL},
+    )
+    profile = load_profile(bundle)
+    repo = _FakeRepo()
+    report = await apply_profile(
+        profile,
+        repository=repo,  # type: ignore[arg-type]
+        state=_FakeState(),  # type: ignore[arg-type]
+        session=_FakeSession(),  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+    iris = [c[0] for c in repo.put_calls]
+    # The meta shape is written first, at its fixed IRI, so the very next meta
+    # refresh (and all runtime writes) can validate against it.
+    assert iris[0] == "https://w3id.org/fdp/o#MetaMetadataShape"
+    assert report.meta_shape_iri == "https://w3id.org/fdp/o#MetaMetadataShape"
+
+
 # --- already-initialized refusal ----------------------------------------
 
 

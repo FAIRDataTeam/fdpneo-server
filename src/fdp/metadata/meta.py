@@ -32,6 +32,7 @@ from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.graphs import meta_graph_uri, record_graph_uri
+from fdp.metadata.shacl import UnknownShapeError
 from fdp.metadata.states import DEFAULT_STATE, MetadataState
 from fdp.shared.namespaces import DCT, FDP_DEFAULT, FDP_METADATA_STATE, OWL, PROV
 
@@ -169,15 +170,27 @@ class MetaWriter:
             initial_state=initial_state,
         )
         if self._validator is not None and self._shape_iri is not None:
-            report = await self._validator.validate_against(result.graph, self._shape_iri)
-            if not report.conforms:
-                log.error(
-                    "meta_metadata_schema_violation",
+            try:
+                report = await self._validator.validate_against(result.graph, self._shape_iri)
+            except UnknownShapeError:
+                # The meta shape isn't stored (a profile omitted it, or this is
+                # the bootstrap write that stores it). The meta graph is
+                # server-generated, so degrade safely rather than fail the
+                # write; an operator misconfiguration surfaces in the log.
+                log.warning(
+                    "meta_shape_unavailable_skipping_validation",
                     record=str(record_iri),
                     shape=self._shape_iri,
-                    violations=len(report.violations),
                 )
-            report.raise_if_failed()
+            else:
+                if not report.conforms:
+                    log.error(
+                        "meta_metadata_schema_violation",
+                        record=str(record_iri),
+                        shape=self._shape_iri,
+                        violations=len(report.violations),
+                    )
+                report.raise_if_failed()
         nt = result.graph.serialize(format="nt")
         await adapter.replace_graph(
             str(meta_graph_uri(record_iri)),

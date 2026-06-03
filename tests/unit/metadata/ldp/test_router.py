@@ -126,9 +126,7 @@ class FakePDP:
     overrides: dict[tuple[str, str], Outcome] = field(default_factory=_empty_overrides)
     calls: list[tuple[str, str]] = field(default_factory=_empty_call_log)
 
-    async def authorize(
-        self, ctx: RequestContext, action: Action, resource_iri: str
-    ) -> Decision:
+    async def authorize(self, ctx: RequestContext, action: Action, resource_iri: str) -> Decision:
         del ctx
         self.calls.append((action.value, resource_iri))
         outcome = self.overrides.get((action.value, resource_iri), self.default)
@@ -342,9 +340,7 @@ async def test_put_new_resource_returns_201_with_location() -> None:
     app = _build_app(repo=repo, pdp=FakePDP())
     body = f'<{RECORD_IRI}> <{DCT.title}> "new" .'.encode()
     with TestClient(app) as client:
-        response = client.put(
-            RECORD_PATH, content=body, headers={"content-type": N_TRIPLES}
-        )
+        response = client.put(RECORD_PATH, content=body, headers={"content-type": N_TRIPLES})
 
     assert response.status_code == 201
     assert response.headers["location"] == RECORD_IRI
@@ -361,9 +357,7 @@ async def test_put_replace_requires_if_match_header() -> None:
     app = _build_app(repo=repo, pdp=FakePDP())
     body = f'<{RECORD_IRI}> <{DCT.title}> "updated" .'.encode()
     with TestClient(app) as client:
-        response = client.put(
-            RECORD_PATH, content=body, headers={"content-type": N_TRIPLES}
-        )
+        response = client.put(RECORD_PATH, content=body, headers={"content-type": N_TRIPLES})
 
     assert response.status_code == 428
     assert response.json()["code"] == "fdp.precondition_required"
@@ -420,12 +414,14 @@ async def test_put_unsupported_content_type_returns_415() -> None:
 
 
 @pytest.mark.unit
-async def test_put_invalid_against_member_shape_returns_422() -> None:
+async def test_put_invalid_against_resource_shape_returns_422() -> None:
     repo, _ = _make_repo()
     validator = ShaclValidator(InMemoryShapeProvider({DATASET_SHAPE_IRI: DATASET_SHAPE_TTL}))
+    # PUT validates the resource against its *own* type shape (shape_for),
+    # not the container's member shape.
     containers = FixedContainerRegistry(
-        container_iris={RECORD_IRI},  # treat the target as a container for shape lookup
-        member_shapes={RECORD_IRI: DATASET_SHAPE_IRI},
+        container_iris=set(),
+        resource_shapes={RECORD_IRI: DATASET_SHAPE_IRI},
     )
     app = _build_app(repo=repo, pdp=FakePDP(), validator=validator, containers=containers)
     # Body declares a dcat:Dataset but omits the required dct:title.
@@ -434,12 +430,29 @@ async def test_put_invalid_against_member_shape_returns_422() -> None:
         "<http://www.w3.org/ns/dcat#Dataset> ."
     ).encode()
     with TestClient(app) as client:
-        response = client.put(
-            RECORD_PATH, content=body, headers={"content-type": N_TRIPLES}
-        )
+        response = client.put(RECORD_PATH, content=body, headers={"content-type": N_TRIPLES})
 
     assert response.status_code == 422
     assert response.json()["code"] == "fdp.schema_violation"
+
+
+@pytest.mark.unit
+async def test_put_conforming_against_resource_shape_succeeds() -> None:
+    repo, _ = _make_repo()
+    validator = ShaclValidator(InMemoryShapeProvider({DATASET_SHAPE_IRI: DATASET_SHAPE_TTL}))
+    containers = FixedContainerRegistry(
+        container_iris=set(),
+        resource_shapes={RECORD_IRI: DATASET_SHAPE_IRI},
+    )
+    app = _build_app(repo=repo, pdp=FakePDP(), validator=validator, containers=containers)
+    body = (
+        f"<{RECORD_IRI}> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+        "<http://www.w3.org/ns/dcat#Dataset> .\n"
+        f'<{RECORD_IRI}> <http://purl.org/dc/terms/title> "Genome Dataset" .'
+    ).encode()
+    with TestClient(app) as client:
+        response = client.put(RECORD_PATH, content=body, headers={"content-type": N_TRIPLES})
+    assert response.status_code == 201
 
 
 # --- POST -------------------------------------------------------------------
@@ -481,9 +494,7 @@ async def test_post_without_slug_generates_uuid_path_segment() -> None:
     app = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
     body = b'<urn:_> <http://purl.org/dc/terms/title> "child" .'
     with TestClient(app) as client:
-        response = client.post(
-            CONTAINER_PATH, content=body, headers={"content-type": N_TRIPLES}
-        )
+        response = client.post(CONTAINER_PATH, content=body, headers={"content-type": N_TRIPLES})
 
     assert response.status_code == 201
     location = response.headers["location"]
@@ -669,7 +680,9 @@ async def test_patch_missing_if_match_returns_428() -> None:
     app = _build_app(repo=repo, pdp=FakePDP())
     with TestClient(app) as client:
         response = client.patch(
-            RECORD_PATH, content=b"INSERT DATA { <x> <y> <z> }", headers={"content-type": SPARQL_UPDATE}
+            RECORD_PATH,
+            content=b"INSERT DATA { <x> <y> <z> }",
+            headers={"content-type": SPARQL_UPDATE},
         )
     assert response.status_code == 428
 
@@ -711,9 +724,7 @@ async def test_options_advertises_allow_link_accept_post_and_accept_patch() -> N
     allow = response.headers["allow"]
     for method in ("GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"):
         assert method in allow
-    assert response.headers["accept-post"] == ", ".join(
-        [TURTLE, JSON_LD, RDF_XML, N_TRIPLES]
-    )
+    assert response.headers["accept-post"] == ", ".join([TURTLE, JSON_LD, RDF_XML, N_TRIPLES])
     assert response.headers["accept-patch"] == SPARQL_UPDATE
     assert "ldp#DirectContainer" in response.headers["link"]
 
@@ -735,9 +746,7 @@ async def test_put_new_resource_publishes_record_created() -> None:
         app = _build_app(repo=repo, pdp=FakePDP(), event_bus=bus)
         body = f'<{RECORD_IRI}> <{DCT.title}> "new" .'.encode()
         with TestClient(app) as client:
-            response = client.put(
-                RECORD_PATH, content=body, headers={"content-type": N_TRIPLES}
-            )
+            response = client.put(RECORD_PATH, content=body, headers={"content-type": N_TRIPLES})
     finally:
         sub.unsubscribe()
 

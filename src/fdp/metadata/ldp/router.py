@@ -245,7 +245,11 @@ def build_ldp_router(
         resource_exists = len(existing) > 0
         _enforce_if_match(request, existing, required=resource_exists)
         new_graph = _parse_body(request, await request.body(), base=iri)
-        await _validate_member(new_graph, iri)
+        # PUT replaces the resource itself, so validate against the resource's
+        # own type shape (resolved by its URL prefix) — not the container's
+        # member shape, which only applies to POST and resolves to None for a
+        # leaf member IRI (leaving the write unvalidated).
+        await _validate_against_resource_shape(new_graph, iri)
         etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
         status_code = 200 if resource_exists else 201
         headers = _response_headers(etag, registry.is_container(iri))

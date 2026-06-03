@@ -45,6 +45,7 @@ from fdp.metadata.lifecycle import (
     StateService,
     build_state_router,
 )
+from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.profiles import (
     RD_SHAPE_IRI,
@@ -170,6 +171,16 @@ def _build_shared_state(app: FastAPI) -> None:
     # profile is applied so the validator's parsed-shape cache is
     # populated against the IRIs the profile declares.
     app.state.shacl_validator = ShaclValidator(MetadataShapeProvider(app.state.metadata_repository))
+
+    # Now that the validator exists, make the repository validate the
+    # meta-metadata graph against META_SHAPE_IRI on every write (architecture
+    # §6.2 / task 2.5). Installed post-construction because the validator's
+    # shape provider reads through this same repository — a missing meta shape
+    # degrades safely (see MetaWriter), and the applier stores the shape at
+    # bootstrap so runtime writes have it.
+    app.state.metadata_repository.enable_meta_validation(
+        validator=app.state.shacl_validator, shape_iri=META_SHAPE_IRI
+    )
 
     # Resource-definition mutation coordinator (ADR-0009). Each runtime
     # create/replace/delete writes through the repository, rebuilds the cache
@@ -446,9 +457,10 @@ def create_app() -> FastAPI:
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the
     # cache populated by auto-bootstrap (after lifespan startup) is
-    # picked up without rebuilding the router. The ShaclValidator hook
-    # (#2 of the operational-readiness plan) is still TODO; SHACL on
-    # write stays off until that lands.
+    # picked up without rebuilding the router. SHACL-on-write is active:
+    # POST validates the new member against its container's member shape,
+    # PUT/PATCH validate the resource against its own type shape, and the
+    # repository validates the meta graph against META_SHAPE_IRI.
     app.include_router(
         build_ldp_router(
             repo=app.state.metadata_repository,

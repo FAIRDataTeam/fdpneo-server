@@ -37,6 +37,7 @@ from fdp.metadata.meta import MetaResult, MetaWriter
 from fdp.metadata.states import DEFAULT_STATE, MetadataState
 
 if TYPE_CHECKING:
+    from fdp.metadata.shacl import ShaclValidator
     from fdp.storage.triplestore import TripleStoreAdapter
 
 
@@ -53,6 +54,16 @@ class MetadataRepository:
         self._adapter = adapter
         self._meta = meta_writer or MetaWriter()
         self._clock = clock or (lambda: datetime.now(UTC))
+
+    def enable_meta_validation(self, *, validator: ShaclValidator, shape_iri: str) -> None:
+        """Switch to a meta-writer that SHACL-validates the meta graph on write.
+
+        Wired by app composition once the validator exists (the validator's
+        shape provider reads through this repository, so the validating writer
+        can only be installed after construction — avoiding a build cycle). A
+        missing shape degrades safely; see :class:`fdp.metadata.meta.MetaWriter`.
+        """
+        self._meta = MetaWriter(validator=validator, shape_iri=shape_iri)
 
     # --- read ---------------------------------------------------------------
 

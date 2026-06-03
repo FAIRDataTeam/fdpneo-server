@@ -109,10 +109,32 @@ References: architecture §8.5, §9.4.
 
 References: architecture §6, ADR-0007.
 
-### 2.2 [~] SHACL validation pipeline
+### 2.2 [x] SHACL validation pipeline
 - `metadata/shacl.py` — wraps pySHACL with a fast-path for cached compiled shapes.
 - `validate_against(graph, shape_iri)` returning a structured violation report or success.
 - Profile bootstrap pre-compiles known shapes; runtime falls back to compile-on-first-use.
+
+`shacl.py` was complete; the remaining work was making **SHACL-on-write
+actually enforce** consistently (the cross-cutting concern shared with 2.3/2.4/2.5):
+
+- **Record validation on `PUT`** was a no-op — it resolved the *container's*
+  member shape against a leaf member IRI (→ `None`), so a `PUT` could replace a
+  record past its type shape. Now `PUT`/`PATCH` validate against the resource's
+  **own** type shape (`shape_for`); `POST` still uses the container member shape.
+- **Meta-metadata validation is now active at runtime.** The validating
+  `MetaWriter` is installed on the repository (`enable_meta_validation`, wired
+  post-construction to avoid a build cycle), so every write validates the meta
+  graph against `META_SHAPE_IRI` (closes the 2.5 gap). Prerequisite fixed: the
+  applier now **stores** the meta shape at `META_SHAPE_IRI` (it was previously
+  loaded only for bootstrap-time profile validation, never persisted), and the
+  writer **degrades safely** if the shape is absent (a profile without
+  `metaMetadataSchema` skips meta validation rather than failing every write).
+- Corrected the stale `main.py` comment that claimed SHACL-on-write was off.
+
+Tests: `test_meta.py` (validate-when-present + tolerate-missing), `test_applier.py`
+(meta shape stored first), `test_router.py` (PUT validates the resource shape:
+422 on violation, 201 on conformance). Full unit suite green (744); the
+lifecycle/search/RD integration suites pass with both validations active.
 
 References: architecture §10.1, §13 (server-side validation).
 
@@ -488,10 +510,17 @@ declares its name, type (`inline | sparql | vocabulary-uri`), and the
 payload (the list of items, the SPARQL query, or the URI). Feeds Phase
 6.2.
 
-### 9.4 [~] Search filter configuration
+### 9.4 [x] Search filter configuration
 
-`GET/PUT /settings/search/filters` — declare which filter dimensions are
-exposed on the search page, their labels, and their facet expansion.
+Declare which filter dimensions are exposed on the search page, their labels,
+and their facet expansion. The `search.filters` data shape
+(`SearchFilter`/`SearchFilters` in `metadata/settings.py`) is CRUD-able through
+the generic runtime-settings surface (`GET /settings/search.filters`,
+`PUT /settings/search.filters`, admin-gated) — the established pattern for every
+settings key, rather than a bespoke `/settings/search/filters` path. As of
+Phase 7.2 it is **consumed**: `SearchService` reads `search.filters` to decide
+which facet dimensions to expose and their labels (type/license built in),
+so an admin can reconfigure search facets at runtime without a redeploy.
 
 References: `SettingsController.java`, `SettingsService.java`,
 `SettingsFormsAutocompleteDTO.java`, `SettingsSearchDTO.java`.
