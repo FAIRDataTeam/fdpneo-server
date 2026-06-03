@@ -29,6 +29,7 @@ _MODEL_MODULES: tuple[str, ...] = (
     "fdp.identity.principal",
     "fdp.metadata.audit",
     "fdp.metadata.profiles.state",
+    "fdp.metadata.search.model",
     "fdp.metadata.settings",
     "fdp.metrics.repository",
     "fdp.policy.cache",

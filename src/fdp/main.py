@@ -59,6 +59,15 @@ from fdp.metadata.profiles import (
 from fdp.metadata.rd_api import build_resource_definition_router
 from fdp.metadata.repository import MetadataRepository
 from fdp.metadata.schemas import SchemaService, build_schema_router
+from fdp.metadata.search.indexer import SearchIndexer
+from fdp.metadata.search.repository import SearchIndexRepository
+from fdp.metadata.search.router import build_search_router
+from fdp.metadata.search.saved import (
+    SavedQueryRepository,
+    SavedQueryService,
+    build_saved_queries_router,
+)
+from fdp.metadata.search.service import SearchService
 from fdp.metadata.settings import SettingsRepository, build_settings_router
 from fdp.metadata.shacl import ShaclValidator
 from fdp.metadata.shape_provider import MetadataShapeProvider
@@ -230,6 +239,30 @@ def _build_shared_state(app: FastAPI) -> None:
         on_published=lambda sdoi, rd: _publish_runtime_state(app, sdoi, rd),
     )
 
+    # Search (Phase 7). The indexer (event subscriber) keeps metadata_search
+    # current; the query service applies the ODRL+state visibility gate
+    # (ADR-0010) and reads facet config from the runtime settings. Saved
+    # queries are a thin owner-scoped CRUD.
+    app.state.search_index_repository = SearchIndexRepository(
+        session_factory=app.state.session_factory
+    )
+    app.state.search_indexer = SearchIndexer(
+        records=app.state.metadata_repository,
+        search=app.state.search_index_repository,
+        pdp=app.state.pdp,
+        language=settings.search.default_language,
+        enabled=settings.search.enabled,
+    )
+    app.state.search_service = SearchService(
+        repository=app.state.search_index_repository,
+        state_gate=app.state.state_gate,
+        settings_repository=app.state.settings_repository,
+        settings=settings.search,
+    )
+    app.state.saved_query_service = SavedQueryService(
+        repository=SavedQueryRepository(session_factory=app.state.session_factory)
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -244,6 +277,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.metrics_pipeline.start(app.state.event_bus)
     app.state.audit_log.start(app.state.event_bus)
+    app.state.search_indexer.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
     await _warm_anonymous_authz_cache(app)
 
@@ -251,6 +285,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
     finally:
         log.info("fdp_stopping")
+        app.state.search_indexer.stop()
         app.state.audit_log.stop()
         app.state.metrics_pipeline.stop()
         app.state.geo.close()
@@ -315,8 +350,8 @@ def create_app() -> FastAPI:
     # under every method, so anything that should NOT resolve as an LDP
     # resource must be added first. Reserved-path prefixes the LDP router
     # cannot serve as a consequence: /healthz, /readyz, /info, /config,
-    # /labels, /me, /metrics, /data, /sparql, /settings, /admin (the
-    # factory-reset surface — Phase 10.4), /forms, /state and
+    # /labels, /me, /metrics, /data, /sparql, /settings, /search (Phase 7),
+    # /admin (the factory-reset surface — Phase 10.4), /forms, /state and
     # /{record}/state (publication-state transitions — Phase 12),
     # /spec, /expanded, /page, /resource-definitions (the runtime
     # resource-definition catalog + admin surface — ADR-0009), /schemas
@@ -347,6 +382,8 @@ def create_app() -> FastAPI:
     app.include_router(build_labels_router(resolver=app.state.label_resolver))
     app.include_router(build_dashboard_router(service=app.state.dashboard_service))
     app.include_router(build_api_keys_router(service=app.state.api_key_service))
+    app.include_router(build_search_router(service=app.state.search_service))
+    app.include_router(build_saved_queries_router(service=app.state.saved_query_service))
     app.include_router(build_settings_router(repository=app.state.settings_repository))
     app.include_router(build_admin_router(service=app.state.reset_service))
     app.include_router(build_autocomplete_router(service=app.state.autocomplete_service))

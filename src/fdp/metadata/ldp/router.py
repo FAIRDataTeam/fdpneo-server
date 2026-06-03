@@ -244,7 +244,7 @@ def build_ldp_router(
         existing = await repo.get_graph(iri)
         resource_exists = len(existing) > 0
         _enforce_if_match(request, existing, required=resource_exists)
-        new_graph = _parse_body(request, await request.body())
+        new_graph = _parse_body(request, await request.body(), base=iri)
         await _validate_member(new_graph, iri)
         etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
         status_code = 200 if resource_exists else 201
@@ -280,9 +280,11 @@ def build_ldp_router(
         if not registry.is_container(container_iri):
             raise MethodNotAllowed(f"{container_iri} is not a container")
         await _enforce(ctx, Action.MODIFY, container_iri)
-        member_graph = _parse_body(request, await request.body())
-        await _validate_member(member_graph, container_iri)
+        # Mint the member IRI first so a relative ``<>`` in the body resolves to
+        # the new member's URI (LDP), not to the container or a file:// base.
         member_iri = _mint_member_iri(container_iri, request.headers.get("slug"))
+        member_graph = _parse_body(request, await request.body(), base=member_iri)
+        await _validate_member(member_graph, container_iri)
         etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
         await _publish(
             RecordCreated(
@@ -381,7 +383,7 @@ def _negotiate(request: Request) -> str:
     return media
 
 
-def _parse_body(request: Request, body: bytes) -> Graph:
+def _parse_body(request: Request, body: bytes, *, base: str) -> Graph:
     if not body:
         raise BadRequest("request body is empty")
     ctype = normalize_content_type(request.headers.get("content-type")) or TURTLE
@@ -391,7 +393,9 @@ def _parse_body(request: Request, body: bytes) -> Graph:
             details={"supported": list(SUPPORTED_TYPES)},
         )
     try:
-        return parse_rdf(body, ctype)
+        # ``base`` is the resource's own URI so a relative ``<>`` in the body
+        # resolves to it (LDP), rather than to an rdflib-invented file:// base.
+        return parse_rdf(body, ctype, base=base)
     except Exception as err:  # rdflib raises a variety of parse errors
         raise BadRequest(f"could not parse {ctype} body: {err}") from err
 

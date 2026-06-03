@@ -71,6 +71,14 @@ class MetadataRepository:
             graph.parse(data=body.decode("utf-8"), format="turtle")
         return graph
 
+    async def get_meta(self, record_uri: str | URIRef) -> Graph:
+        """Fetch the record's meta graph (provenance, version, state).
+
+        Public read of the ``<record>/meta`` sibling — used by the search
+        indexer to pull ``fdp:metadataState`` and ``dct:modified``.
+        """
+        return await self._get_meta(meta_graph_uri(record_uri))
+
     # --- write --------------------------------------------------------------
 
     async def put_graph(

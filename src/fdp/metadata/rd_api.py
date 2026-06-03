@@ -74,6 +74,7 @@ RESERVED_PREFIXES: Final = frozenset(
         "data",
         "sparql",
         "settings",
+        "search",
         "admin",
         "forms",
         "state",

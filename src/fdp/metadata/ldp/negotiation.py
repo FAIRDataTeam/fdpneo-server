@@ -108,8 +108,14 @@ def serialize(graph: Graph, media_type: str) -> bytes:
     return output.encode("utf-8")
 
 
-def parse(body: bytes, media_type: str) -> Graph:
+def parse(body: bytes, media_type: str, *, base: str | None = None) -> Graph:
     """Parse ``body`` as RDF in ``media_type``.
+
+    ``base`` is the document base against which relative IRIs (notably the
+    empty ``<>``, meaning "this resource") resolve — per LDP it is the target
+    resource's URI. Without it rdflib invents a ``file://`` base and the
+    record's own triples end up under a bogus subject, invisible to any
+    subject-keyed read (search, dashboard, ``/expanded``).
 
     Raises :class:`ValueError` for unsupported media types; the rdflib
     parser raises its own exceptions for malformed input.
@@ -118,7 +124,7 @@ def parse(body: bytes, media_type: str) -> Graph:
     if fmt is None:
         raise ValueError(f"unsupported media type: {media_type}")
     graph = Graph()
-    graph.parse(data=body.decode("utf-8"), format=fmt)
+    graph.parse(data=body.decode("utf-8"), format=fmt, publicID=base)
     return graph
 
 

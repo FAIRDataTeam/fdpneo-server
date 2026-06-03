@@ -151,6 +151,25 @@ class ProfileSettings(BaseSettings):
     ``profile.yaml``). Resolved before the auto-bootstrap runs."""
 
 
+class SearchSettings(BaseSettings):
+    """Configuration for the metadata search index + query API (Phase 7)."""
+
+    model_config = SettingsConfigDict(env_prefix="FDP_SEARCH_", extra="ignore")
+
+    enabled: bool = True
+    """When False the indexer subscriber does not start and ``/search`` 404s."""
+
+    default_language: str = "english"
+    """Postgres text-search configuration used to build ``tsvector`` and parse
+    queries. A valid ``regconfig`` name (``english``, ``simple``, …)."""
+
+    max_limit: int = 100
+    """Hard cap on the page size a single ``/search`` request may ask for."""
+
+    default_limit: int = 20
+    """Page size when the request omits ``limit``."""
+
+
 class ApiKeySettings(BaseSettings):
     """Configuration for machine-to-machine API keys (Phase 11.1, ADR-0011).
 
@@ -303,6 +322,7 @@ class Settings(BaseSettings):
     profile: ProfileSettings = Field(default_factory=lambda: ProfileSettings())
     schema_sync: SchemaSyncSettings = Field(default_factory=lambda: SchemaSyncSettings())
     api_keys: ApiKeySettings = Field(default_factory=lambda: ApiKeySettings())
+    search: SearchSettings = Field(default_factory=lambda: SearchSettings())
 
 
 @lru_cache(maxsize=1)

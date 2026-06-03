@@ -13,6 +13,7 @@ Subcommands:
 * ``fdp db migrate``              — run Alembic migrations.
 * ``fdp metrics rollup``          — run metrics rollups (cron-driven).
 * ``fdp schema sync``             — refetch remote-sourced schemas (cron-driven).
+* ``fdp search reindex``          — rebuild the metadata search index.
 
 The CLI is built with Typer for argument parsing and Rich for output.
 """
@@ -43,11 +44,13 @@ profile_app = typer.Typer(help="Deployment-profile commands.", no_args_is_help=T
 db_app = typer.Typer(help="Database commands.", no_args_is_help=True)
 metrics_app = typer.Typer(help="Metrics-pipeline commands.", no_args_is_help=True)
 schema_app = typer.Typer(help="Schema commands.", no_args_is_help=True)
+search_app = typer.Typer(help="Search commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
 app.add_typer(metrics_app, name="metrics")
 app.add_typer(schema_app, name="schema")
+app.add_typer(search_app, name="search")
 
 console = Console()
 
@@ -225,6 +228,90 @@ def metrics_rollup(
             f"aggregates={daily_result.aggregates_written} "
             f"hourly_deleted={daily_result.source_rows_deleted}"
         )
+
+
+# --- search commands -----------------------------------------------------
+
+
+@search_app.command("reindex")
+def search_reindex() -> None:
+    """Rebuild the metadata search index from the triple store.
+
+    Walks every non-internal record graph and re-derives its search row,
+    including the ``anon_read`` visibility flag. Use after a schema/profile
+    change, or to repair drift from an inherited-offer change that didn't emit
+    a per-record event.
+    """
+    try:
+        count = asyncio.run(_run_search_reindex())
+    except Exception as err:
+        console.print(f"[red]reindex failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+    console.print(f"[green]search reindex[/] indexed={count} records")
+
+
+async def _run_search_reindex() -> int:
+    """Rebuild the search index; returns the number of records indexed."""
+    import json
+
+    from fdp.config import get_settings
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.search.indexer import SearchIndexer
+    from fdp.metadata.search.repository import SearchIndexRepository
+    from fdp.policy.resolver import GraphBackedOfferResolver
+    from fdp.policy.runtime import RequestScopedPDP
+    from fdp.shared.graphs import is_internal_graph_uri
+    from fdp.storage.postgres.engine import build_engine, build_session_factory
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+
+    # Resolve the system-default offer so anon-read evaluation matches runtime
+    # (records that inherit the default must still be seen as public).
+    system_default: str | None = None
+    if settings.profile.path is not None:
+        from fdp.metadata.profiles import load_profile, resolve_runtime_state
+
+        system_default, _ = resolve_runtime_state(
+            load_profile(settings.profile.path), settings=settings
+        )
+
+    try:
+        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+            repository = MetadataRepository(adapter)
+            resolver = GraphBackedOfferResolver(
+                repository, system_default_provider=lambda: system_default
+            )
+            pdp = RequestScopedPDP(session_factory=session_factory, offer_resolver=resolver)
+            search_repo = SearchIndexRepository(session_factory=session_factory)
+            indexer = SearchIndexer(
+                records=repository,
+                search=search_repo,
+                pdp=pdp,
+                language=settings.search.default_language,
+                enabled=True,
+            )
+            await search_repo.clear_all()
+            body = await adapter.query(
+                "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }",
+                accept="application/sparql-results+json",
+            )
+            graphs = [
+                b["g"]["value"]
+                for b in json.loads(body).get("results", {}).get("bindings", [])
+                if "g" in b
+            ]
+            count = 0
+            for graph_iri in graphs:
+                if is_internal_graph_uri(graph_iri):
+                    continue
+                if await indexer.index(graph_iri):
+                    count += 1
+            return count
+    finally:
+        await engine.dispose()
 
 
 # --- schema commands -----------------------------------------------------

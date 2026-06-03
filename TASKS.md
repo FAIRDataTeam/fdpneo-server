@@ -350,40 +350,58 @@ The reference impl has `SearchController` with text+filter search and
 discovery page uses this; without it, users can only navigate by typed
 container.
 
-### 7.1 [ ] Search index and ingestion pipeline
+All three sub-tasks delivered in `src/fdp/metadata/search/`. No new ADR — the
+result-visibility gate reuses ADR-0010 (publication state) rather than
+inventing one. Migration `0008` adds both tables.
 
-- New Postgres table `metadata_search` holding one row per record:
-  `(record_iri, type_iri, title, description, search_text tsvector,
-  updated_at, language)`. The `search_text` is a `tsvector` built from
-  title, description, and selected literals; language defaults to
-  `english` (configurable).
-- `metadata/search/indexer.py` subscribes to `record.modified` and
-  `record.created` events from the existing event bus
-  (`shared/events.py`) and upserts the row.
-- A one-shot CLI (`fdp search reindex`) walks every record in the
-  triple store and rebuilds the index. Used after schema or profile
-  changes.
+### 7.1 [x] Search index and ingestion pipeline
 
-### 7.2 [ ] Search query API
+- `metadata_search` (migration `0008`): one row per indexable record —
+  `(record_iri, type_iri, title, description, license, keywords,
+  search_text tsvector, state, anon_read, updated_at, language)` with a GIN
+  index on `search_text`. The two **visibility flags** (`state`, `anon_read`,
+  computed once at index time) are what gate anonymous search cheaply — the
+  hybrid model chosen in planning, not a bare authorized-set join.
+- `search/extract.py` — pure record-graph → fields; `search/repository.py` —
+  the Postgres FTS write (`to_tsvector`) + ranked query; `search/indexer.py` —
+  event subscriber (`RecordCreated`/`RecordModified`/`RecordStateChanged` →
+  upsert, `RecordDeleted` → delete), skipping internal/config records.
+- `fdp search reindex` CLI walks every non-internal graph and rebuilds the
+  index (and re-derives `anon_read`, repairing inherited-offer drift).
 
-- `metadata/search/router.py` — `POST /search` with body
-  `{query: "...", filters: [...], types: [...], offset, limit,
-  language}` returning `{items: [...], total, facets: {...}}`.
-- Filters: by `type_iri`, by `dct:license`, by date range. Facets returned
-  per filter dimension (count by type, by license).
-- PDP gating: only records the subject can `read` are returned; the
-  filter is applied via `authorized_graphs(subject, "read")` joined into
-  the SQL WHERE.
-- Query is parameterized via SQLAlchemy; no string interpolation per
-  CLAUDE.md "SPARQL strings are parsed, never interpolated".
+### 7.2 [x] Search query API
 
-### 7.3 [ ] Saved queries
+- `POST /search` `{query, types, license, from/to, offset, limit, language}` →
+  `{items, total, facets}`. FTS via `plainto_tsquery` + `ts_rank`; filters by
+  type / license / date; all SQLAlchemy-parameterised (no interpolation).
+- **Visibility gate (ADR-0010):** anonymous callers get only
+  `state='PUBLISHED' AND anon_read`; authenticated callers also see
+  `record_iri = ANY(StateGate.visible_read_graphs(ctx))` — their drafts +
+  private records they can read. So search respects ODRL **and** publication
+  state, and anonymous discovery is fast/complete without warming.
+- **Facets driven by the 9.4 `search.filters` settings** (advancing 9.4):
+  configured filter predicates select the exposed dimensions + labels, with
+  type/license as built-in defaults.
 
-- Postgres table `search_saved_queries(id, owner_subject, name, query_json,
-  shared, created_at)`. Owner-only by default; admins can mark a query
-  `shared=true` to make it visible to everyone.
-- CRUD endpoints: `GET /me/saved-queries`, `POST /me/saved-queries`,
-  `PUT/DELETE /me/saved-queries/{id}`. Sharing toggle is admin-only.
+### 7.3 [x] Saved queries
+
+- `search_saved_queries` + `SavedQueryService` + `/me/saved-queries` CRUD
+  (`GET`/`POST`/`PUT`/`DELETE`). Owner-scoped; the stored `query` is validated
+  as a runnable `SearchRequest`. The `shared` toggle is **admin-only**; shared
+  queries appear in everyone's list.
+
+**Side fix (latent LDP-layer bug surfaced by search):** the LDP `PUT`/`POST`
+body was parsed with no base, so a relative `<>` ("this resource") resolved to
+an rdflib-invented `file://` subject instead of the record IRI — invisible to
+any subject-keyed read (search, dashboard titles, `/expanded`). `negotiation.parse`
+now takes a `base`; `PUT` passes the target IRI and `POST` mints the member IRI
+*before* parsing. Fixes the storage so `<>` records carry their real subject.
+
+Tests: unit `tests/unit/metadata/search/` (22 — extract, indexer dispatch,
+service gating/facets, saved-queries repo+router); integration
+`tests/integration/metadata/search/` (8 — Postgres FTS query/filter/facet/gating
++ an Oxigraph+Postgres end-to-end create→draft-hidden→publish→searchable). Full
+unit suite green (741).
 
 References: `SearchService.java`, `SearchSavedQueryService.java`,
 `SearchFilterCache.java`.
