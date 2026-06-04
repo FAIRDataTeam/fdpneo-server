@@ -140,8 +140,9 @@ def test_features_reflect_settings() -> None:
     assert features["metrics"] is True
     assert features["sparql"] is True
     assert features["data_provider"] is True
-    # Search and index are not yet implemented (Phases 7 and 8).
-    assert features["search"] is False
+    # Search ships (Phase 7) and tracks settings.search.enabled (default on).
+    assert features["search"] is True
+    # Index (Phase 8 — FDP Index protocol) is not implemented.
     assert features["index"] is False
 
 

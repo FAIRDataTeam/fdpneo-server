@@ -21,10 +21,15 @@ Lookup strategy:
    requested-language wins over no-language-tag wins over any other
    language; ``rdfs:label`` wins over ``skos:prefLabel`` wins over
    ``dcterms:title`` within a language band.
+4. Secondary source (6.1a): IRIs the graph doesn't describe — typically
+   external vocabulary terms like ``dct:license`` or MIME types — fall back
+   to the curated ``forms.autocomplete-sources`` setting, whose inline items
+   map those exact IRIs to labels. The graph always wins; the inline map only
+   fills gaps and is language-neutral.
 
-Remote-vocabulary fallback (config-driven allow-list) is deferred.
-A future iteration can plug in a secondary resolver behind the same
-:class:`LabelResolver` interface.
+Remote-vocabulary resolution (config-driven allow-list, allow-listed outbound
+fetches) remains deferred — it would slot in as a *third* source behind the
+same :class:`LabelResolver` interface.
 
 Security:
 
@@ -51,15 +56,23 @@ import structlog
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
+from fdp.metadata.settings import AutocompleteSources
 from fdp.shared.errors import BadRequest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from fdp.metadata.settings import SettingsRepository
     from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
 
 log = structlog.get_logger(__name__)
+
+# Settings key holding the curated autocomplete sources (Phase 9.3). Its inline
+# items map vocabulary IRIs (licenses, MIME types, …) to human labels and serve
+# as the secondary label source (6.1a) for IRIs the knowledge graph doesn't
+# describe.
+_AUTOCOMPLETE_KEY: Final = "forms.autocomplete-sources"
 
 
 # Label predicates queried, in precedence order. A literal matched by
@@ -76,7 +89,7 @@ _LABEL_PREDICATES: Final = (
 # they would either be syntactically meaningful or break out of the
 # ``<...>`` IRI delimiter. The list mirrors the IRI grammar from
 # SPARQL 1.1 §19.8.
-_FORBIDDEN_IRI_CHARS: Final = frozenset(" \t\n\r<>\"{}|^`\\")
+_FORBIDDEN_IRI_CHARS: Final = frozenset(' \t\n\r<>"{}|^`\\')
 
 
 # --- response model --------------------------------------------------------
@@ -135,25 +148,36 @@ class _LabelCache:
 
 
 class LabelResolver:
-    """Resolves IRIs to labels via the local triple store.
+    """Resolves IRIs to labels via the local triple store + curated sources.
 
-    Stateful only via the cache; safe to share across requests.
+    Primary source is the knowledge graph (record/instance labels). A secondary,
+    settings-backed source (6.1a) fills IRIs the graph doesn't describe — the
+    inline ``forms.autocomplete-sources`` items map vocabulary IRIs (licenses,
+    MIME types, …) to labels. The graph always wins; the inline map only fills
+    gaps and is treated as language-neutral.
+
+    Stateful only via the caches; safe to share across requests.
     """
 
     def __init__(
         self,
         *,
         adapter: TripleStoreAdapter,
+        settings_repository: SettingsRepository | None = None,
         cache_ttl_seconds: int = 3600,
+        inline_ttl_seconds: int = 300,
         max_iris_per_query: int = 100,
     ) -> None:
         self._adapter = adapter
+        self._settings_repository = settings_repository
         self._cache = _LabelCache(cache_ttl_seconds)
         self._max_iris_per_query = max_iris_per_query
+        self._inline_ttl = float(inline_ttl_seconds)
+        # (map, expiry-monotonic). Refreshed lazily so an admin edit to the
+        # autocomplete sources shows up within the TTL without a restart.
+        self._inline_cache: tuple[dict[str, str], float] | None = None
 
-    async def lookup(
-        self, iris: Sequence[str], *, language: str
-    ) -> dict[str, str]:
+    async def lookup(self, iris: Sequence[str], *, language: str) -> dict[str, str]:
         """Resolve ``iris`` to labels in ``language`` (with fallbacks).
 
         Returns only IRIs that have a discoverable label. Cached negative
@@ -173,23 +197,54 @@ class LabelResolver:
         if not to_query:
             return result
 
+        inline = await self._inline_labels()
         # Query in chunks to keep individual queries bounded.
         for start in range(0, len(to_query), self._max_iris_per_query):
             batch = to_query[start : start + self._max_iris_per_query]
             resolved = await self._query_batch(batch, language=language)
             for iri in batch:
+                # Knowledge graph first, curated inline source as a fallback.
                 label = resolved.get(iri)
+                if label is None:
+                    label = inline.get(iri)
                 self._cache.set(iri, language, label)
                 if label is not None:
                     result[iri] = label
         return result
 
-    async def _query_batch(
-        self, iris: Sequence[str], *, language: str
-    ) -> dict[str, str | None]:
+    async def _query_batch(self, iris: Sequence[str], *, language: str) -> dict[str, str | None]:
         sparql = _build_sparql(iris)
         body = await self._adapter.query(sparql)
         return _pick_best_labels(body, requested_language=language)
+
+    async def _inline_labels(self) -> dict[str, str]:
+        """``iri -> label`` from the inline autocomplete sources (TTL-cached).
+
+        Empty when no settings repository is wired (keeps the resolver usable
+        with the triple store alone). Best-effort: a settings hiccup degrades
+        to graph-only resolution rather than failing the request.
+        """
+        if self._settings_repository is None:
+            return {}
+        now = time.monotonic()
+        cached = self._inline_cache
+        if cached is not None and cached[1] > now:
+            return cached[0]
+        mapping: dict[str, str] = {}
+        try:
+            sources = await self._settings_repository.read_with_default(_AUTOCOMPLETE_KEY)
+        except Exception as err:  # pragma: no cover - defensive
+            log.warning("label_inline_sources_unavailable", error=repr(err))
+            sources = None
+        if isinstance(sources, AutocompleteSources):
+            for source in sources.sources:
+                if source.kind != "inline":
+                    continue
+                for item in source.items:
+                    if item.iri and item.label:
+                        mapping.setdefault(item.iri, item.label)
+        self._inline_cache = (mapping, now + self._inline_ttl)
+        return mapping
 
 
 # --- pure helpers ----------------------------------------------------------
@@ -233,9 +288,7 @@ def _build_sparql(iris: Sequence[str]) -> str:
     )
 
 
-def _pick_best_labels(
-    sparql_json_body: bytes, *, requested_language: str
-) -> dict[str, str | None]:
+def _pick_best_labels(sparql_json_body: bytes, *, requested_language: str) -> dict[str, str | None]:
     """Reduce raw SPARQL JSON results to ``{iri: label-or-None}``.
 
     Scoring per row:

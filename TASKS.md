@@ -300,6 +300,50 @@ vocabularies). The client uses this to render `dct:license` IRIs as
 References: `LabelService.java` (reference impl), architecture §10
 (public read surface).
 
+#### 6.1a [x] Vocabulary labels via the autocomplete sources (follow-up)
+
+**Done.** `LabelResolver` now takes an optional `settings_repository` and, after
+the knowledge-graph SPARQL pass, fills still-missing IRIs from an inline-label
+map flattened from the `forms.autocomplete-sources` setting (inline items only;
+`iri → label`, TTL-cached ~5 min so admin edits show without restart). The graph
+always wins; the inline map fills gaps and is language-neutral. Wired in `main.py`
+(settings repo built before the resolver). Verified live: the CC BY 4.0 and MIT
+license IRIs resolve to "Creative Commons Attribution 4.0" / "MIT License" while
+record IRIs still resolve from the graph. Tests: `test_labels.py` (graph-miss →
+inline fill, graph-wins-over-inline, graph-only when no settings repo); full unit
+suite green (747). Remote-vocabulary resolution stays the deferred third source.
+
+**Problem (found in client integration).** `GET /labels` resolves only IRIs the
+*local graph* describes (record `dct:title` etc.). External vocabulary IRIs —
+`dct:license` (CC BY 4.0), themes, publishers — return `{}` because the KG only
+*references* them, never *labels* them. Yet the curated
+`forms.autocomplete-sources` setting already maps those exact IRIs to nice
+labels. The client falls back to a short label, so this is **non-blocking**, but
+the intended license/theme/publisher names won't show until fixed.
+
+**Fix (client's option b — reuse curated data; no remote fetch, no migration,
+no ADR):** add a secondary label source behind the existing `LabelResolver`
+(the module docstring already anticipates "a secondary resolver behind the same
+interface").
+
+- `metadata/labels.py`: after the local-KG SPARQL pass, resolve any still-missing
+  IRIs from an **inline-autocomplete label map** — flatten every `inline`
+  `AutocompleteSource.items` (`forms.autocomplete-sources` setting) into
+  `iri → label` (use `label`, ignore `aliases`; skip `sparql`-kind sources). KG
+  wins (record/instance labels); inline fills the gaps (vocab labels). Reuse the
+  existing per-`(iri, language)` TTL cache; treat inline labels as
+  language-neutral (lowest precedence).
+- Inject the source: pass `LabelResolver` a `SettingsRepository` (or a small
+  `inline_labels_provider()` reading `read_with_default("forms.autocomplete-sources")`)
+  and wire it in `main.py`. Read with a short TTL so admin edits to the sources
+  show up without restart.
+- Tests: a license IRI present in the inline source but absent from the KG →
+  resolves to its curated label; a record IRI → still from the KG; an IRI in
+  neither → omitted.
+- Leaves the deferred **remote-vocabulary** resolver (allow-listed outbound) as a
+  future *third* source behind the same interface (architecture §10 note in
+  `labels.py`).
+
 ### 6.2 [x] Form autocomplete (`GET /forms/autocomplete`)
 
 The reference impl exposes `FormAutocompleteController` driving form

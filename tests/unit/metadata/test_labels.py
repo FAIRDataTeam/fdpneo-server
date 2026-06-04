@@ -27,6 +27,7 @@ from fdp.metadata.labels import (
     build_labels_router,
     is_safe_iri,
 )
+from fdp.metadata.settings import AutocompleteItem, AutocompleteSource, AutocompleteSources
 from fdp.shared.errors import register_exception_handlers
 
 # --- is_safe_iri ----------------------------------------------------------
@@ -75,9 +76,7 @@ def _sparql_response(rows: list[dict[str, Any]]) -> bytes:
     ).encode("utf-8")
 
 
-def _row(
-    iri: str, predicate: str, label: str, *, lang: str | None = None
-) -> dict[str, Any]:
+def _row(iri: str, predicate: str, label: str, *, lang: str | None = None) -> dict[str, Any]:
     label_term: dict[str, Any] = {"type": "literal", "value": label}
     if lang is not None:
         label_term["xml:lang"] = lang
@@ -95,9 +94,7 @@ _DCT_TITLE = "http://purl.org/dc/terms/title"
 
 @pytest.mark.unit
 def test_pick_best_returns_single_label_when_one_row() -> None:
-    body = _sparql_response(
-        [_row("urn:test", _RDFS_LABEL, "Hello", lang="en")]
-    )
+    body = _sparql_response([_row("urn:test", _RDFS_LABEL, "Hello", lang="en")])
     result = _pick_best_labels(body, requested_language="en")
     assert result == {"urn:test": "Hello"}
 
@@ -128,9 +125,7 @@ def test_pick_best_falls_back_to_no_language_tag_when_lang_missing() -> None:
 
 @pytest.mark.unit
 def test_pick_best_falls_back_to_any_language_last() -> None:
-    body = _sparql_response(
-        [_row("urn:test", _RDFS_LABEL, "Hola", lang="es")]
-    )
+    body = _sparql_response([_row("urn:test", _RDFS_LABEL, "Hola", lang="es")])
     result = _pick_best_labels(body, requested_language="en")
     assert result == {"urn:test": "Hola"}
 
@@ -203,9 +198,7 @@ def test_cache_expires_after_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
     base = time.monotonic()
     # Freeze the clock at base + 0, write, then advance past TTL.
     clock = [base]
-    monkeypatch.setattr(
-        "fdp.metadata.labels.time.monotonic", lambda: clock[0]
-    )
+    monkeypatch.setattr("fdp.metadata.labels.time.monotonic", lambda: clock[0])
     cache.set("urn:test", "en", "Hello")
     assert cache.get("urn:test", "en") == "Hello"
     clock[0] = base + 20  # past TTL
@@ -287,6 +280,61 @@ async def test_resolver_chunks_large_batches() -> None:
     assert len(adapter.calls) == 3
 
 
+# --- inline autocomplete fallback (6.1a) -----------------------------------
+
+_CC = "https://creativecommons.org/licenses/by/4.0/"
+
+
+class _FakeSettings:
+    """SettingsRepository stand-in returning fixed autocomplete sources."""
+
+    def __init__(self, sources: AutocompleteSources) -> None:
+        self._sources = sources
+
+    async def read_with_default(self, key: str) -> AutocompleteSources:
+        del key
+        return self._sources
+
+
+def _license_sources() -> AutocompleteSources:
+    return AutocompleteSources(
+        sources=[
+            AutocompleteSource(
+                name="license",
+                kind="inline",
+                items=[AutocompleteItem(iri=_CC, label="Creative Commons Attribution 4.0")],
+            ),
+            # A sparql-kind source is ignored by the label fallback.
+            AutocompleteSource(name="publisher", kind="sparql", sparql="SELECT ..."),
+        ]
+    )
+
+
+@pytest.mark.unit
+async def test_resolver_fills_graph_misses_from_inline_sources() -> None:
+    # Graph knows urn:a but not the CC license IRI; the inline source supplies it.
+    adapter = _FakeAdapter(_sparql_response([_row("urn:a", _RDFS_LABEL, "Alpha", lang="en")]))
+    resolver = LabelResolver(adapter=adapter, settings_repository=_FakeSettings(_license_sources()))  # type: ignore[arg-type]
+    result = await resolver.lookup(["urn:a", _CC], language="en")
+    assert result == {"urn:a": "Alpha", _CC: "Creative Commons Attribution 4.0"}
+
+
+@pytest.mark.unit
+async def test_graph_label_wins_over_inline() -> None:
+    # When the graph describes the same IRI the inline source covers, graph wins.
+    adapter = _FakeAdapter(_sparql_response([_row(_CC, _RDFS_LABEL, "Graph Label", lang="en")]))
+    resolver = LabelResolver(adapter=adapter, settings_repository=_FakeSettings(_license_sources()))  # type: ignore[arg-type]
+    result = await resolver.lookup([_CC], language="en")
+    assert result == {_CC: "Graph Label"}
+
+
+@pytest.mark.unit
+async def test_without_settings_repository_resolution_is_graph_only() -> None:
+    adapter = _FakeAdapter(_sparql_response([]))
+    resolver = LabelResolver(adapter=adapter)  # type: ignore[arg-type]
+    assert await resolver.lookup([_CC], language="en") == {}
+
+
 # --- router ---------------------------------------------------------------
 
 
@@ -294,17 +342,13 @@ def _build_app(adapter: _FakeAdapter, *, max_iris: int = 100) -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
     resolver = LabelResolver(adapter=adapter)  # type: ignore[arg-type]
-    app.include_router(
-        build_labels_router(resolver=resolver, max_iris_per_request=max_iris)
-    )
+    app.include_router(build_labels_router(resolver=resolver, max_iris_per_request=max_iris))
     return app
 
 
 @pytest.mark.unit
 def test_router_returns_labels_in_response_envelope() -> None:
-    body = _sparql_response(
-        [_row("urn:test", _RDFS_LABEL, "Hello", lang="en")]
-    )
+    body = _sparql_response([_row("urn:test", _RDFS_LABEL, "Hello", lang="en")])
     response = TestClient(_build_app(_FakeAdapter(body))).get(
         "/labels", params=[("iri", "urn:test")]
     )

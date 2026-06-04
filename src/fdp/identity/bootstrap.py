@@ -111,6 +111,8 @@ def build_bootstrap_router(
                 metrics=settings.metrics.enabled,
                 sparql=True,
                 data_provider=True,
+                search=settings.search.enabled,
+                # index stays False until the FDP Index protocol (Phase 8) ships.
             ),
         )
 

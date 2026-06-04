@@ -218,10 +218,18 @@ def _build_shared_state(app: FastAPI) -> None:
     )
     app.state.audit_log = AuditLog(session_factory=app.state.session_factory)
 
-    # Label resolver: shared across requests, holds the per-(iri, lang)
-    # TTL cache that fronts the triple-store lookup. Stateless aside
-    # from the cache.
-    app.state.label_resolver = LabelResolver(adapter=app.state.triplestore)
+    # Runtime settings repository — Postgres-backed; read on demand so admin
+    # updates are visible without restart. Built before the label resolver and
+    # autocomplete service, which both read from it.
+    app.state.settings_repository = SettingsRepository(session_factory=app.state.session_factory)
+
+    # Label resolver: knowledge-graph labels (per-(iri, lang) TTL cache) plus a
+    # settings-backed inline source (6.1a) that supplies vocabulary labels
+    # (licenses, MIME types) the graph doesn't describe.
+    app.state.label_resolver = LabelResolver(
+        adapter=app.state.triplestore,
+        settings_repository=app.state.settings_repository,
+    )
 
     # Dashboard service: SPARQL + audit-log + PDP composition. No state.
     app.state.dashboard_service = DashboardService(
@@ -230,10 +238,7 @@ def _build_shared_state(app: FastAPI) -> None:
         pdp=app.state.pdp,
     )
 
-    # Runtime settings repository + autocomplete service. Settings
-    # state lives in Postgres; the autocomplete service reads sources
-    # on every call so admin updates are visible without restart.
-    app.state.settings_repository = SettingsRepository(session_factory=app.state.session_factory)
+    # Autocomplete service reads the same settings sources on every call.
     app.state.autocomplete_service = AutocompleteService(
         settings_repository=app.state.settings_repository,
         adapter=app.state.triplestore,
