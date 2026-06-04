@@ -29,7 +29,9 @@ class TripleStoreSettings(BaseSettings):
     capability flags below.
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_TRIPLESTORE_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_TRIPLESTORE_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     query_endpoint: HttpUrl
     update_endpoint: HttpUrl
@@ -50,7 +52,9 @@ class OIDCSettings(BaseSettings):
     Auth0, institutional IdPs).
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_OIDC_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_OIDC_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     issuer: HttpUrl
     audience: str
@@ -74,7 +78,9 @@ class CORSSettings(BaseSettings):
     origin(s) — never widen this to ``*`` while credentials are allowed.
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_CORS_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_CORS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # ``NoDecode`` disables pydantic-settings' automatic JSON decoding of the
     # env value, which otherwise runs *before* our validator and would reject a
@@ -127,7 +133,9 @@ class MetricsSettings(BaseSettings):
     configuration.
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_METRICS_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_METRICS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     enabled: bool = True
     unique_visitor_counting: bool = True  # disable in jurisdictions that require it
@@ -139,7 +147,9 @@ class MetricsSettings(BaseSettings):
 class ProfileSettings(BaseSettings):
     """Configuration for the deployment-profile bootstrap (architecture §12)."""
 
-    model_config = SettingsConfigDict(env_prefix="FDP_PROFILE_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_PROFILE_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     auto_apply: bool = False
     """If True and ``path`` is set, the lifespan handler applies the profile
@@ -154,7 +164,9 @@ class ProfileSettings(BaseSettings):
 class SearchSettings(BaseSettings):
     """Configuration for the metadata search index + query API (Phase 7)."""
 
-    model_config = SettingsConfigDict(env_prefix="FDP_SEARCH_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_SEARCH_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     enabled: bool = True
     """When False the indexer subscriber does not start and ``/search`` 404s."""
@@ -179,7 +191,9 @@ class ApiKeySettings(BaseSettings):
     by forcing expiry; these settings bound issuance.
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_API_KEYS_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_API_KEYS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     enabled: bool = True
     """When False, the ``/me/api-keys`` surface 404s and ``fdpk_`` bearer
@@ -214,7 +228,9 @@ class SchemaSyncSettings(BaseSettings):
       enforced on every fetch regardless of ``enabled``.
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_SCHEMA_SYNC_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_SCHEMA_SYNC_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     enabled: bool = False
     """If True, a scheduled run (arq cron / external scheduler calling
@@ -263,7 +279,9 @@ class DataSettings(BaseSettings):
     settings.
     """
 
-    model_config = SettingsConfigDict(env_prefix="FDP_DATA_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_DATA_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     download_mode: DownloadMode = "redirect"
     """``redirect`` issues a 302 to the upstream ``dcat:downloadURL``;
