@@ -930,9 +930,11 @@ ADR-0006 (the ODRL profile), ADR-0009 (the runtime-RDF-config model this
 mirrors), ADR-0010 (the lifecycle it reuses), Phase 10.1 (`/schemas` — the
 parallel admin surface).
 
-**Status (2026-06-06):** built and green (786 unit tests). Done: 14.1, 14.2,
-14.3 (incl. the license SHACL shape), 14.4, 14.5, 14.6. Remaining: 14.7 harvest
-+ remote seam, 14.8 integration round-trip + client pickers.
+**Status (2026-06-06):** built and green (787 unit + 2 integration tests). Done:
+14.1, 14.2, 14.3 (incl. the license SHACL shape), 14.4, 14.5, 14.6, and 14.8's
+server half (OpenAPI + unit + integration round-trip). Remaining: 14.7 harvest +
+remote seam (harvest blocked on Phase 8); 14.8 client `dct:rights`/`dct:license`
+pickers (client repo).
 
 ### 14.1 [x] Reserved storage namespaces + managed-document plumbing
 
@@ -1068,7 +1070,7 @@ discovery catalogs + search. **Remaining (mostly blocked on Phase 8):** harvest
 inclusion; a marked remote-resolution extension point in
 `GraphBackedOfferResolver`.
 
-### 14.8 [ ] OpenAPI, tests, client coordination
+### 14.8 [~] OpenAPI, tests, client coordination
 
 Add `/policies` and `/licenses` to the OpenAPI surface. Unit tests for both
 services (validation accept/reject, lifecycle, delete-guard,
@@ -1078,10 +1080,25 @@ ODRL editor (client Phase 5) now targets `/policies`; add license
 management + `dct:rights`/`dct:license` pickers that read the published
 catalogs. Note the contract change in the client `TASKS.md`.
 
-Done: OpenAPI surface is automatic (routers registered before the LDP
-catch-all); unit tests for both services (validation, delete-guard, lifecycle
-events). Client `TASKS.md` updated (Phase 5 unblock note). **Remaining:** the
-integration round-trip (needs GraphDB testcontainer) and the client pickers.
+Done (server side):
+
+- OpenAPI surface is automatic (routers registered before the LDP catch-all);
+  unit tests for both services (validation, delete-guard, lifecycle events).
+- **Integration round-trip** — `tests/integration/metadata/test_policies_licenses_e2e.py`
+  drives the whole stack over Oxigraph + Postgres: author → validate (incl. a
+  422 out-of-profile reject) → publish → anonymous discovery excludes drafts →
+  reference via `dct:rights`/`dct:license` → **enforce** (a steward-only policy
+  hides a record from anonymous while an open policy exposes it, isolating the
+  policy as the cause) → delete-guard 409. The license half exercises SHACL
+  validation + the seeded default set.
+- **Bug fix surfaced by the round-trip:** `TripleStoreAdapter.drop_graph` now
+  tolerates a Graph-Store-Protocol 404 (absent graph), matching the
+  `DROP SILENT` fallback — a managed schema/policy/license has no audit sibling,
+  so deleting one would otherwise 404 the whole delete. Unit test added.
+- Client `TASKS.md` updated (Phase 5 unblock note).
+
+**Remaining:** the client `dct:rights`/`dct:license` pickers + license-management
+views (client repo, not this one).
 
 ---
 

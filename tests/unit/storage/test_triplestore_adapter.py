@@ -143,6 +143,18 @@ async def test_drop_graph_uses_graph_store_delete_when_configured(
 
 @pytest.mark.unit
 @respx.mock
+async def test_drop_graph_tolerates_missing_graph_404(
+    async_client: httpx.AsyncClient,
+) -> None:
+    # Dropping an absent graph is a no-op, matching DROP SILENT — a record
+    # without a materialized sibling (e.g. a managed schema/policy/license has
+    # no audit graph) must not 404 the whole delete.
+    respx.delete(GRAPH_STORE_URL).respond(404)
+    await _adapter(_settings(), async_client).drop_graph("http://example.org/g/absent")
+
+
+@pytest.mark.unit
+@respx.mock
 async def test_drop_graph_falls_back_to_sparql_update_without_graph_store(
     async_client: httpx.AsyncClient,
 ) -> None:

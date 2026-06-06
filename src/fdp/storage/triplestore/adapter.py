@@ -230,6 +230,12 @@ class TripleStoreAdapter:
                 str(self._settings.graph_store_endpoint),
                 params={"graph": graph_uri},
             )
+            # A missing graph is not an error: dropping is idempotent, matching
+            # the SPARQL ``DROP SILENT GRAPH`` fallback below. Records without a
+            # materialized sibling (e.g. a managed schema/policy/license never
+            # gets an audit graph) would otherwise 404 the whole delete.
+            if response.status_code == 404:
+                return
             response.raise_for_status()
             return
         await self.update(f"DROP SILENT GRAPH <{graph_uri}>")
