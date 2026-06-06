@@ -22,6 +22,7 @@ from fdp.metadata.shacl import UnknownShapeError
 
 if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.shacl import ShapeProvider
 
 
 class MetadataShapeProvider:
@@ -45,4 +46,29 @@ class MetadataShapeProvider:
         return data
 
 
-__all__ = ["MetadataShapeProvider"]
+class PredefinedShapeProvider:
+    """Serves fixed, server-owned SHACL shapes from code; delegates the rest.
+
+    Some shapes are *server-owned constants* (e.g. the managed-license shape,
+    ADR-0012), not profile artifacts. Resolving them must not depend on whether
+    or when a profile was applied — otherwise a deployment whose profile was
+    applied before a new server shape existed never seeds it, and every
+    validation against it 500s with :class:`UnknownShapeError`. This provider
+    answers those IRIs from the in-code definitions and falls back to the
+    triple-store-backed ``delegate`` for profile-declared schema shapes.
+
+    Stateless; safe to share across requests.
+    """
+
+    def __init__(self, *, predefined: dict[str, str], delegate: ShapeProvider) -> None:
+        self._predefined = dict(predefined)
+        self._delegate = delegate
+
+    async def fetch(self, shape_iri: str) -> str:
+        predefined = self._predefined.get(shape_iri)
+        if predefined is not None:
+            return predefined
+        return await self._delegate.fetch(shape_iri)
+
+
+__all__ = ["MetadataShapeProvider", "PredefinedShapeProvider"]

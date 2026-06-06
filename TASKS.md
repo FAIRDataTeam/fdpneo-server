@@ -978,7 +978,11 @@ Validation is **SHACL against the server-owned license shape**
 `dct:title` (and an IRI `dct:source` if present) at its stable IRI. The shape
 targets a synthetic `fdp:ManagedLicense` type injected at validation time
 (`_probe_graph`), so the contract holds whatever the document's own `rdf:type`
-is; the shape is seeded by the applier and warmed in the lifespan bootstrap.
+is. The shape resolves from **code** via `PredefinedShapeProvider` (composite in
+front of the store-backed `MetadataShapeProvider`), so license validation works
+even on a deployment whose profile was applied before the shape existed — it no
+longer depends on the seeded copy. (Client-reported fix: `PUT`/`validate
+/licenses` had 500'd with `UnknownShapeError` on already-applied deployments.)
 
 ### 14.4 [x] Lifecycle: reuse Phase 12 publication state
 

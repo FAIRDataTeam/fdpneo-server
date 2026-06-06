@@ -12,8 +12,7 @@ from fdp.metadata.shacl import (
     UnknownShapeError,
     ValidationReport,
 )
-from fdp.metadata.shape_provider import MetadataShapeProvider
-
+from fdp.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
 
 # A trivial SHACL shape that requires dct:title on dcat:Catalog records.
 CATALOG_SHAPE_TTL = """\
@@ -111,6 +110,62 @@ async def test_validator_uses_provider_for_validation_decisions() -> None:
     report = await validator.validate_against(bad_graph, iri)
     assert report.conforms is False
     assert len(report.violations) >= 1
+
+
+@pytest.mark.unit
+async def test_predefined_provider_serves_from_code_without_delegating() -> None:
+    iri = "https://w3id.org/fdp/o#LicenseDocumentShape"
+    repo = _FakeRepo()  # store has nothing — simulates an already-applied deployment
+    provider = PredefinedShapeProvider(
+        predefined={iri: CATALOG_SHAPE_TTL},
+        delegate=MetadataShapeProvider(repo),  # type: ignore[arg-type]
+    )
+    ttl = await provider.fetch(iri)
+    assert "sh:NodeShape" in ttl
+    assert repo.calls == [], "predefined shape must not hit the triple store"
+
+
+@pytest.mark.unit
+async def test_predefined_provider_delegates_unknown_iris() -> None:
+    known = "http://www.w3.org/ns/dcat#Catalog"
+    repo = _FakeRepo(graphs={known: CATALOG_SHAPE_TTL})
+    provider = PredefinedShapeProvider(
+        predefined={"urn:served-from-code": CATALOG_SHAPE_TTL},
+        delegate=MetadataShapeProvider(repo),  # type: ignore[arg-type]
+    )
+    assert "dcat:Catalog" in await provider.fetch(known)
+    assert repo.calls == [known]
+    with pytest.raises(UnknownShapeError):
+        await provider.fetch("http://example.org/missing")
+
+
+@pytest.mark.unit
+async def test_license_shape_resolves_even_when_unseeded() -> None:
+    # Regression (client report): PUT/validate /licenses 500'd with
+    # UnknownShapeError when the license shape was not seeded in the store. The
+    # composite provider resolves the server-owned shape from code instead.
+    from fdp.metadata.licenses import LICENSE_SHAPE_IRI, predefined_license_shape_graph
+
+    repo = _FakeRepo()  # store is empty — shape was never seeded
+    validator = ShaclValidator(
+        PredefinedShapeProvider(
+            predefined={
+                LICENSE_SHAPE_IRI: predefined_license_shape_graph().serialize(format="turtle")
+            },
+            delegate=MetadataShapeProvider(repo),  # type: ignore[arg-type]
+        )
+    )
+    licence = Graph()
+    licence.parse(
+        data=(
+            "@prefix dct: <http://purl.org/dc/terms/> ."
+            "@prefix fdp: <https://w3id.org/fdp/o#> ."
+            ' <urn:l> a fdp:ManagedLicense ; dct:title "CC BY 4.0" .'
+        ),
+        format="turtle",
+    )
+    report = await validator.validate_against(licence, LICENSE_SHAPE_IRI)
+    assert report.conforms is True
 
 
 @pytest.mark.unit

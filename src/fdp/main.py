@@ -39,7 +39,12 @@ from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
-from fdp.metadata.licenses import LICENSE_SHAPE_IRI, LicenseService, build_license_router
+from fdp.metadata.licenses import (
+    LICENSE_SHAPE_IRI,
+    LicenseService,
+    build_license_router,
+    predefined_license_shape_graph,
+)
 from fdp.metadata.lifecycle import (
     StateGate,
     StateReader,
@@ -73,7 +78,7 @@ from fdp.metadata.search.saved import (
 from fdp.metadata.search.service import SearchService
 from fdp.metadata.settings import SettingsRepository, build_settings_router
 from fdp.metadata.shacl import ShaclValidator
-from fdp.metadata.shape_provider import MetadataShapeProvider
+from fdp.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
 from fdp.metrics.api import build_metrics_router
 from fdp.metrics.geo import open_geo_lookup
 from fdp.metrics.middleware import RequestObservationMiddleware
@@ -172,7 +177,18 @@ def _build_shared_state(app: FastAPI) -> None:
     # store (architecture §5.3). Bootstrap-warming happens after the
     # profile is applied so the validator's parsed-shape cache is
     # populated against the IRIs the profile declares.
-    app.state.shacl_validator = ShaclValidator(MetadataShapeProvider(app.state.metadata_repository))
+    # Server-owned shapes (the managed-license shape, ADR-0012) are constants and
+    # resolve from code, so license validation works even on a deployment whose
+    # profile was applied before the shape existed; profile-declared schema
+    # shapes still come from the triple store via the delegate.
+    app.state.shacl_validator = ShaclValidator(
+        PredefinedShapeProvider(
+            predefined={
+                LICENSE_SHAPE_IRI: predefined_license_shape_graph().serialize(format="turtle")
+            },
+            delegate=MetadataShapeProvider(app.state.metadata_repository),
+        )
+    )
 
     # Now that the validator exists, make the repository validate the
     # meta-metadata graph against META_SHAPE_IRI on every write (architecture
