@@ -39,6 +39,7 @@ from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
+from fdp.metadata.licenses import LicenseService, build_license_router
 from fdp.metadata.lifecycle import (
     StateGate,
     StateReader,
@@ -47,6 +48,7 @@ from fdp.metadata.lifecycle import (
 )
 from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.openapi import inject_resource_definition_paths
+from fdp.metadata.policies import PolicyService, build_policy_router
 from fdp.metadata.profiles import (
     RD_SHAPE_IRI,
     ProfileStateRepository,
@@ -204,6 +206,24 @@ def _build_shared_state(app: FastAPI) -> None:
         adapter=app.state.triplestore,
         validator=app.state.shacl_validator,
         base_url=str(settings.base_url),
+    )
+
+    # First-class ODRL policy and license documents (Phase 14 / ADR-0012). Two
+    # separate subsystems: /policies stores PDP-enforced Offers (a write clears
+    # the authz cache so the change takes effect); /licenses stores descriptive
+    # license documents referenced via dct:license (no PDP coupling).
+    app.state.policy_service = PolicyService(
+        repository=app.state.metadata_repository,
+        adapter=app.state.triplestore,
+        pdp=app.state.pdp,
+        base_url=str(settings.base_url),
+        event_bus=app.state.event_bus,
+    )
+    app.state.license_service = LicenseService(
+        repository=app.state.metadata_repository,
+        adapter=app.state.triplestore,
+        base_url=str(settings.base_url),
+        event_bus=app.state.event_bus,
     )
 
     # GeoLite2 lookup degrades to no-op if the DB is missing — safe for dev.
@@ -371,7 +391,8 @@ def create_app() -> FastAPI:
     # /{record}/state (publication-state transitions — Phase 12),
     # /spec, /expanded, /page, /resource-definitions (the runtime
     # resource-definition catalog + admin surface — ADR-0009), /schemas
-    # (runtime SHACL-shape admin — Phase 10.1), and
+    # (runtime SHACL-shape admin — Phase 10.1), /policies and /licenses
+    # (first-class ODRL policy + license documents — Phase 14 / ADR-0012), and
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
@@ -458,6 +479,12 @@ def create_app() -> FastAPI:
     # before the LDP catch-all so /schemas isn't swallowed by /{path:path};
     # the shapes themselves are stored at {base}/schemas/{id}.
     app.include_router(build_schema_router(service=app.state.schema_service))
+    # First-class ODRL policy + license admin (Phase 14 / ADR-0012). Registered
+    # before the LDP catch-all so /policies and /licenses aren't swallowed by
+    # /{path:path}; the documents themselves are stored at {base}/policies/{id}
+    # and {base}/licenses/{id} as public, dereferenceable reference records.
+    app.include_router(build_policy_router(service=app.state.policy_service))
+    app.include_router(build_license_router(service=app.state.license_service))
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the

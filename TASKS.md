@@ -914,6 +914,160 @@ References: `AppInfoContributor.java`, Spring Actuator.
 
 ---
 
+## Phase 14 — First-class ODRL policy and license documents
+
+Make ODRL access conditions and licenses **managed, reusable RDF documents**
+— symmetric with how SHACL schemas were made first-class in Phase 10.1 —
+so the client's visual ODRL editor has a real backend and an FDP can act
+as a **reference source** of access conditions other FDPs discover and
+reference. **Two separate subsystems** (per ADR-0012): `/policies`
+(`odrl:Offer`, profile-validated, **PDP-enforced** via `dct:rights`) and
+`/licenses` (license documents, validated against a license shape,
+**descriptive** via `dct:license`, never enforced).
+
+Read first: [ADR-0012](docs/adr/0012-first-class-odrl-policy-and-license-documents.md),
+ADR-0006 (the ODRL profile), ADR-0009 (the runtime-RDF-config model this
+mirrors), ADR-0010 (the lifecycle it reuses), Phase 10.1 (`/schemas` — the
+parallel admin surface).
+
+**Status (2026-06-06):** built and green (779 unit tests). Done: 14.1, 14.2,
+14.3, 14.5, 14.6. Remaining: 14.4 archived-still-enforced *test*, the optional
+license SHACL shape, 14.7 harvest + remote seam, 14.8 integration round-trip +
+client pickers.
+
+### 14.1 [x] Reserved storage namespaces + managed-document plumbing
+
+Reserve deployment-relative namespaces `{base}/policies/{id}` and
+`{base}/licenses/{id}` (mirroring `{base}/schemas/{id}`). Store each as
+one-graph-per-record (ADR-0007) with public-readable body + internal
+`…/meta` and `…/audit` siblings (extend `is_internal_graph_uri` for the
+new siblings only — the document graphs themselves are anonymous-readable
+reference docs, like schemas). Add stable-IRI minting + `owl:versionInfo`
+bump-on-edit helpers (reuse the schema-versioning path).
+
+Done: `policy_graph_uri` / `license_graph_uri` / `is_policy_graph_uri` /
+`is_license_graph_uri` in `shared/graphs.py` (doc graphs public; meta/audit
+siblings already internal via suffix). Versioning is inherited from
+`repository.put_graph` (`owl:versionInfo` bump), as for schemas.
+
+### 14.2 [x] `PolicyService` + `/policies` admin API
+
+Mirror `SchemaService`/`/schemas`. `GET /policies` (catalog, public),
+`GET /policies/{id}` (public, content-negotiated, dereferenceable),
+`PUT /policies/{id}` (admin; **validate against the FDP ODRL profile** via
+`policy/parser.py`, reject out-of-profile with the structured violation
+envelope), `POST /policies/{id}/validate` (admin dry-run),
+`DELETE /policies/{id}` (admin; **409 if any record references it via
+`dct:rights`**). Each policy record carries descriptive metadata
+(`dct:title`, `dct:description`, keywords, `odrl:profile`) + meta sibling.
+
+Done: `metadata/policies.py` + `tests/unit/metadata/test_policies.py`. The
+Offer subject is the stable IRI (body may use a relative `<>`).
+
+### 14.3 [x] `LicenseService` + `/licenses` admin API
+
+Same shape as 14.2 but for license documents (`odrl:Set`/`odrl:Policy`
+license expression or `dct:LicenseDocument`). Delete refused with 409 if
+referenced via `dct:license`.
+
+Done: `metadata/licenses.py` + `tests/unit/metadata/test_licenses.py`; the
+**default license set** (CC0, CC BY 4.0, CC BY-SA 4.0) is seeded by 14.5.
+**Note:** validation is currently structural (recognised license type or a
+`dct:title` at the stable IRI), not yet a **license SHACL shape** — that shape
+is the one remaining optional hardening.
+
+### 14.4 [ ] Lifecycle: reuse Phase 12 publication state
+
+Policies/licenses use the existing `DRAFT → PUBLISHED → ARCHIVED` state
+machine (`POST /{record}/state`). Special rule for **archived policies**:
+retained and **still resolvable/enforced for records that already
+reference them** (archiving must not break dependents), but not offered
+for new assignment. Add a test that proves an archived policy still
+enforces for an existing `dct:rights` reference. Draft policies/licenses
+are excluded from assignment pickers and from anonymous discovery.
+
+Mechanism is **inherent**: policy/license records are ordinary records, so the
+state router/state-gate apply to them, and the offer resolver fetches a policy
+graph by IRI *regardless of its publication state* (the StateGate gates record
+*read* visibility, not offer resolution) — so an archived policy keeps enforcing
+for existing `dct:rights` dependents. **Remaining:** an explicit test asserting
+that, and confirming draft policies are dropped from the discovery catalog /
+search (search already gates on `anon_read` + state).
+
+### 14.5 [x] Profile seeding + PDP wiring
+
+Migrate bundled-profile `offers:` to **seeded managed policies** at
+`{base}/policies/{id}`. Point the **system-default offer** at a managed
+policy IRI. The `GraphBackedOfferResolver` already resolves offers by IRI,
+so the common (local) path needs no change. Add a **synchronous PDP
+auth-cache invalidation hook on policy write**.
+
+Done:
+
+- **PDP-cache invalidation hook** — `CacheRepository.invalidate_all` →
+  `PDP.invalidate_all` → `RequestScopedPDP.invalidate_all`, called from
+  `PolicyService.put`/`delete` (over-invalidates, re-warms lazily; correct
+  under `dct:isPartOf` inheritance).
+- **Offer → managed policy seeding** — `applier.py` now rewrites each bundled
+  Offer's subject from its intrinsic IRI to the deployment-local
+  `{base}/policies/{id}` (`_rewrite_subject` + `_managed_policy_iri`) and stores
+  it there, so it is dereferenceable and the resolver parses it. Both
+  `apply_profile` and `resolve_runtime_state` (restart path) point the
+  system-default at the managed IRI.
+- **Default license set** — `metadata/profiles/licenses.py` seeds CC0 /
+  CC BY 4.0 / CC BY-SA 4.0 at `{base}/licenses/{id}` (local `dct:LicenseDocument`
+  + `dct:source` → canonical CC IRI), tracked for rollback.
+
+The applier writes through `repository.put_graph` (not `PolicyService`) because
+it runs at bootstrap before the app's PDP/event-bus are wired; offers are
+already profile-validated at load. Tests: `test_applier.py` updated +
+`test_default_seeding.py`.
+
+### 14.6 [x] Search + discovery (Phase 7 integration)
+
+Index managed policies and licenses as searchable content. Narrow the
+indexer's current blanket `odrl:Offer` skip so it excludes only
+**un-managed/seed** offers and the internal siblings, **not** documents under
+`…/policies/`. `GET /policies` / `GET /licenses` are the discovery catalogs.
+
+Done: `extract.is_indexable` now includes `/policies/` and `/licenses/` docs
+(facet key is the doc's `rdf:type`); `PolicyService`/`LicenseService` publish
+`RecordModified`/`RecordDeleted` on the event bus so writes flow live to the
+indexer + audit log. `fdp search reindex` picks them up via the same seam.
+
+### 14.7 [ ] Cross-FDP reuse — publish side now, remote enforce later
+
+Deliver the **publishing** capability: stable dereferenceable IRIs +
+discovery catalogs + search, so another FDP can find a condition and
+reference its IRI. When the FDP Index protocol lands (Phase 8), include the
+policy/license catalogs in the harvest. **Defer** actively dereferencing
+and enforcing a *remote* FDP's policy at decision time — when added it is
+opt-in + allow-listed (same posture as remote schema sync 10.2). Leave a
+clearly-marked extension point in the resolver; do not implement the
+outbound fetch now.
+
+Done: dereferenceable IRIs (`GET /policies/{id}` / `GET /licenses/{id}`) +
+discovery catalogs + search. **Remaining (mostly blocked on Phase 8):** harvest
+inclusion; a marked remote-resolution extension point in
+`GraphBackedOfferResolver`.
+
+### 14.8 [ ] OpenAPI, tests, client coordination
+
+Add `/policies` and `/licenses` to the OpenAPI surface. Unit tests for both
+services (validation accept/reject, lifecycle, delete-guard,
+archived-still-enforced); integration test for a full author → validate →
+publish → reference → enforce round-trip. Coordinate with the client: the
+ODRL editor (client Phase 5) now targets `/policies`; add license
+management + `dct:rights`/`dct:license` pickers that read the published
+catalogs. Note the contract change in the client `TASKS.md`.
+
+Done: OpenAPI surface is automatic (routers registered before the LDP
+catch-all); unit tests for both services (validation, delete-guard, lifecycle
+events). Client `TASKS.md` updated (Phase 5 unblock note). **Remaining:** the
+integration round-trip (needs GraphDB testcontainer) and the client pickers.
+
+---
+
 ## Reference-impl features deliberately NOT being ported
 
 | Reference feature | Why we skip it | Reference |

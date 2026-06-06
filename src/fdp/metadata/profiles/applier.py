@@ -15,16 +15,21 @@ emulate atomicity with **compensation rollback**:
   rollback always leaves the system "uninitialized" — a subsequent
   apply can re-attempt without ``--force``.
 
-Apply order (architecture §12.2): schemas → offers → root Repository
-seed → seed records. Resource-definition processing happens between
-offers and the Repository seed because the seed needs to know the
+Apply order (architecture §12.2): schemas → offers → default licenses →
+root Repository seed → seed records. Resource-definition processing happens
+between offers and the Repository seed because the seed needs to know the
 root RD's schema IRI and which offer is the system default.
 
 **IRI conventions**
 
 * Schema IRI: CURIE expansion via :class:`IRIExpander`.
-* Offer IRI: intrinsic — the subject of the ``odrl:Offer`` triple in
-  the bundled TTL. Stable across deployments.
+* Offer IRI: a managed-policy IRI ``{base_url}/policies/{offer_id}`` (ADR-0012).
+  The bundled TTL declares the Offer at an intrinsic IRI; the applier rewrites
+  the Offer subject to the deployment-local managed IRI and stores it there, so
+  the Offer is dereferenceable (``GET /policies/{id}``) and ``dct:rights``
+  references resolve locally.
+* License IRI: ``{base_url}/licenses/{license_id}`` — the built-in default set
+  (ADR-0012), referenced descriptively via ``dct:license``.
 * Root Repository IRI: the deployment's ``base_url`` itself (no
   trailing slash). The Repository LDP container lives at the API root.
 * Seed record IRI: ``{base_url}/{seed_id}``.
@@ -41,6 +46,7 @@ from rdflib.namespace import RDF
 
 from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.profiles.iri import IRIExpander
+from fdp.metadata.profiles.licenses import default_license_graphs
 from fdp.metadata.profiles.rd_records import (
     RD_SHAPE_IRI,
     predefined_shape_graph,
@@ -58,7 +64,7 @@ from fdp.metadata.profiles.validator import (
 )
 from fdp.metadata.states import SEED_STATE
 from fdp.shared.errors import BadRequest, Conflict, FDPError
-from fdp.shared.graphs import resource_definition_graph_uri
+from fdp.shared.graphs import policy_graph_uri, resource_definition_graph_uri
 from fdp.shared.namespaces import DCT, LDP, ODRL
 
 if TYPE_CHECKING:
@@ -104,6 +110,7 @@ class ApplyReport:
 
     schemas_written: list[str] = field(default_factory=list)
     offers_written: list[str] = field(default_factory=list)
+    licenses_written: list[str] = field(default_factory=list)
     meta_shape_iri: str | None = None
     rd_shape_iri: str | None = None
     resource_definition_records: list[str] = field(default_factory=list)
@@ -118,6 +125,7 @@ class ApplyReport:
         return (
             len(self.schemas_written)
             + len(self.offers_written)
+            + len(self.licenses_written)
             + (1 if self.meta_shape_iri else 0)
             + (1 if self.rd_shape_iri else 0)
             + len(self.resource_definition_records)
@@ -181,14 +189,26 @@ async def apply_profile(
             report.schemas_written.append(iri)
             written.append(iri)
 
-        # 2. ODRL Offers — stored at their intrinsic file-declared IRI.
-        offer_iris: dict[str, str] = {}  # offer-entry id → IRI
+        # 2. ODRL Offers — seeded as managed policy documents (ADR-0012). The
+        #    bundled TTL declares the Offer at an intrinsic IRI; we rewrite the
+        #    subject to the deployment-local managed IRI {base}/policies/{id} and
+        #    store the graph there, so it is dereferenceable and dct:rights
+        #    references resolve locally.
+        offer_iris: dict[str, str] = {}  # offer-entry id → managed policy IRI
         for offer in profile.offers:
-            iri = _offer_iri_from_graph(offer.graph)
-            await repository.put_graph(iri, offer.graph, subject=None, initial_state=SEED_STATE)
-            offer_iris[offer.entry.id] = iri
-            report.offers_written.append(iri)
-            written.append(iri)
+            intrinsic = URIRef(_offer_iri_from_graph(offer.graph))
+            managed = _managed_policy_iri(expander, offer.entry.id)
+            graph = _rewrite_subject(offer.graph, intrinsic, URIRef(managed))
+            await repository.put_graph(managed, graph, subject=None, initial_state=SEED_STATE)
+            offer_iris[offer.entry.id] = managed
+            report.offers_written.append(managed)
+            written.append(managed)
+
+        # 2b. Built-in default license documents (ADR-0012) at {base}/licenses/{id}.
+        for lic_iri, lic_graph in default_license_graphs(expander.base_url):
+            await repository.put_graph(lic_iri, lic_graph, subject=None, initial_state=SEED_STATE)
+            report.licenses_written.append(lic_iri)
+            written.append(lic_iri)
 
         # 2a. Resource-definition records (ADR-0009). The predefined RD SHACL
         #     shape (server-owned, fixed IRI) is stored so the validator can
@@ -312,7 +332,9 @@ def resolve_runtime_state(
     loaded profile + IRI expansion, the same way ``apply_profile`` does.
     """
     expander = IRIExpander(settings=settings)
-    offer_iris = {offer.entry.id: _offer_iri_from_graph(offer.graph) for offer in profile.offers}
+    offer_iris = {
+        offer.entry.id: _managed_policy_iri(expander, offer.entry.id) for offer in profile.offers
+    }
     system_default_iri = _find_system_default_offer(profile.offers, offer_iris)
     rd_cache: ResourceDefinitionCache | None = None
     if profile.manifest.resource_definitions:
@@ -349,6 +371,31 @@ def _offer_iri_from_graph(graph: Graph) -> str:
         "offer graph has no odrl:Offer subject (validator should have caught this)",
         details={},
     )
+
+
+def _managed_policy_iri(expander: IRIExpander, offer_id: str) -> str:
+    """The deployment-local managed-policy IRI for a profile offer (ADR-0012)."""
+    return str(policy_graph_uri(expander.base_url, offer_id))
+
+
+def _rewrite_subject(graph: Graph, old: URIRef, new: URIRef) -> Graph:
+    """Return a copy of ``graph`` with node ``old`` renamed to ``new``.
+
+    Used to move a bundled Offer from its intrinsic IRI to the deployment-local
+    managed-policy IRI so the stored graph is self-consistent (``<new> a
+    odrl:Offer``) and dereferenceable. Rewrites both subject and object
+    positions; the Offer's rules are blank nodes and are left untouched.
+    """
+    rewritten = Graph()
+    for s, p, o in graph:
+        rewritten.add(
+            (
+                new if s == old else s,
+                p,
+                new if o == old else o,
+            )
+        )
+    return rewritten
 
 
 def _find_system_default_offer(

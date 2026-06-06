@@ -17,6 +17,9 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0007](0007-one-graph-per-record.md) | One named graph per metadata record | Accepted |
 | [0008](0008-full-ldp-with-patch.md) | Full LDP implementation including PATCH | Accepted |
 | [0009](0009-runtime-resource-definitions.md) | Runtime-mutable resource definitions stored as RDF | Accepted |
+| [0010](0010-metadata-publication-state.md) | Metadata publication state (draft/published/archived) | Accepted |
+| [0011](0011-api-keys.md) | API keys for machine-to-machine access | Accepted |
+| [0012](0012-first-class-odrl-policy-and-license-documents.md) | First-class ODRL policy and license documents | Accepted |
 
 ## Format
 

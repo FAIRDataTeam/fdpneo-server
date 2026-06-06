@@ -118,6 +118,10 @@ class PDP:
         """Drop every cached decision against ``resource_iri``."""
         return await self._cache.invalidate_by_resource(resource_iri)
 
+    async def invalidate_all(self) -> int:
+        """Drop every cached decision — used when a managed policy changes (ADR-0012)."""
+        return await self._cache.invalidate_all()
+
     async def invalidate_subject(self, ctx: RequestContext) -> int:
         """Drop every cached decision against the subject in ``ctx``.
 

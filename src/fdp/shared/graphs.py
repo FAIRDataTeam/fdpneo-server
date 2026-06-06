@@ -39,6 +39,15 @@ _DATA_SUFFIX = "/data"
 # prefix from the LDP catch-all.
 _RESOURCE_DEFINITIONS_SEGMENT = "resource-definitions"
 
+# Reserved path segments for first-class ODRL policy and license documents
+# (ADR-0012). Unlike resource-definition records, these are *public* reference
+# documents (anonymous-readable, like ``/schemas``) — they are NOT internal, so
+# ``is_internal_graph_uri`` does not exclude them. Only their ``/meta`` and
+# ``/audit`` siblings are internal, which the suffix predicates already cover.
+# ``main.py`` reserves both prefixes ahead of the LDP catch-all.
+_POLICIES_SEGMENT = "policies"
+_LICENSES_SEGMENT = "licenses"
+
 
 def _as_uri(record_uri: str | URIRef) -> URIRef:
     if isinstance(record_uri, URIRef):
@@ -89,6 +98,36 @@ def resource_definition_graph_uri(base_url: str | URIRef, rd_id: str) -> URIRef:
     """
     base = str(base_url).rstrip("/")
     return URIRef(f"{base}/{_RESOURCE_DEFINITIONS_SEGMENT}/{rd_id}")
+
+
+def policy_graph_uri(base_url: str | URIRef, policy_id: str) -> URIRef:
+    """The stable, dereferenceable graph URI for managed policy ``policy_id`` (ADR-0012).
+
+    Lives under the reserved ``<base_url>/policies/`` namespace. The Offer's
+    own subject IRI equals this URI, so ``dct:rights`` references resolve here.
+    """
+    base = str(base_url).rstrip("/")
+    return URIRef(f"{base}/{_POLICIES_SEGMENT}/{policy_id}")
+
+
+def license_graph_uri(base_url: str | URIRef, license_id: str) -> URIRef:
+    """The stable, dereferenceable graph URI for managed license ``license_id`` (ADR-0012).
+
+    Lives under the reserved ``<base_url>/licenses/`` namespace; referenced
+    descriptively via ``dct:license`` (never enforced by the PEP).
+    """
+    base = str(base_url).rstrip("/")
+    return URIRef(f"{base}/{_LICENSES_SEGMENT}/{license_id}")
+
+
+def is_policy_graph_uri(uri: str | URIRef) -> bool:
+    """True iff ``uri`` is (or is a sibling of) a managed policy document."""
+    return f"/{_POLICIES_SEGMENT}/" in str(uri)
+
+
+def is_license_graph_uri(uri: str | URIRef) -> bool:
+    """True iff ``uri`` is (or is a sibling of) a managed license document."""
+    return f"/{_LICENSES_SEGMENT}/" in str(uri)
 
 
 def is_meta_graph_uri(uri: str | URIRef) -> bool:
@@ -144,9 +183,13 @@ __all__ = [
     "is_audit_graph_uri",
     "is_data_graph_uri",
     "is_internal_graph_uri",
+    "is_license_graph_uri",
     "is_meta_graph_uri",
+    "is_policy_graph_uri",
     "is_resource_definition_graph_uri",
+    "license_graph_uri",
     "meta_graph_uri",
+    "policy_graph_uri",
     "record_graph_uri",
     "record_uri_from_sibling",
     "resource_definition_graph_uri",

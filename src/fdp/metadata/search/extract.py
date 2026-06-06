@@ -15,7 +15,11 @@ from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.states import MetadataState
-from fdp.shared.graphs import is_internal_graph_uri
+from fdp.shared.graphs import (
+    is_internal_graph_uri,
+    is_license_graph_uri,
+    is_policy_graph_uri,
+)
 from fdp.shared.namespaces import (
     DCAT,
     DCT,
@@ -61,10 +65,17 @@ def is_indexable(record_iri: str, record_graph: Graph) -> bool:
     """True iff ``record_iri`` is indexable content (not internal/config).
 
     Excludes internal graphs (meta/audit/resource-definitions) and config
-    records (SHACL shapes, ODRL offers) by their ``rdf:type``.
+    records (SHACL shapes, *un-managed* ODRL offers) by their ``rdf:type``.
+
+    Managed policy and license documents (ADR-0012) are first-class, searchable
+    reference content and are indexed despite a policy being typed
+    ``odrl:Offer`` — only their internal ``/meta`` and ``/audit`` siblings
+    (excluded by the internal-graph check above) are skipped.
     """
     if is_internal_graph_uri(record_iri):
         return False
+    if is_policy_graph_uri(record_iri) or is_license_graph_uri(record_iri):
+        return True
     subject = URIRef(record_iri)
     types = set(record_graph.objects(subject, RDF.type))
     return not (types & _NON_CONTENT_TYPES)

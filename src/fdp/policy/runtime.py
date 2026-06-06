@@ -65,5 +65,16 @@ class RequestScopedPDP:
             )
             return await pdp.authorized_graphs(ctx, action)
 
+    async def invalidate_all(self) -> int:
+        """Clear the whole authz index — used when a managed policy changes (ADR-0012)."""
+        async with self._session_factory() as session:
+            pdp = PDP(
+                cache=CacheRepository(session),
+                offer_resolver=self._offer_resolver,
+            )
+            cleared = await pdp.invalidate_all()
+            await session.commit()
+            return cleared
+
 
 __all__ = ["RequestScopedPDP"]

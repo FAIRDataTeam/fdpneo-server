@@ -3,11 +3,12 @@
 # Semantics: anyone (including anonymous callers) may read; only callers
 # with the role "steward" may modify, delete, or redistribute.
 #
-# The Offer's IRI is *intrinsic* and deployment-independent. Records
-# referencing this Offer via dct:rights use the same IRI regardless of
-# what base_url the operator chooses. The applier (see
-# fdp.metadata.profiles.applier) stores the graph at this IRI rather
-# than at a base_url-derived one for the same reason.
+# The IRI below is the bundle's *intrinsic* declaration only. On apply,
+# the applier (fdp.metadata.profiles.applier) rewrites the Offer subject
+# to the deployment-local managed-policy IRI {base_url}/policies/{offer-id}
+# and stores it there (ADR-0012), so the Offer is dereferenceable at
+# GET /policies/{id} and dct:rights references resolve locally. The offer
+# id ("system-default" in profile.yaml) is the stable handle, not this IRI.
 #
 # LeftOperand vocabulary:
 # * odrl:assignee — standard ODRL party identity.

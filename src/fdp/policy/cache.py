@@ -157,6 +157,16 @@ class CacheRepository:
         stmt = delete(AuthzIndex).where(AuthzIndex.subject_key == subject_key)
         return await self._execute_delete(stmt)
 
+    async def invalidate_all(self) -> int:
+        """Drop every cached decision. Returns rows deleted.
+
+        Used when a managed policy document changes (ADR-0012): a policy can be
+        the effective Offer for many resources via ``dct:isPartOf`` inheritance,
+        so the safe, simple response to an (admin-rare) policy write is to clear
+        the index and let it re-warm lazily on the next request.
+        """
+        return await self._execute_delete(delete(AuthzIndex))
+
     async def invalidate_many_resources(self, graph_uris: Iterable[str]) -> int:
         uris = list(graph_uris)
         if not uris:

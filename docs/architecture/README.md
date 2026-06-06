@@ -330,6 +330,19 @@ The PDP algorithm is small:
 
 Decisions are logged to Postgres for audit — what was decided, why (which rule fired), against what Offer version — but never with the user's identity in a queryable form. The audit log uses the same daily-rotated hash the metrics pipeline uses, so it is useful for "did the system behave correctly" but not for "what did user X do". User-identifying audit information lives in the materialized Agreements in audit graphs, where it is part of the contract of access.
 
+### 8.6 Policies and licenses as first-class managed documents
+
+The Offers above are not anonymous fragments embedded only inside the records they govern. ODRL **policies** and **licenses** are managed as first-class RDF documents — the same treatment SHACL schemas receive (Section 10.1) — so the visual editor has a real backend and an FDP can serve as a **reference source** of access conditions and licenses that other FDPs discover and reference. See [ADR-0012](../adr/0012-first-class-odrl-policy-and-license-documents.md).
+
+There are **two separate subsystems**:
+
+- **`/policies`** — `odrl:Offer` documents, validated against the FDP ODRL profile (§8.1) and **enforced** by the PDP. A record opts into one via `dct:rights`; the offer resolver fetches it by IRI (§8.2/§8.3 are unchanged for local references).
+- **`/licenses`** — license documents (an `odrl:Set`/`odrl:Policy` license expression or a `dct:LicenseDocument`), validated against a license SHACL shape and referenced **descriptively** via `dct:license`. The PEP never evaluates them.
+
+Each is stored one-graph-per-record at a reserved, dereferenceable deployment IRI — `{base}/policies/{id}` and `{base}/licenses/{id}`, mirroring `{base}/schemas/{id}` — with its own descriptive metadata and meta-metadata sibling, runtime CRUD over an admin API, and the Section 12 publication-state lifecycle (draft → published → archived). The one policy-specific lifecycle rule: an **archived policy is retained and still enforced for records that already reference it**, but is not offered for new assignment, so archiving never silently breaks dependents. Published documents are indexed in search (Section 7) as `policy`/`license` content types and surface in the discovery catalogs.
+
+Cross-FDP reuse is delivered as **publish-and-discover** now — stable dereferenceable IRIs, discovery catalogs, search, and (when Phase 8 ships) Index harvesting — while actively dereferencing and **enforcing a remote FDP's policy** at decision time is deferred to an opt-in, allow-listed extension, the same posture as remote schema sync.
+
 ---
 
 ## 9. SPARQL endpoint with access control
