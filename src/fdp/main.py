@@ -39,7 +39,7 @@ from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
-from fdp.metadata.licenses import LicenseService, build_license_router
+from fdp.metadata.licenses import LICENSE_SHAPE_IRI, LicenseService, build_license_router
 from fdp.metadata.lifecycle import (
     StateGate,
     StateReader,
@@ -222,6 +222,7 @@ def _build_shared_state(app: FastAPI) -> None:
     app.state.license_service = LicenseService(
         repository=app.state.metadata_repository,
         adapter=app.state.triplestore,
+        validator=app.state.shacl_validator,
         base_url=str(settings.base_url),
         event_bus=app.state.event_bus,
     )
@@ -662,7 +663,9 @@ async def _publish_resource_definitions(app: FastAPI, cache: ResourceDefinitionC
     """
     app.state.resource_definitions = cache
     app.openapi_schema = None  # type: ignore[assignment]
-    schema_iris = sorted({rd.schema_iri for rd in cache.all()} | {RD_SHAPE_IRI})
+    schema_iris = sorted(
+        {rd.schema_iri for rd in cache.all()} | {RD_SHAPE_IRI, LICENSE_SHAPE_IRI}
+    )
     try:
         await app.state.shacl_validator.bootstrap(schema_iris)
     except Exception as err:

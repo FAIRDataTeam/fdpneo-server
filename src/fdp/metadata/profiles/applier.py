@@ -44,6 +44,7 @@ import structlog
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
+from fdp.metadata.licenses import LICENSE_SHAPE_IRI, predefined_license_shape_graph
 from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.profiles.iri import IRIExpander
 from fdp.metadata.profiles.licenses import default_license_graphs
@@ -111,6 +112,7 @@ class ApplyReport:
     schemas_written: list[str] = field(default_factory=list)
     offers_written: list[str] = field(default_factory=list)
     licenses_written: list[str] = field(default_factory=list)
+    license_shape_iri: str | None = None
     meta_shape_iri: str | None = None
     rd_shape_iri: str | None = None
     resource_definition_records: list[str] = field(default_factory=list)
@@ -126,6 +128,7 @@ class ApplyReport:
             len(self.schemas_written)
             + len(self.offers_written)
             + len(self.licenses_written)
+            + (1 if self.license_shape_iri else 0)
             + (1 if self.meta_shape_iri else 0)
             + (1 if self.rd_shape_iri else 0)
             + len(self.resource_definition_records)
@@ -204,7 +207,17 @@ async def apply_profile(
             report.offers_written.append(managed)
             written.append(managed)
 
-        # 2b. Built-in default license documents (ADR-0012) at {base}/licenses/{id}.
+        # 2b. License SHACL shape (server-owned, fixed IRI) so PUT /licenses can
+        #     validate against it, then the built-in default license documents
+        #     (ADR-0012) at {base}/licenses/{id}.
+        await repository.put_graph(
+            LICENSE_SHAPE_IRI,
+            predefined_license_shape_graph(),
+            subject=None,
+            initial_state=SEED_STATE,
+        )
+        report.license_shape_iri = LICENSE_SHAPE_IRI
+        written.append(LICENSE_SHAPE_IRI)
         for lic_iri, lic_graph in default_license_graphs(expander.base_url):
             await repository.put_graph(lic_iri, lic_graph, subject=None, initial_state=SEED_STATE)
             report.licenses_written.append(lic_iri)

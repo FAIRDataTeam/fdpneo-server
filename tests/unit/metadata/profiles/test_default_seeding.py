@@ -78,3 +78,24 @@ def test_rewrite_leaves_unrelated_nodes_untouched() -> None:
     g.add((a, DCT.title, b))
     out = _rewrite_subject(g, URIRef("urn:x"), URIRef("urn:y"))
     assert (a, DCT.title, b) in out
+
+
+@pytest.mark.unit
+async def test_seeded_default_licenses_conform_to_the_license_shape() -> None:
+    # The built-in license set must satisfy the shipped license SHACL shape, so a
+    # re-validation (or client round-trip) of a seeded license passes.
+    from fdp.metadata.licenses import (
+        LICENSE_SHAPE_IRI,
+        _probe_graph,
+        predefined_license_shape_graph,
+    )
+    from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
+
+    validator = ShaclValidator(
+        InMemoryShapeProvider(
+            {LICENSE_SHAPE_IRI: predefined_license_shape_graph().serialize(format="turtle")}
+        )
+    )
+    for iri, graph in default_license_graphs(BASE):
+        report = await validator.validate_against(_probe_graph(graph, iri), LICENSE_SHAPE_IRI)
+        assert report.conforms, (iri, [v.message for v in report.violations])

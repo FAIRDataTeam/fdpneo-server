@@ -118,17 +118,19 @@ async def test_apply_writes_schemas_then_offers_then_repository_seed(
     )
 
     iris = [c[0] for c in repo.put_calls]
-    # Apply order: schemas → offers → default licenses → RD shape → RD records
-    # → Repository seed (ADR-0009 / ADR-0012). The offer is rewritten to its
-    # deployment-local managed-policy IRI ({base}/policies/{id}); the built-in
-    # default license set lands at {base}/licenses/{id}. The single resource
-    # definition is the root Repository; its record lands under the reserved
-    # resource-definitions namespace, slugged from its name. The Repository
-    # seed itself lives at the configured base_url (the API root) so the LDP
-    # layer serves it at "/".
+    # Apply order: schemas → offers → license shape → default licenses → RD shape
+    # → RD records → Repository seed (ADR-0009 / ADR-0012). The offer is rewritten
+    # to its deployment-local managed-policy IRI ({base}/policies/{id}); the
+    # server-owned license SHACL shape is seeded so PUT /licenses can validate,
+    # then the built-in default license set lands at {base}/licenses/{id}. The
+    # single resource definition is the root Repository; its record lands under
+    # the reserved resource-definitions namespace, slugged from its name. The
+    # Repository seed itself lives at the configured base_url (the API root) so
+    # the LDP layer serves it at "/".
     assert iris == [
         "http://www.w3.org/ns/dcat#Catalog",
         "http://localhost:8000/policies/system-default",
+        "https://w3id.org/fdp/o#LicenseDocumentShape",
         "http://localhost:8000/licenses/cc0-1.0",
         "http://localhost:8000/licenses/cc-by-4.0",
         "http://localhost:8000/licenses/cc-by-sa-4.0",
@@ -136,7 +138,8 @@ async def test_apply_writes_schemas_then_offers_then_repository_seed(
         "http://localhost:8000/resource-definitions/repository",
         "http://localhost:8000",
     ]
-    assert report.total_written == 8
+    assert report.total_written == 9
+    assert report.license_shape_iri == "https://w3id.org/fdp/o#LicenseDocumentShape"
     assert report.offers_written == ["http://localhost:8000/policies/system-default"]
     assert report.licenses_written == [
         "http://localhost:8000/licenses/cc0-1.0",
@@ -295,15 +298,16 @@ async def test_apply_rolls_back_on_triple_store_failure(
             settings=_settings(),
         )
 
-    # All prior writes (schema, managed-policy offer, default licenses, RD
-    # shape, RD record) were rolled back in reverse order. The Repository seed
-    # itself never succeeded so isn't dropped.
+    # All prior writes (schema, managed-policy offer, license shape, default
+    # licenses, RD shape, RD record) were rolled back in reverse order. The
+    # Repository seed itself never succeeded so isn't dropped.
     assert repo.delete_calls == [
         "http://localhost:8000/resource-definitions/repository",
         "https://w3id.org/fdp/o#ResourceDefinitionShape",
         "http://localhost:8000/licenses/cc-by-sa-4.0",
         "http://localhost:8000/licenses/cc-by-4.0",
         "http://localhost:8000/licenses/cc0-1.0",
+        "https://w3id.org/fdp/o#LicenseDocumentShape",
         "http://localhost:8000/policies/system-default",
         "http://www.w3.org/ns/dcat#Catalog",
     ]

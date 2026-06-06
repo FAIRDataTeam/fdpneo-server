@@ -1,7 +1,8 @@
 """Unit tests for the license admin API (Phase 14 / ADR-0012).
 
-Licenses are descriptive documents (no PDP coupling); validation is the lighter
-"is this a license document at the stable IRI" check.
+Licenses are descriptive documents (no PDP coupling). Validation is SHACL
+against the server-owned license shape: a managed license must carry a
+``dct:title`` (and an IRI ``dct:source`` if present) at its stable IRI.
 """
 
 from __future__ import annotations
@@ -16,12 +17,15 @@ from fastapi.testclient import TestClient
 from rdflib import Graph
 
 from fdp.metadata.licenses import (
+    LICENSE_SHAPE_IRI,
     LicenseService,
     ValidationResultView,
     build_license_router,
+    predefined_license_shape_graph,
 )
+from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
 from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Conflict, NotFound
+from fdp.shared.errors import BadRequest, Conflict, NotFound, SchemaViolation
 from fdp.shared.graphs import record_graph_uri
 from fdp.shared.namespaces import DCT
 
@@ -91,10 +95,18 @@ class _Store:
         self.events.append(type(event).__name__)
 
 
+def _validator() -> ShaclValidator:
+    provider = InMemoryShapeProvider(
+        {LICENSE_SHAPE_IRI: predefined_license_shape_graph().serialize(format="turtle")}
+    )
+    return ShaclValidator(provider)
+
+
 def _service(store: _Store) -> LicenseService:
     return LicenseService(
         repository=store,  # type: ignore[arg-type]
         adapter=store,  # type: ignore[arg-type]
+        validator=_validator(),
         base_url=BASE,
         event_bus=store,  # type: ignore[arg-type]
     )
@@ -112,15 +124,26 @@ async def test_put_stores_license_document() -> None:
 
 @pytest.mark.unit
 async def test_put_accepts_title_only_document() -> None:
+    # A plain dct:title (RDF 1.1 simple literal) satisfies the shape's xsd:string.
     store = _Store()
     info = await _service(store).put("x", TITLE_ONLY, subject="admin")
     assert info.title == "Some license"
 
 
 @pytest.mark.unit
-async def test_put_rejects_document_without_license_subject() -> None:
-    with pytest.raises(BadRequest, match="license document"):
+async def test_put_rejects_document_without_title_at_stable_iri() -> None:
+    # The shape targets the stable IRI: a title on some *other* subject fails.
+    with pytest.raises(SchemaViolation, match="SHACL"):
         await _service(_Store()).put("x", NOT_A_LICENSE, subject="admin")
+
+
+@pytest.mark.unit
+async def test_put_rejects_non_iri_source() -> None:
+    bad_source = (
+        '@prefix dct: <http://purl.org/dc/terms/> . <> dct:title "x" ; dct:source "not-an-iri" .'
+    )
+    with pytest.raises(SchemaViolation, match="SHACL"):
+        await _service(_Store()).put("x", bad_source, subject="admin")
 
 
 @pytest.mark.unit

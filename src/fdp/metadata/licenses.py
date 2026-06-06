@@ -7,10 +7,13 @@ the stable, dereferenceable IRI ``{base_url}/licenses/{id}`` so an FDP can serve
 a curated, reusable set of licenses (CC0, CC BY 4.0, …) that records — and other
 FDPs — reference.
 
-Validation is intentionally lighter than the enforced ``/policies`` profile:
-a license document must parse and describe a license at its stable IRI (a
-recognised license type, or at least a ``dct:title``). A full license SHACL
-shape can be layered in later behind this same seam.
+Validation is by SHACL against the server-owned license shape
+(:data:`LICENSE_SHAPE_IRI`) — distinct from, and lighter than, the enforced
+ODRL profile the ``/policies`` subsystem applies. A managed license must carry a
+``dct:title`` (and an IRI ``dct:source`` if present) at its stable IRI. The
+shape targets a synthetic ``fdp:ManagedLicense`` type injected at validation
+time (:func:`_probe_graph`), so the contract holds whatever the document's own
+``rdf:type`` is.
 
 Surfaces mirror :mod:`fdp.metadata.policies` / :mod:`fdp.metadata.schemas`:
 
@@ -32,6 +35,7 @@ import structlog
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from rdflib import Graph, URIRef
+from rdflib.namespace import RDF
 
 from fdp.identity.deps import current_context, require_auth
 from fdp.metadata.events import RecordDeleted, RecordModified
@@ -39,10 +43,11 @@ from fdp.metadata.states import MetadataState
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
 from fdp.shared.graphs import license_graph_uri, meta_graph_uri
-from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, ODRL, OWL
+from fdp.shared.namespaces import DCT, FDP_DEFAULT, FDP_METADATA_STATE, OWL
 
 if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.shacl import ShaclValidator
     from fdp.shared.events import Event, EventBus
     from fdp.storage.triplestore import TripleStoreAdapter
 
@@ -53,14 +58,57 @@ _SLUG_RE: Final = re.compile(r"^[A-Za-z0-9._-]+$")
 _TURTLE: Final = "text/turtle"
 _SPARQL_JSON: Final = "application/sparql-results+json"
 
-# Recognised license document types. A managed license either carries one of
-# these rdf:types at its stable IRI or, failing that, at least a dct:title.
-_LICENSE_TYPES: Final = (
-    DCT.LicenseDocument,
-    ODRL.Set,
-    ODRL.Policy,
-    URIRef("http://creativecommons.org/ns#License"),
-)
+# Server-owned SHACL shape that validates managed license documents (ADR-0012),
+# fixed the same way as META_SHAPE_IRI / RD_SHAPE_IRI. It targets a synthetic
+# ``fdp:ManagedLicense`` type that the service injects onto the document's stable
+# IRI at validation time, so the descriptive contract (a ``dct:title``, an IRI
+# ``dct:source`` if present) is enforced uniformly regardless of whether the
+# document also declares ``dct:LicenseDocument`` / ``odrl:Set`` / etc.
+LICENSE_SHAPE_IRI: Final = "https://w3id.org/fdp/o#LicenseDocumentShape"
+FDP_MANAGED_LICENSE: Final = FDP_DEFAULT["ManagedLicense"]
+
+_LICENSE_SHAPE_TTL: Final = """\
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix fdp: <https://w3id.org/fdp/o#> .
+
+fdp:LicenseDocumentShape
+    a sh:NodeShape ;
+    sh:targetClass fdp:ManagedLicense ;
+    sh:property [
+        sh:path dct:title ;
+        sh:name "title" ;
+        sh:description "Human-readable license name." ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path dct:source ;
+        sh:name "canonical license IRI" ;
+        sh:description "Canonical license URL this document represents." ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dct:description ;
+        sh:name "description" ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+"""
+
+
+def predefined_license_shape_graph() -> Graph:
+    """The fixed, server-owned SHACL shape for managed license documents.
+
+    Lives in code as the single source of truth (like the RD shape) and is
+    written to the store at :data:`LICENSE_SHAPE_IRI` by the profile applier so
+    :class:`~fdp.metadata.shacl.ShaclValidator` can resolve it.
+    """
+    graph = Graph()
+    graph.parse(data=_LICENSE_SHAPE_TTL, format="turtle")
+    return graph
 
 
 # --- response models -------------------------------------------------------
@@ -96,11 +144,13 @@ class LicenseService:
         *,
         repository: MetadataRepository,
         adapter: TripleStoreAdapter,
+        validator: ShaclValidator,
         base_url: str,
         event_bus: EventBus | None = None,
     ) -> None:
         self._repo = repository
         self._adapter = adapter
+        self._validator = validator
         self._base = base_url.rstrip("/")
         self._event_bus = event_bus
 
@@ -111,6 +161,8 @@ class LicenseService:
         _check_slug(license_id)
         iri = self.iri(license_id)
         graph = _parse_license_document(turtle, iri)
+        report = await self._validator.validate_against(_probe_graph(graph, iri), LICENSE_SHAPE_IRI)
+        report.raise_if_failed()  # SchemaViolation carrying the SHACL report
         etag = await self._repo.put_graph(iri, graph, subject=subject)
         await self._publish(
             RecordModified(record_iri=iri, subject=subject, etag=etag, timestamp=datetime.now(UTC))
@@ -143,13 +195,26 @@ class LicenseService:
         log.info("license_deleted", iri=iri)
 
     async def validate_body(self, license_id: str, turtle: str) -> ValidationResultView:
+        """Dry-run: parse ``turtle`` and validate it against the license shape."""
         _check_slug(license_id)
         iri = self.iri(license_id)
         try:
-            _parse_license_document(turtle, iri)
+            graph = _parse_license_document(turtle, iri)
         except BadRequest as err:
             return ValidationResultView(conforms=False, violations=[{"message": err.message}])
-        return ValidationResultView(conforms=True, violations=[])
+        report = await self._validator.validate_against(_probe_graph(graph, iri), LICENSE_SHAPE_IRI)
+        return ValidationResultView(
+            conforms=report.conforms,
+            violations=[
+                {
+                    "focus_node": v.focus_node,
+                    "result_path": v.result_path,
+                    "message": v.message,
+                    "value": v.value,
+                }
+                for v in report.violations
+            ],
+        )
 
     async def list_licenses(self, *, published_only: bool = False) -> list[LicenseInfo]:
         """List managed licenses with their publication state.
@@ -227,28 +292,35 @@ def _check_slug(license_id: str) -> None:
 
 
 def _parse_license_document(turtle: str, iri: str) -> Graph:
-    """Parse + structurally validate a license document at the stable ``iri``.
+    """Parse the license-document Turtle, with ``iri`` as the base.
 
-    Turtle is parsed with ``iri`` as the base so a relative ``<>`` resolves to
-    the stable IRI. The document must describe a license at ``<iri>`` — either a
-    recognised license ``rdf:type`` or, at minimum, a ``dct:title``.
+    Parsing with ``iri`` as the base lets an editor emit a relative ``<>`` for
+    the document subject. Semantic validation (a ``dct:title`` etc. at the
+    stable IRI) is done by SHACL against :data:`LICENSE_SHAPE_IRI`.
     """
     graph = Graph()
     try:
         graph.parse(data=turtle, format="turtle", publicID=iri)
     except Exception as err:
         raise BadRequest(f"body is not valid Turtle: {err}") from err
-    subject = URIRef(iri)
-    has_type = any((subject, None, t) in graph for t in _LICENSE_TYPES)
-    has_title = next(iter(graph.objects(subject, DCT.title)), None) is not None
-    if not (has_type or has_title):
-        raise BadRequest(
-            "not a license document: expected a recognised license type "
-            "(dct:LicenseDocument / odrl:Set / odrl:Policy / cc:License) or a "
-            f"dct:title on <{iri}>",
-            details={"iri": iri},
-        )
     return graph
+
+
+def _probe_graph(graph: Graph, iri: str) -> Graph:
+    """A validation copy of ``graph`` with the stable IRI tagged as the SHACL target.
+
+    Adds ``<iri> a fdp:ManagedLicense`` to a copy so the license shape (which
+    targets that synthetic class) validates this document's stable subject
+    regardless of its own declared ``rdf:type``. The marker never reaches the
+    stored graph. If the document describes some *other* subject, ``<iri>`` has
+    no title and the shape's ``dct:title`` requirement fails — which is what we
+    want.
+    """
+    probe = Graph()
+    for triple in graph:
+        probe.add(triple)
+    probe.add((URIRef(iri), RDF.type, FDP_MANAGED_LICENSE))
+    return probe
 
 
 def _info(license_id: str, iri: str, *, graph: Graph, version: int | None) -> LicenseInfo:
@@ -327,9 +399,11 @@ def build_license_router(*, service: LicenseService, prefix: str = "/licenses") 
 
 
 __all__ = [
+    "LICENSE_SHAPE_IRI",
     "LicenseInfo",
     "LicenseListView",
     "LicenseService",
     "ValidationResultView",
     "build_license_router",
+    "predefined_license_shape_graph",
 ]

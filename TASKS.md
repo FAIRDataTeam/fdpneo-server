@@ -930,9 +930,9 @@ ADR-0006 (the ODRL profile), ADR-0009 (the runtime-RDF-config model this
 mirrors), ADR-0010 (the lifecycle it reuses), Phase 10.1 (`/schemas` — the
 parallel admin surface).
 
-**Status (2026-06-06):** built and green (784 unit tests). Done: 14.1, 14.2,
-14.3, 14.4, 14.5, 14.6. Remaining: the optional license SHACL shape, 14.7
-harvest + remote seam, 14.8 integration round-trip + client pickers.
+**Status (2026-06-06):** built and green (786 unit tests). Done: 14.1, 14.2,
+14.3 (incl. the license SHACL shape), 14.4, 14.5, 14.6. Remaining: 14.7 harvest
++ remote seam, 14.8 integration round-trip + client pickers.
 
 ### 14.1 [x] Reserved storage namespaces + managed-document plumbing
 
@@ -971,9 +971,12 @@ referenced via `dct:license`.
 
 Done: `metadata/licenses.py` + `tests/unit/metadata/test_licenses.py`; the
 **default license set** (CC0, CC BY 4.0, CC BY-SA 4.0) is seeded by 14.5.
-**Note:** validation is currently structural (recognised license type or a
-`dct:title` at the stable IRI), not yet a **license SHACL shape** — that shape
-is the one remaining optional hardening.
+Validation is **SHACL against the server-owned license shape**
+(`LICENSE_SHAPE_IRI = fdp:LicenseDocumentShape`): a managed license must carry a
+`dct:title` (and an IRI `dct:source` if present) at its stable IRI. The shape
+targets a synthetic `fdp:ManagedLicense` type injected at validation time
+(`_probe_graph`), so the contract holds whatever the document's own `rdf:type`
+is; the shape is seeded by the applier and warmed in the lifespan bootstrap.
 
 ### 14.4 [x] Lifecycle: reuse Phase 12 publication state
 
@@ -1026,9 +1029,11 @@ Done:
   it there, so it is dereferenceable and the resolver parses it. Both
   `apply_profile` and `resolve_runtime_state` (restart path) point the
   system-default at the managed IRI.
-- **Default license set** — `metadata/profiles/licenses.py` seeds CC0 /
-  CC BY 4.0 / CC BY-SA 4.0 at `{base}/licenses/{id}` (local `dct:LicenseDocument`
-  + `dct:source` → canonical CC IRI), tracked for rollback.
+- **Default license set + license shape** — `metadata/profiles/licenses.py`
+  seeds CC0 / CC BY 4.0 / CC BY-SA 4.0 at `{base}/licenses/{id}` (local
+  `dct:LicenseDocument` + `dct:source` → canonical CC IRI), and the applier seeds
+  the server-owned `LICENSE_SHAPE_IRI` so `PUT /licenses` validates against it.
+  Both tracked for rollback; the seeded set is tested to conform to the shape.
 
 The applier writes through `repository.put_graph` (not `PolicyService`) because
 it runs at bootstrap before the app's PDP/event-bus are wired; offers are
