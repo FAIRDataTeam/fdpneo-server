@@ -47,6 +47,7 @@ NOT_A_LICENSE = """\
 @dataclass
 class _Store:
     graphs: dict[str, Graph] = field(default_factory=dict)
+    states: dict[str, str] = field(default_factory=dict)
     referenced: bool = False
     events: list[str] = field(default_factory=list)
 
@@ -81,6 +82,8 @@ class _Store:
             row: dict[str, dict[str, str]] = {"g": {"value": iri}}
             if title is not None:
                 row["title"] = {"value": str(title)}
+            if iri in self.states:
+                row["state"] = {"value": self.states[iri]}
             bindings.append(row)
         return json.dumps({"results": {"bindings": bindings}}).encode()
 
@@ -171,6 +174,20 @@ async def test_list_returns_managed_licenses() -> None:
     assert listed[0].title.startswith("Creative Commons")
 
 
+@pytest.mark.unit
+async def test_published_only_excludes_draft_licenses() -> None:
+    store = _Store()
+    svc = _service(store)
+    await svc.put("cc-by-4.0", CC_BY, subject="admin")
+    await svc.put("wip", TITLE_ONLY, subject="admin")
+    store.states = {
+        f"{BASE}/licenses/cc-by-4.0": "PUBLISHED",
+        f"{BASE}/licenses/wip": "DRAFT",
+    }
+    assert [lic.id for lic in await svc.list_licenses(published_only=True)] == ["cc-by-4.0"]
+    assert {lic.id for lic in await svc.list_licenses()} == {"cc-by-4.0", "wip"}
+
+
 # --- router tests ----------------------------------------------------------
 
 
@@ -178,6 +195,7 @@ async def test_list_returns_managed_licenses() -> None:
 class _FakeService:
     puts: list[tuple[str, str]] = field(default_factory=list)
     deletes: list[str] = field(default_factory=list)
+    list_published_only: bool | None = None
 
     def iri(self, license_id: str) -> str:
         return f"{BASE}/licenses/{license_id}"
@@ -199,9 +217,10 @@ class _FakeService:
         del license_id, turtle
         return ValidationResultView(conforms=True, violations=[])
 
-    async def list_licenses(self):
+    async def list_licenses(self, *, published_only: bool = False):
         from fdp.metadata.licenses import LicenseInfo
 
+        self.list_published_only = published_only
         return [LicenseInfo(id="cc-by-4.0", iri=self.iri("cc-by-4.0"))]
 
 
@@ -231,6 +250,17 @@ def test_list_and_get_are_public() -> None:
     r = client.get("/licenses/cc-by-4.0")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/turtle")
+
+
+@pytest.mark.unit
+def test_anonymous_list_is_published_only_admin_sees_all() -> None:
+    anon_svc = _FakeService()
+    _client(anon_svc, ctx=RequestContext.anonymous(trace_id="t")).get("/licenses")
+    assert anon_svc.list_published_only is True
+
+    admin_svc = _FakeService()
+    _client(admin_svc, ctx=_admin()).get("/licenses")
+    assert admin_svc.list_published_only is False
 
 
 @pytest.mark.unit

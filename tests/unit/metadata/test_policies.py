@@ -52,6 +52,7 @@ OUT_OF_PROFILE = """\
 @dataclass
 class _Store:
     graphs: dict[str, Graph] = field(default_factory=dict)
+    states: dict[str, str] = field(default_factory=dict)
     referenced: bool = False
     cleared: int = 0
     events: list[str] = field(default_factory=list)
@@ -85,7 +86,10 @@ class _Store:
         bindings = []
         for iri, g in self.graphs.items():
             if iri.startswith(f"{BASE}/policies/") and (None, RDF.type, ODRL.Offer) in g:
-                bindings.append({"g": {"value": iri}})
+                row: dict[str, dict[str, str]] = {"g": {"value": iri}}
+                if iri in self.states:
+                    row["state"] = {"value": self.states[iri]}
+                bindings.append(row)
         return json.dumps({"results": {"bindings": bindings}}).encode()
 
     # pdp
@@ -212,6 +216,31 @@ async def test_list_returns_managed_policies() -> None:
     assert listed[0].permissions == 1
 
 
+@pytest.mark.unit
+async def test_published_only_excludes_drafts_and_archived() -> None:
+    # ADR-0012 §4: only PUBLISHED policies are offered for assignment / anonymous
+    # discovery. Draft and archived policies are hidden from the picker catalog.
+    store = _Store()
+    svc = _service(store)
+    for pid in ("pub", "draft", "arch"):
+        await svc.put(pid, VALID_OFFER, subject="admin")
+    store.states = {
+        f"{BASE}/policies/pub": "PUBLISHED",
+        f"{BASE}/policies/draft": "DRAFT",
+        f"{BASE}/policies/arch": "ARCHIVED",
+    }
+
+    assert [p.id for p in await svc.list_policies(published_only=True)] == ["pub"]
+    # Admin view (published_only=False) sees everything, with state populated.
+    everything = await svc.list_policies(published_only=False)
+    assert {p.id for p in everything} == {"pub", "draft", "arch"}
+    assert {p.id: p.state for p in everything} == {
+        "pub": "PUBLISHED",
+        "draft": "DRAFT",
+        "arch": "ARCHIVED",
+    }
+
+
 # --- router tests ----------------------------------------------------------
 
 
@@ -219,6 +248,7 @@ async def test_list_returns_managed_policies() -> None:
 class _FakeService:
     puts: list[tuple[str, str]] = field(default_factory=list)
     deletes: list[str] = field(default_factory=list)
+    list_published_only: bool | None = None
 
     def iri(self, policy_id: str) -> str:
         return f"{BASE}/policies/{policy_id}"
@@ -240,9 +270,10 @@ class _FakeService:
         del policy_id, turtle
         return ValidationResultView(conforms=True, violations=[])
 
-    async def list_policies(self):
+    async def list_policies(self, *, published_only: bool = False):
         from fdp.metadata.policies import PolicyInfo
 
+        self.list_published_only = published_only
         return [PolicyInfo(id="public-read", iri=self.iri("public-read"))]
 
 
@@ -276,6 +307,17 @@ def test_list_and_get_are_public() -> None:
     r = client.get("/policies/public-read")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/turtle")
+
+
+@pytest.mark.unit
+def test_anonymous_list_is_published_only_admin_sees_all() -> None:
+    anon_svc = _FakeService()
+    assert _client(anon_svc, ctx=_anon()).get("/policies").status_code == 200
+    assert anon_svc.list_published_only is True
+
+    admin_svc = _FakeService()
+    assert _client(admin_svc, ctx=_admin()).get("/policies").status_code == 200
+    assert admin_svc.list_published_only is False
 
 
 @pytest.mark.unit

@@ -930,10 +930,9 @@ ADR-0006 (the ODRL profile), ADR-0009 (the runtime-RDF-config model this
 mirrors), ADR-0010 (the lifecycle it reuses), Phase 10.1 (`/schemas` — the
 parallel admin surface).
 
-**Status (2026-06-06):** built and green (779 unit tests). Done: 14.1, 14.2,
-14.3, 14.5, 14.6. Remaining: 14.4 archived-still-enforced *test*, the optional
-license SHACL shape, 14.7 harvest + remote seam, 14.8 integration round-trip +
-client pickers.
+**Status (2026-06-06):** built and green (784 unit tests). Done: 14.1, 14.2,
+14.3, 14.4, 14.5, 14.6. Remaining: the optional license SHACL shape, 14.7
+harvest + remote seam, 14.8 integration round-trip + client pickers.
 
 ### 14.1 [x] Reserved storage namespaces + managed-document plumbing
 
@@ -976,23 +975,36 @@ Done: `metadata/licenses.py` + `tests/unit/metadata/test_licenses.py`; the
 `dct:title` at the stable IRI), not yet a **license SHACL shape** — that shape
 is the one remaining optional hardening.
 
-### 14.4 [ ] Lifecycle: reuse Phase 12 publication state
+### 14.4 [x] Lifecycle: reuse Phase 12 publication state
 
 Policies/licenses use the existing `DRAFT → PUBLISHED → ARCHIVED` state
 machine (`POST /{record}/state`). Special rule for **archived policies**:
 retained and **still resolvable/enforced for records that already
 reference them** (archiving must not break dependents), but not offered
-for new assignment. Add a test that proves an archived policy still
-enforces for an existing `dct:rights` reference. Draft policies/licenses
-are excluded from assignment pickers and from anonymous discovery.
+for new assignment. Draft policies/licenses are excluded from assignment
+pickers and from anonymous discovery.
 
-Mechanism is **inherent**: policy/license records are ordinary records, so the
-state router/state-gate apply to them, and the offer resolver fetches a policy
-graph by IRI *regardless of its publication state* (the StateGate gates record
-*read* visibility, not offer resolution) — so an archived policy keeps enforcing
-for existing `dct:rights` dependents. **Remaining:** an explicit test asserting
-that, and confirming draft policies are dropped from the discovery catalog /
-search (search already gates on `anon_read` + state).
+Done:
+
+- **Archived-still-enforced is inherent + now tested.** Policy/license records
+  are ordinary records, so the state router/state-gate apply; the offer resolver
+  fetches a policy graph by IRI *regardless of publication state* (the StateGate
+  gates record *read* visibility, not offer resolution). `test_resolver.py`'s
+  `test_archived_policy_still_enforces_for_existing_reference` proves an archived
+  policy keeps enforcing — and asserts the resolver never touches the policy's
+  `/meta` state graph.
+- **Drafts excluded from discovery / assignment.** `list_policies` /
+  `list_licenses` gained a `published_only` filter (joins `fdp:metadataState`
+  from the `/meta` graph); the `GET /policies` and `GET /licenses` catalogs pass
+  `published_only = caller-is-not-admin`, so anonymous/non-admin callers see only
+  PUBLISHED docs while admins see drafts + archived to manage them. `PolicyInfo`
+  /`LicenseInfo` now carry `state`. Seeded offers/licenses are `PUBLISHED`
+  (SEED_STATE); a fresh `PUT` defaults to `DRAFT`, so it stays out of the picker
+  until published. Tests cover both the service filter and the router gating.
+
+Note: individual `GET /policies/{id}` / `GET /licenses/{id}` stay dereferenceable
+in any state (the editor loads drafts by id; reference config is low-sensitivity)
+— only the *discovery catalogs* are state-gated, which is what "discovery" means.
 
 ### 14.5 [x] Profile seeding + PDP wiring
 

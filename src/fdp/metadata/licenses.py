@@ -33,12 +33,13 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from rdflib import Graph, URIRef
 
-from fdp.identity.deps import require_auth
+from fdp.identity.deps import current_context, require_auth
 from fdp.metadata.events import RecordDeleted, RecordModified
+from fdp.metadata.states import MetadataState
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
 from fdp.shared.graphs import license_graph_uri, meta_graph_uri
-from fdp.shared.namespaces import DCT, ODRL, OWL
+from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, ODRL, OWL
 
 if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
@@ -71,6 +72,7 @@ class LicenseInfo(BaseModel):
     id: str
     iri: str
     title: str | None = None
+    state: str | None = None
     version: int | None = None
 
 
@@ -149,10 +151,18 @@ class LicenseService:
             return ValidationResultView(conforms=False, violations=[{"message": err.message}])
         return ValidationResultView(conforms=True, violations=[])
 
-    async def list_licenses(self) -> list[LicenseInfo]:
+    async def list_licenses(self, *, published_only: bool = False) -> list[LicenseInfo]:
+        """List managed licenses with their publication state.
+
+        ``published_only`` drops drafts/archived — the catalog the `dct:license`
+        picker consumes (ADR-0012 §4). Admins pass ``False`` to manage drafts.
+        """
         query = (
-            "SELECT ?g (SAMPLE(?t) AS ?title) WHERE { GRAPH ?g {"
+            "SELECT ?g (SAMPLE(?t) AS ?title) (SAMPLE(?s) AS ?state) WHERE { GRAPH ?g {"
             f" ?g <{DCT.title}> ?t }}"
+            " OPTIONAL {"
+            f" GRAPH ?m {{ ?g <{FDP_METADATA_STATE}> ?s }}"
+            ' FILTER(?m = IRI(CONCAT(STR(?g), "/meta"))) }'
             f' FILTER(STRSTARTS(STR(?g), "{self._base}/licenses/")) }} GROUP BY ?g'
         )
         rows = await self._select(query)
@@ -161,11 +171,15 @@ class LicenseService:
             iri = row.get("g", {}).get("value")
             if not iri:
                 continue
+            state = row.get("state", {}).get("value")
+            if published_only and state != MetadataState.PUBLISHED.value:
+                continue
             items.append(
                 LicenseInfo(
                     id=iri.rsplit("/", 1)[-1],
                     iri=iri,
                     title=row.get("title", {}).get("value"),
+                    state=state,
                 )
             )
         items.sort(key=lambda lic: lic.id)
@@ -262,8 +276,12 @@ def build_license_router(*, service: LicenseService, prefix: str = "/licenses") 
             )
 
     @router.get("", response_model=LicenseListView, name="license_list")
-    async def list_licenses() -> LicenseListView:  # pyright: ignore[reportUnusedFunction]
-        return LicenseListView(licenses=await service.list_licenses())
+    async def list_licenses(  # pyright: ignore[reportUnusedFunction]
+        ctx: Annotated[RequestContext, Depends(current_context)],
+    ) -> LicenseListView:
+        # Anonymous/non-admin callers see only PUBLISHED licenses; admins see all.
+        published_only = _ADMIN_ROLE not in ctx.roles
+        return LicenseListView(licenses=await service.list_licenses(published_only=published_only))
 
     @router.get("/{license_id}", name="license_get")
     async def get_license(license_id: str) -> Response:  # pyright: ignore[reportUnusedFunction]

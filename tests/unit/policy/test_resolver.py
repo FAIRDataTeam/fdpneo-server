@@ -10,7 +10,6 @@ from rdflib import Graph
 from fdp.policy.model import Action
 from fdp.policy.resolver import GraphBackedOfferResolver
 
-
 OFFER_TTL = """\
 @prefix odrl: <http://www.w3.org/ns/odrl/2/> .
 <{iri}>
@@ -59,6 +58,35 @@ async def test_resolves_direct_rights_on_the_resource() -> None:
     assert result is not None
     assert result.iri == offer
     assert any(p.action is Action.READ for p in result.permissions)
+
+
+@pytest.mark.unit
+async def test_archived_policy_still_enforces_for_existing_reference() -> None:
+    # ADR-0012 §4: archiving a managed policy must not break records that
+    # already reference it. Offer resolution fetches the policy graph by its
+    # IRI and never consults the policy's publication state (the StateGate
+    # gates record *read* visibility, separately) — so an archived policy keeps
+    # enforcing for its existing dct:rights dependents.
+    rec = "https://fdp.example/dataset/d-1"
+    policy = "https://fdp.example/policies/embargo"  # this policy is ARCHIVED
+    fetcher = _FakeFetcher(
+        graphs={
+            rec: f"""\
+@prefix dct: <http://purl.org/dc/terms/> .
+<{rec}> dct:rights <{policy}> .
+""",
+            policy: _offer_ttl(policy, "read"),
+        }
+    )
+    resolver = GraphBackedOfferResolver(fetcher)  # type: ignore[arg-type]
+
+    result = await resolver.resolve_offer(rec)
+
+    assert result is not None
+    assert result.iri == policy
+    assert any(p.action is Action.READ for p in result.permissions)
+    # Concretely: resolution never reached for the policy's /meta state graph.
+    assert f"{policy}/meta" not in fetcher.calls
 
 
 # --- inheritance walk -----------------------------------------------------
@@ -207,8 +235,7 @@ async def test_max_walk_depth_caps_the_chain() -> None:
         cur = f"https://fdp.example/level/{i}"
         nxt = f"https://fdp.example/level/{i + 1}"
         graphs[cur] = (
-            f"@prefix dct: <http://purl.org/dc/terms/> .\n"
-            f"<{cur}> dct:isPartOf <{nxt}> .\n"
+            f"@prefix dct: <http://purl.org/dc/terms/> .\n<{cur}> dct:isPartOf <{nxt}> .\n"
         )
     fetcher = _FakeFetcher(graphs=graphs)
     resolver = GraphBackedOfferResolver(

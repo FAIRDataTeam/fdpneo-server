@@ -43,13 +43,14 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from rdflib import Graph, URIRef
 
-from fdp.identity.deps import require_auth
+from fdp.identity.deps import current_context, require_auth
 from fdp.metadata.events import RecordDeleted, RecordModified
+from fdp.metadata.states import MetadataState
 from fdp.policy.parser import parse_offer
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound, SchemaViolation
 from fdp.shared.graphs import meta_graph_uri, policy_graph_uri
-from fdp.shared.namespaces import DCT, ODRL, OWL
+from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, ODRL, OWL
 
 if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
@@ -77,6 +78,7 @@ class PolicyInfo(BaseModel):
     assigner: str | None = None
     permissions: int = 0
     prohibitions: int = 0
+    state: str | None = None
     version: int | None = None
 
 
@@ -174,10 +176,20 @@ class PolicyService:
             return ValidationResultView(conforms=False, violations=[{"message": err.message}])
         return ValidationResultView(conforms=True, violations=[])
 
-    async def list_policies(self) -> list[PolicyInfo]:
+    async def list_policies(self, *, published_only: bool = False) -> list[PolicyInfo]:
+        """List managed policies with their publication state.
+
+        ``published_only`` drops drafts and archived policies — the catalog the
+        ODRL editor and `dct:rights` pickers consume for *assignment* (ADR-0012
+        §4: only PUBLISHED policies are offered for new assignment / anonymous
+        discovery). Admins call with ``published_only=False`` to manage drafts.
+        """
         query = (
-            "SELECT ?g WHERE { GRAPH ?g {"
+            "SELECT ?g ?state WHERE { GRAPH ?g {"
             f" ?g a <{ODRL.Offer}> }}"
+            " OPTIONAL {"
+            f" GRAPH ?m {{ ?g <{FDP_METADATA_STATE}> ?state }}"
+            ' FILTER(?m = IRI(CONCAT(STR(?g), "/meta"))) }'
             f' FILTER(STRSTARTS(STR(?g), "{self._base}/policies/")) }}'
         )
         rows = await self._select(query)
@@ -186,12 +198,19 @@ class PolicyService:
             iri = row.get("g", {}).get("value")
             if not iri:
                 continue
+            state = row.get("state", {}).get("value")
+            if published_only and state != MetadataState.PUBLISHED.value:
+                continue
             graph = await self._repo.get_graph(iri)
             try:
                 offer = parse_offer(graph, URIRef(iri))
             except SchemaViolation:
                 offer = None
-            items.append(_info(iri.rsplit("/", 1)[-1], iri, graph=graph, offer=offer, version=None))
+            items.append(
+                _info(
+                    iri.rsplit("/", 1)[-1], iri, graph=graph, offer=offer, state=state, version=None
+                )
+            )
         items.sort(key=lambda p: p.id)
         return items
 
@@ -256,7 +275,13 @@ def _parse_offer_document(turtle: str, iri: str) -> tuple[Graph, object]:
 
 
 def _info(
-    policy_id: str, iri: str, *, graph: Graph, offer: object, version: int | None
+    policy_id: str,
+    iri: str,
+    *,
+    graph: Graph,
+    offer: object,
+    version: int | None,
+    state: str | None = None,
 ) -> PolicyInfo:
     from fdp.policy.model import Offer
 
@@ -269,12 +294,14 @@ def _info(
             assigner=offer.assigner,
             permissions=len(offer.permissions),
             prohibitions=len(offer.prohibitions),
+            state=state,
             version=version,
         )
     return PolicyInfo(
         id=policy_id,
         iri=iri,
         title=str(title) if title is not None else None,
+        state=state,
         version=version,
     )
 
@@ -300,8 +327,13 @@ def build_policy_router(*, service: PolicyService, prefix: str = "/policies") ->
             )
 
     @router.get("", response_model=PolicyListView, name="policy_list")
-    async def list_policies() -> PolicyListView:  # pyright: ignore[reportUnusedFunction]
-        return PolicyListView(policies=await service.list_policies())
+    async def list_policies(  # pyright: ignore[reportUnusedFunction]
+        ctx: Annotated[RequestContext, Depends(current_context)],
+    ) -> PolicyListView:
+        # Anonymous/non-admin callers see only PUBLISHED policies (the
+        # assignment catalog); admins see drafts + archived too, to manage them.
+        published_only = _ADMIN_ROLE not in ctx.roles
+        return PolicyListView(policies=await service.list_policies(published_only=published_only))
 
     @router.get("/{policy_id}", name="policy_get")
     async def get_policy(policy_id: str) -> Response:  # pyright: ignore[reportUnusedFunction]
