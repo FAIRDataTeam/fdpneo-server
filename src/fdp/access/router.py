@@ -55,11 +55,14 @@ from fdp.shared.errors import (
     BadRequest,
     MethodNotAllowed,
     NotAcceptable,
+    ServiceUnavailable,
     Unauthenticated,
     UnsupportedMediaType,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from fdp.metadata.lifecycle import StateGate
     from fdp.policy.pdp import PDP
     from fdp.storage.triplestore import TripleStoreAdapter
@@ -77,6 +80,7 @@ def build_sparql_router(
     pdp: PDP,
     adapter: TripleStoreAdapter,
     state_gate: StateGate | None = None,
+    multigraph_safe_provider: Callable[[], bool] = lambda: True,
     prefix: str = "/sparql",
 ) -> APIRouter:
     """Build the SPARQL endpoint router wired with ``pdp`` + ``adapter``.
@@ -85,6 +89,11 @@ def build_sparql_router(
     projection is the publication-state-visible subset of the ODRL read set
     (anonymous sees only ``PUBLISHED`` graphs); updates are unaffected — an
     authenticated writer's WHERE still observes their full authorized-read set.
+
+    ``multigraph_safe_provider`` reports whether the triple store passed the
+    named-graph isolation self-test (audit R-03). When it returns ``False``, a
+    read whose authorized projection spans more than one named graph is refused
+    (fail closed) rather than risk the store leaking unauthorized graphs.
     """
     router = APIRouter(prefix=prefix, tags=["sparql"])
 
@@ -98,9 +107,7 @@ def build_sparql_router(
             return await _handle_update(ctx, sparql, parsed)
         return await _handle_read(request, ctx, sparql, parsed)
 
-    async def _handle_update(
-        ctx: RequestContext, sparql: str, parsed: ParsedUpdate
-    ) -> Response:
+    async def _handle_update(ctx: RequestContext, sparql: str, parsed: ParsedUpdate) -> Response:
         if ctx.is_anonymous:
             raise Unauthenticated("authentication required for SPARQL updates")
         authorized_modify = await pdp.authorized_graphs(ctx, Action.MODIFY)
@@ -135,6 +142,16 @@ def build_sparql_router(
             else await pdp.authorized_graphs(ctx, Action.READ)
         )
         rewritten = rewrite_read(parsed, authorized_read=authorized_read)
+        if len(rewritten.named_graph_uris) > 1 and not multigraph_safe_provider():
+            # The store failed the named-graph isolation self-test, so projecting
+            # multiple graphs via repeated named-graph-uri could leak unauthorized
+            # graphs. Fail closed (audit R-03). Single-graph reads remain allowed.
+            raise ServiceUnavailable(
+                "multi-graph SPARQL reads are disabled: the triple store failed "
+                "the named-graph isolation self-test; use a conformant store "
+                "(GraphDB/Fuseki)",
+                details={"named_graphs": len(rewritten.named_graph_uris)},
+            )
         if parsed.form in (QueryForm.CONSTRUCT, QueryForm.DESCRIBE):
             return _stream_graph_response(sparql, parsed, rewritten, media)
         body = await adapter.query(

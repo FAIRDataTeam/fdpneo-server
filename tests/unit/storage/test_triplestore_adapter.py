@@ -235,3 +235,28 @@ async def test_update_forwards_using_named_graph_uri_params(
     params = sent.url.params.multi_items()
     assert ("using-named-graph-uri", "https://example.org/g1") in params
     assert ("using-named-graph-uri", "https://example.org/g2") in params
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_query_timeout_maps_to_gateway_timeout(
+    async_client: httpx.AsyncClient,
+) -> None:
+    # A slow store should surface as a clean 504, not a raw 500 (audit R-02).
+    from fdp.shared.errors import GatewayTimeout
+
+    respx.post(QUERY_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    with pytest.raises(GatewayTimeout):
+        await _adapter(_settings(), async_client).query("ASK {}")
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_update_timeout_maps_to_gateway_timeout(
+    async_client: httpx.AsyncClient,
+) -> None:
+    from fdp.shared.errors import GatewayTimeout
+
+    respx.post(UPDATE_URL).mock(side_effect=httpx.ConnectTimeout("slow"))
+    with pytest.raises(GatewayTimeout):
+        await _adapter(_settings(), async_client).update("CLEAR DEFAULT")

@@ -29,7 +29,7 @@ authorization decisions; the router (3.3) drives the whole pipeline.
 | ``DeleteWhere``| same                                          |
 | ``Modify``     | ``WITH <g>`` *or* ``GRAPH <g>`` in every      |
 |                | template clause                               |
-| ``Load``       | ``LOAD <src> INTO GRAPH <g>``                 |
+| ``Load``       | **rejected** — source URL = SSRF (R-03b)      |
 | ``Clear``      | ``CLEAR GRAPH <g>`` (not DEFAULT / NAMED / ALL) |
 | ``Drop``       | ``DROP GRAPH <g>``                            |
 | ``Create``     | ``CREATE GRAPH <g>``                          |
@@ -223,6 +223,16 @@ def _parse_update(body: str) -> ParsedUpdate:
     targets: list[str] = []
     for op in operations:
         _reject_service(op)
+        if op.name == "Load":
+            # LOAD <src> would make the triple store dereference <src> — an SSRF
+            # vector (the source URL is never the FDP's to fetch). Only the target
+            # graph is authorized by the PEP, not the source, so reject outright
+            # (security audit 2026-06-07, R-03b). Bulk import is an admin/server-
+            # side operation, not a public SPARQL one.
+            raise BadRequest(
+                "LOAD is not permitted: its source URL would be fetched by the "
+                "triple store (SSRF risk)"
+            )
         op_targets = _explicit_targets(op)
         if op_targets is None:
             raise BadRequest(
@@ -252,11 +262,11 @@ def _explicit_targets(op: CompValue) -> list[str] | None:
                 return None
             accumulated.extend(sub)
         return accumulated
-    if name in {"Load", "Clear", "Drop", "Create"}:
+    if name in {"Clear", "Drop", "Create"}:
+        # (Load is rejected upstream in _parse_update — R-03b.) CLEAR DEFAULT /
+        # ALL / NAMED store the categorical name as a string instead of a URIRef
+        # — that's the "ambiguous" tell.
         target = op.graphiri
-        # CLEAR DEFAULT / CLEAR ALL / CLEAR NAMED store the categorical
-        # name as a string instead of a URIRef — that's the "ambiguous"
-        # tell. LOAD without INTO GRAPH simply has no ``graphiri`` set.
         return [str(target)] if isinstance(target, URIRef) else None
     if name in {"Copy", "Move", "Add"}:
         graphs: list[Any] = list(op.graph or [])

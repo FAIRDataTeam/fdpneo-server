@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Self
 import httpx
 from rdflib import Graph
 
+from fdp.shared.errors import GatewayTimeout
+
 if TYPE_CHECKING:
     from fdp.config import TripleStoreSettings
 
@@ -38,7 +40,7 @@ SPARQL_QUERY: str = "application/sparql-query"
 SPARQL_UPDATE: str = "application/sparql-update"
 TURTLE: str = "text/turtle"
 
-_DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+_DEFAULT_READ_TIMEOUT = 30.0
 
 
 class TripleStoreAdapter:
@@ -65,7 +67,9 @@ class TripleStoreAdapter:
                 settings.username,
                 settings.password.get_secret_value(),
             )
-        client = httpx.AsyncClient(auth=auth, timeout=_DEFAULT_TIMEOUT)
+        read = getattr(settings, "query_timeout_seconds", _DEFAULT_READ_TIMEOUT)
+        timeout = httpx.Timeout(connect=10.0, read=read, write=30.0, pool=10.0)
+        client = httpx.AsyncClient(auth=auth, timeout=timeout)
         return cls(settings, client)
 
     async def __aenter__(self) -> Self:
@@ -110,12 +114,15 @@ class TripleStoreAdapter:
         ``FROM`` / ``FROM NAMED``.
         """
         params = _dataset_params(default_graph_uris, named_graph_uris)
-        response = await self._client.post(
-            str(self._settings.query_endpoint),
-            content=sparql.encode("utf-8"),
-            headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
-            params=httpx.QueryParams(params) if params else None,
-        )
+        try:
+            response = await self._client.post(
+                str(self._settings.query_endpoint),
+                content=sparql.encode("utf-8"),
+                headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
+                params=httpx.QueryParams(params) if params else None,
+            )
+        except httpx.TimeoutException as exc:
+            raise GatewayTimeout("the triple store did not respond in time") from exc
         response.raise_for_status()
         return response.content
 
@@ -137,16 +144,19 @@ class TripleStoreAdapter:
         Uses the same "query via POST directly" form as :meth:`query`.
         """
         params = _dataset_params(default_graph_uris, named_graph_uris)
-        async with self._client.stream(
-            "POST",
-            str(self._settings.query_endpoint),
-            content=sparql.encode("utf-8"),
-            headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
-            params=httpx.QueryParams(params) if params else None,
-        ) as response:
-            response.raise_for_status()
-            async for chunk in response.aiter_bytes():
-                yield chunk
+        try:
+            async with self._client.stream(
+                "POST",
+                str(self._settings.query_endpoint),
+                content=sparql.encode("utf-8"),
+                headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
+                params=httpx.QueryParams(params) if params else None,
+            ) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+        except httpx.TimeoutException as exc:
+            raise GatewayTimeout("the triple store did not respond in time") from exc
 
     async def ask(self, sparql: str) -> bool:
         """Execute an ``ASK`` query and return its boolean result."""
@@ -172,12 +182,15 @@ class TripleStoreAdapter:
         unauthorized data even when the write target is authorized.
         """
         params = _update_params(using_graph_uris, using_named_graph_uris)
-        response = await self._client.post(
-            str(self._settings.update_endpoint),
-            content=sparql.encode("utf-8"),
-            headers={"Content-Type": SPARQL_UPDATE},
-            params=httpx.QueryParams(params) if params else None,
-        )
+        try:
+            response = await self._client.post(
+                str(self._settings.update_endpoint),
+                content=sparql.encode("utf-8"),
+                headers={"Content-Type": SPARQL_UPDATE},
+                params=httpx.QueryParams(params) if params else None,
+            )
+        except httpx.TimeoutException as exc:
+            raise GatewayTimeout("the triple store did not respond in time") from exc
         response.raise_for_status()
 
     # --- Graph Store Protocol ----------------------------------------------

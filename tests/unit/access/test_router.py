@@ -52,15 +52,11 @@ class FakePDP:
 
     authorized: dict[str, set[str]] = field(default_factory=_empty_authorized)
 
-    async def authorize(
-        self, ctx: RequestContext, action: Action, resource_iri: str
-    ) -> Decision:
+    async def authorize(self, ctx: RequestContext, action: Action, resource_iri: str) -> Decision:
         del ctx, resource_iri
         return Decision(outcome=Outcome.DENY, rule=None, reason="not-used-here")
 
-    async def authorized_graphs(
-        self, ctx: RequestContext, action: Action
-    ) -> set[str]:
+    async def authorized_graphs(self, ctx: RequestContext, action: Action) -> set[str]:
         del ctx
         return set(self.authorized.get(action.value, set()))
 
@@ -175,9 +171,7 @@ def test_get_with_service_clause_returns_400() -> None:
     with TestClient(app) as client:
         response = client.get(
             "/sparql",
-            params={
-                "query": "SELECT * WHERE { SERVICE <http://attacker.example/> { ?s ?p ?o } }"
-            },
+            params={"query": "SELECT * WHERE { SERVICE <http://attacker.example/> { ?s ?p ?o } }"},
         )
     assert response.status_code == 400
     assert response.json()["code"] == "fdp.bad_request"
@@ -395,3 +389,51 @@ def test_ask_default_accept_returns_json(async_client: httpx.AsyncClient) -> Non
         assert response.status_code == 200
         payload: dict[str, Any] = json.loads(response.content)
         assert payload["boolean"] is True
+
+
+# --- store conformance gate (audit R-03) ------------------------------------
+
+
+def _build_app_gated(*, pdp: FakePDP, adapter: TripleStoreAdapter, safe: bool) -> FastAPI:
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(
+        build_sparql_router(
+            pdp=pdp,  # type: ignore[arg-type]
+            adapter=adapter,
+            multigraph_safe_provider=lambda: safe,
+        )
+    )
+    app.dependency_overrides[current_context] = lambda: _ctx()
+    return app
+
+
+@pytest.mark.unit
+@respx.mock
+def test_multigraph_read_blocked_when_store_not_conformant(
+    async_client: httpx.AsyncClient,
+) -> None:
+    # Two authorized graphs + an unconstrained query → union projection (2 graphs).
+    respx.post(QUERY_URL).respond(200, json={"head": {}, "results": {"bindings": []}})
+    app = _build_app_gated(
+        pdp=FakePDP(authorized={"read": {G1, G2}}), adapter=_adapter(async_client), safe=False
+    )
+    with TestClient(app) as client:
+        r = client.get("/sparql", params={"query": "SELECT * WHERE { ?s ?p ?o }"})
+    assert r.status_code == 503
+    assert r.json()["code"] == "fdp.service_unavailable"
+
+
+@pytest.mark.unit
+@respx.mock
+def test_single_graph_read_allowed_even_when_not_conformant(
+    async_client: httpx.AsyncClient,
+) -> None:
+    # One authorized graph → single-graph projection → allowed despite the flag.
+    respx.post(QUERY_URL).respond(200, json={"head": {}, "results": {"bindings": []}})
+    app = _build_app_gated(
+        pdp=FakePDP(authorized={"read": {G1}}), adapter=_adapter(async_client), safe=False
+    )
+    with TestClient(app) as client:
+        r = client.get("/sparql", params={"query": "SELECT * WHERE { ?s ?p ?o }"})
+    assert r.status_code == 200

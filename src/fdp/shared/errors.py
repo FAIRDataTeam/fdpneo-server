@@ -174,6 +174,30 @@ class UpstreamError(FDPError):
     docs_url = _DOCS_BASE + "fdp.upstream_error"
 
 
+class GatewayTimeout(FDPError):
+    """Raised when an upstream call (e.g. a SPARQL query to the store) times out."""
+
+    code = "fdp.gateway_timeout"
+    http_status = 504
+    docs_url = _DOCS_BASE + "fdp.gateway_timeout"
+
+
+class PayloadTooLarge(FDPError):
+    """Raised when a request body exceeds the configured maximum (audit R-02)."""
+
+    code = "fdp.payload_too_large"
+    http_status = 413
+    docs_url = _DOCS_BASE + "fdp.payload_too_large"
+
+
+class TooManyRequests(FDPError):
+    """Raised when a client exceeds the configured request rate (audit R-02)."""
+
+    code = "fdp.too_many_requests"
+    http_status = 429
+    docs_url = _DOCS_BASE + "fdp.too_many_requests"
+
+
 async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
     """Render an ``FDPError`` as the documented JSON envelope."""
     ctx = get_current()
@@ -207,14 +231,17 @@ __all__ = [
     "Conflict",
     "FDPError",
     "Forbidden",
+    "GatewayTimeout",
     "MethodNotAllowed",
     "NotAcceptable",
     "NotFound",
+    "PayloadTooLarge",
     "PolicyViolation",
     "PreconditionFailed",
     "PreconditionRequired",
     "SchemaViolation",
     "ServiceUnavailable",
+    "TooManyRequests",
     "Unauthenticated",
     "UnsupportedMediaType",
     "UpstreamError",

@@ -7,7 +7,8 @@ Responsibilities:
 * Classify queries as read (SELECT/ASK/CONSTRUCT/DESCRIBE) or update
   (INSERT/DELETE/LOAD/CLEAR/CREATE/DROP/COPY/MOVE/ADD).
 * Reject anonymous updates with 401.
-* Reject ``SERVICE`` clauses (no federation in v1).
+* Reject ``SERVICE`` clauses (no federation in v1) and ``LOAD`` (the source URL
+  would be fetched by the store — SSRF; security audit R-03b).
 * Reject ambiguous-target updates (require explicit WITH/GRAPH).
 * Rewrite reads by injecting ``FROM NAMED`` clauses for the user's authorized
   graph set, obtained from the policy module's ``authorized_graphs`` lookup.

@@ -95,10 +95,12 @@ from fdp.policy.runtime import RequestScopedPDP
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import SchemaViolation, register_exception_handlers
 from fdp.shared.events import EventBus
+from fdp.shared.limits import BodySizeLimitMiddleware, RateLimitMiddleware
 from fdp.shared.logging import configure_logging
 from fdp.shared.security_headers import SecurityHeadersMiddleware
 from fdp.storage.postgres.engine import build_engine, build_session_factory
 from fdp.storage.triplestore.adapter import TripleStoreAdapter
+from fdp.storage.triplestore.conformance import verify_named_graph_isolation
 
 log = structlog.get_logger(__name__)
 
@@ -149,6 +151,9 @@ def _build_shared_state(app: FastAPI) -> None:
     # underlying httpx client pools connections.
     app.state.triplestore = TripleStoreAdapter.from_settings(settings.triplestore)
     app.state.metadata_repository = MetadataRepository(app.state.triplestore)
+    # Set True until the startup named-graph isolation self-test runs (audit R-03);
+    # the lifespan flips it to the probe result. Until then reads behave normally.
+    app.state.sparql_multigraph_safe = True
 
     # PDP wrapper that opens a fresh Postgres session per call — required
     # because CacheRepository binds to one session, and the data/SPARQL
@@ -347,6 +352,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.search_indexer.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
     await _warm_anonymous_authz_cache(app)
+    await _verify_store_conformance(app)
 
     try:
         yield
@@ -397,6 +403,17 @@ def create_app() -> FastAPI:
         RequestObservationMiddleware,
         bus_provider=lambda: app.state.event_bus,
     )
+    # Request limits (audit R-02) — added here so they sit just inside CORS and
+    # outside auth: floods and oversize bodies are shed before the JWKS/auth work.
+    # Per-instance defense-in-depth; the reverse proxy is the authoritative limiter.
+    if settings.rate_limit.enabled:
+        app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.rate_limit.max_body_bytes)
+        app.add_middleware(
+            RateLimitMiddleware,
+            requests_per_window=settings.rate_limit.requests_per_window,
+            window_seconds=settings.rate_limit.window_seconds,
+            trust_forwarded_for=settings.rate_limit.trust_forwarded_for,
+        )
     # CORS must wrap everything else (outermost) so it can answer the browser's
     # preflight OPTIONS directly — before auth — and so the Access-Control-*
     # headers are attached even to error responses from the inner middleware.
@@ -477,6 +494,7 @@ def create_app() -> FastAPI:
             pdp=app.state.pdp,
             adapter=app.state.triplestore,
             state_gate=app.state.state_gate,
+            multigraph_safe_provider=lambda: app.state.sparql_multigraph_safe,
         )
     )
     # LDP read-extensions (/spec, /expanded, /page) — registered AFTER
@@ -606,6 +624,25 @@ class _DynamicContainerRegistry:
 
     def _cache(self) -> ResourceDefinitionCache | None:
         return getattr(self._app.state, "resource_definitions", None)
+
+
+async def _verify_store_conformance(app: FastAPI) -> None:
+    """Run the named-graph isolation self-test and gate multi-graph reads (R-03).
+
+    On failure (or when the store can't be probed), multi-graph SPARQL reads are
+    disabled — the SPARQL router refuses any read whose authorized projection
+    spans more than one named graph, rather than risk a leak.
+    """
+    settings = get_settings()
+    if not settings.triplestore.verify_named_graph_isolation:
+        log.info("named_graph_isolation_check_skipped")
+        return
+    safe = await verify_named_graph_isolation(app.state.triplestore)
+    app.state.sparql_multigraph_safe = safe
+    if safe:
+        log.info("named_graph_isolation_verified")
+    else:
+        log.error("named_graph_isolation_unsafe_multigraph_reads_disabled")
 
 
 async def _maybe_auto_bootstrap(app: FastAPI) -> None:

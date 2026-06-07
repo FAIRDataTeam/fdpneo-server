@@ -198,15 +198,16 @@ def test_modify_with_inline_graph_in_templates_yields_targets() -> None:
 
 
 @pytest.mark.unit
-def test_load_into_graph_yields_target() -> None:
-    result = parse(f"LOAD <{SRC}> INTO GRAPH <{G1}>")
-    assert isinstance(result, ParsedUpdate)
-    assert result.targets == (G1,)
+def test_load_into_graph_is_rejected() -> None:
+    # LOAD is rejected outright (R-03b): the source URL is an SSRF vector,
+    # independent of whether the target graph is authorized.
+    with pytest.raises(BadRequest, match="LOAD is not permitted"):
+        parse(f"LOAD <{SRC}> INTO GRAPH <{G1}>")
 
 
 @pytest.mark.unit
 def test_load_without_into_graph_is_rejected() -> None:
-    with pytest.raises(BadRequest, match="Load requires explicit graph targets"):
+    with pytest.raises(BadRequest, match="LOAD is not permitted"):
         parse(f"LOAD <{SRC}>")
 
 
@@ -318,3 +319,12 @@ def test_malformed_update_is_rejected() -> None:
 def test_unknown_keyword_is_rejected() -> None:
     with pytest.raises(BadRequest, match="unrecognized SPARQL operation"):
         parse("FOO * WHERE { ?s ?p ?o }")
+
+
+# --- LOAD rejection (audit R-03b) -------------------------------------------
+
+
+@pytest.mark.unit
+def test_load_silent_is_rejected() -> None:
+    with pytest.raises(BadRequest, match="LOAD is not permitted"):
+        parse(f"LOAD SILENT <https://evil.example/data.ttl> INTO GRAPH <{G1}>")

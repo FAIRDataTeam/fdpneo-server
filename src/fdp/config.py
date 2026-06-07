@@ -43,6 +43,17 @@ class TripleStoreSettings(BaseSettings):
     supports_repository_management: bool = False  # e.g., GraphDB
     supports_named_graph_sync: bool = False
 
+    # Read timeout (seconds) for SPARQL query/update HTTP calls. Bounds how long
+    # a single query can run before the store call is aborted — a DoS control
+    # (audit R-02). Connect/write/pool keep their built-in defaults.
+    query_timeout_seconds: float = 30.0
+
+    # Run the named-graph isolation self-test at startup (audit R-03). When the
+    # store fails it (e.g. Oxigraph), multi-graph SPARQL reads are disabled to
+    # prevent cross-graph leakage. Set False only for a store you have certified
+    # conformant out of band (skips the startup probe writes).
+    verify_named_graph_isolation: bool = True
+
 
 class OIDCSettings(BaseSettings):
     """Configuration for the external OIDC identity provider.
@@ -324,6 +335,26 @@ class IdpAdminSettings(BaseSettings):
         return self.client_id is not None and self.client_secret is not None
 
 
+class RateLimitSettings(BaseSettings):
+    """Per-client request limits — app-level DoS defense-in-depth (audit R-02).
+
+    This is a per-instance, in-memory limiter; the *authoritative* control for a
+    multi-instance/hospital deployment is the reverse proxy / ingress. Keys by
+    client IP (the leftmost ``X-Forwarded-For`` entry when ``trust_forwarded_for``
+    is set and the app sits behind a header-sanitizing proxy).
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_RATELIMIT_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    enabled: bool = True
+    requests_per_window: int = 300
+    window_seconds: int = 60
+    max_body_bytes: int = 10_485_760  # 10 MiB
+    trust_forwarded_for: bool = False
+
+
 class Settings(BaseSettings):
     """Top-level application settings.
 
@@ -368,6 +399,7 @@ class Settings(BaseSettings):
     api_keys: ApiKeySettings = Field(default_factory=lambda: ApiKeySettings())
     search: SearchSettings = Field(default_factory=lambda: SearchSettings())
     idp_admin: IdpAdminSettings = Field(default_factory=lambda: IdpAdminSettings())
+    rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
 
 
 @lru_cache(maxsize=1)
