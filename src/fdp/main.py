@@ -105,6 +105,15 @@ from fdp.storage.triplestore.conformance import verify_named_graph_isolation
 log = structlog.get_logger(__name__)
 
 
+def _docs_enabled(environment: str, expose_api_docs: bool) -> bool:
+    """Whether to serve the interactive docs UIs (audit R-04).
+
+    On in development, or anywhere ``expose_api_docs`` is explicitly set — off by
+    default in staging/production to remove the Swagger "try it out" surface.
+    """
+    return expose_api_docs or environment == "development"
+
+
 def _build_shared_state(app: FastAPI) -> None:
     """Construct singletons and attach them to ``app.state``.
 
@@ -376,12 +385,15 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.environment)
 
+    docs_on = _docs_enabled(settings.environment, settings.expose_api_docs)
     app = FastAPI(
         title="FAIR Data Point",
         version=__version__,
         description="FAIR-aligned metadata repository — see /docs for the API.",
         lifespan=lifespan,
         debug=settings.environment == "development",
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
     )
 
     register_exception_handlers(app)

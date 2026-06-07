@@ -370,6 +370,10 @@ class Settings(BaseSettings):
     )
 
     environment: Literal["development", "staging", "production"] = "development"
+    # Interactive API docs (Swagger /docs, ReDoc /redoc) expose a "try it out"
+    # surface; they are served only in development unless explicitly enabled
+    # (audit R-04). /openapi.json (the static spec) stays available for tooling.
+    expose_api_docs: bool = False
     base_url: HttpUrl = Field(
         default=HttpUrl("http://localhost:8000"),
         description="The public URL at which this FDP is reachable. Used to mint resource URIs.",

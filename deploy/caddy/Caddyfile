@@ -1,0 +1,43 @@
+# Reference TLS-terminating reverse proxy for fdp-server (security audit R-04).
+#
+# Terminates HTTPS, enforces HSTS, sets baseline security headers (belt-and-
+# suspenders with the app's SecurityHeadersMiddleware), strips the upstream
+# `Server` banner, caps request bodies, and proxies to the FDP app — which must
+# NOT be exposed publicly itself (bind it to the internal proxy network only).
+#
+# Adapt the site address and TLS source to your environment. Caddy obtains and
+# renews certs automatically via ACME for a public domain; for an internal CA,
+# replace the `tls` directive with your cert/key paths.
+
+fdp.hospital.example {
+	# --- TLS -----------------------------------------------------------------
+	# Automatic HTTPS (ACME) for a public domain — nothing to configure.
+	# Internal CA instead:
+	#   tls /etc/caddy/certs/fdp.crt /etc/caddy/certs/fdp.key
+
+	# --- security headers (edge enforcement) ---------------------------------
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "no-referrer"
+		Cross-Origin-Opener-Policy "same-origin"
+		# Remove software/version disclosure coming from the upstream.
+		-Server
+		-X-Powered-By
+	}
+
+	# --- request size cap (authoritative; the app limiter is per-instance) ---
+	request_body {
+		max_size 10MB
+	}
+
+	# Edge rate limiting needs the caddy-ratelimit plugin or an upstream WAF;
+	# the app enforces a per-instance limit as defense-in-depth (FDP_RATELIMIT_*).
+
+	# --- proxy to the FDP app (internal network only) ------------------------
+	# Caddy sets X-Forwarded-For / X-Forwarded-Proto automatically. Set
+	# FDP_RATELIMIT_TRUST_FORWARDED_FOR=true on the app so it keys limits on the
+	# real client IP rather than the proxy's.
+	reverse_proxy fdp-app:8000
+}
