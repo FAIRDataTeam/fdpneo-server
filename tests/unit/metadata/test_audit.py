@@ -15,8 +15,7 @@ import pytest
 
 from fdp.metadata.audit import AuditLog, AuditOperation, RecordAuditRow
 from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
-from fdp.shared.events import EventBus
-
+from fdp.shared.events import AdminActionAudited, EventBus
 
 NOW = datetime(2026, 5, 28, 12, 34, 56, tzinfo=UTC)
 
@@ -198,3 +197,30 @@ async def test_persistence_failure_does_not_propagate() -> None:
     finally:
         audit.stop()
     # No assertions on captured rows: the point is that publish() returned.
+
+
+@pytest.mark.unit
+async def test_admin_action_event_writes_user_audit_row() -> None:
+
+    factory = _FakeSessionFactory()
+    audit = AuditLog(session_factory=factory)  # type: ignore[arg-type]
+    bus = EventBus()
+    audit.start(bus)
+    try:
+        await bus.publish(
+            AdminActionAudited(
+                target="ba0cf67c-7dca-4e51-bdf8-bf467c3bdb6b",
+                operation=AuditOperation.USER_DELETE.value,
+                subject="https://idp/admin",
+                timestamp=NOW,
+            )
+        )
+    finally:
+        audit.stop()
+
+    assert len(factory.rows) == 1
+    row = factory.rows[0]
+    assert row.record_iri == "ba0cf67c-7dca-4e51-bdf8-bf467c3bdb6b"
+    assert row.operation == "user_delete"
+    assert row.subject == "https://idp/admin"
+    assert row.occurred_at == NOW

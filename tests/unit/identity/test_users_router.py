@@ -95,15 +95,23 @@ def _seed() -> _FakeDirectory:
 # --- client harness --------------------------------------------------------
 
 
-def _client(directory, *, ctx: RequestContext) -> TestClient:
+def _client(directory, *, ctx: RequestContext, event_bus=None) -> TestClient:
     from fdp.identity.deps import current_context
     from fdp.shared.errors import register_exception_handlers
 
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_users_router(directory=directory))
+    app.include_router(build_users_router(directory=directory, event_bus=event_bus))
     app.dependency_overrides[current_context] = lambda: ctx
     return TestClient(app)
+
+
+@dataclass
+class _CapturingBus:
+    events: list = field(default_factory=list)
+
+    async def publish(self, event) -> None:
+        self.events.append(event)
 
 
 def _admin() -> RequestContext:
@@ -277,3 +285,37 @@ def test_non_uuid_id_rejected_before_upstream(method: str) -> None:
     resp = client.request(method.upper(), "/users/not-a-uuid", **kwargs)
     assert resp.status_code == 400
     assert resp.json()["code"] == "fdp.bad_request"
+
+
+# --- audit trail of mutations (audit R-11) ----------------------------------
+
+
+@pytest.mark.unit
+def test_mutations_emit_admin_action_audit_events() -> None:
+    from fdp.shared.events import AdminActionAudited
+
+    bus = _CapturingBus()
+    dir_ = _seed()
+    client = _client(dir_, ctx=_admin(), event_bus=bus)
+
+    client.post("/users", json={"username": "jdoe", "email": "j@x", "roles": ["steward"]})
+    client.patch(f"/users/{STEWARD_ID}", json={"roles": ["steward", "admin"]})
+    client.delete(f"/users/{STEWARD_ID}")
+
+    ops = [(e.operation, e.subject) for e in bus.events if isinstance(e, AdminActionAudited)]
+    assert ("user_create", f"{ISSUER}#{ADMIN_ID}") in ops
+    assert ("user_update", f"{ISSUER}#{ADMIN_ID}") in ops
+    assert ("user_delete", f"{ISSUER}#{ADMIN_ID}") in ops
+    # the delete event targets the deleted user id
+    delete_ev = next(e for e in bus.events if e.operation == "user_delete")
+    assert delete_ev.target == STEWARD_ID
+
+
+@pytest.mark.unit
+def test_rejected_mutation_emits_no_audit_event() -> None:
+    bus = _CapturingBus()
+    # self-lockout (409) must not produce an audit row.
+    _client(_seed(), ctx=_admin(), event_bus=bus).patch(
+        f"/users/{ADMIN_ID}", json={"roles": ["steward"]}
+    )
+    assert bus.events == []

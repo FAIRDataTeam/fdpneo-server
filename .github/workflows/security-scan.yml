@@ -1,0 +1,51 @@
+# Dependency vulnerability scan + SBOM (security audit R-12).
+#
+# Gates pull requests on known-vulnerable Python dependencies (pip-audit) and
+# publishes a CycloneDX SBOM artifact. Runs on PRs, pushes to main, and weekly
+# (so advisories published after a merge are still caught).
+#
+# Triage a reviewed, accepted advisory with `--ignore-vuln <GHSA-…>` and record
+# the rationale in the PR.
+name: security-scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  python-deps:
+    name: Python deps (pip-audit + SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: pip-audit (fails on known vulnerabilities)
+        # Audits the resolved virtualenv against the PyPI/OSV advisory DBs.
+        # --skip-editable drops the local `fdp` package (not on an index).
+        run: uv run --with pip-audit pip-audit --skip-editable
+
+      - name: Generate CycloneDX SBOM
+        if: always() # produce the SBOM even when the audit gate fails
+        run: uv run --with cyclonedx-bom cyclonedx-py environment --output-file sbom.cdx.json
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-python
+          path: sbom.cdx.json
+          if-no-files-found: warn

@@ -19,7 +19,8 @@ configured, ``directory`` is ``None`` and every endpoint returns
 from __future__ import annotations
 
 import re
-from typing import Annotated, Final, Protocol
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Annotated, Final, Protocol
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -27,8 +28,18 @@ from pydantic import BaseModel
 from fdp.identity.deps import require_auth
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, ServiceUnavailable
+from fdp.shared.events import AdminActionAudited
+
+if TYPE_CHECKING:
+    from fdp.shared.events import EventBus
 
 _ADMIN_ROLE: Final = "admin"
+
+# Stable audit operation codes for /users mutations (audit R-11). Mirror
+# fdp.metadata.audit.AuditOperation.USER_* without importing across the boundary.
+_OP_CREATE: Final = "user_create"
+_OP_UPDATE: Final = "user_update"
+_OP_DELETE: Final = "user_delete"
 
 # IdP user ids are UUIDs (== the token `sub`). Validate the path param before it
 # is interpolated into the Admin REST URL — defense-in-depth (audit R-07).
@@ -115,13 +126,30 @@ class UserDirectory(Protocol):
 # --- router ----------------------------------------------------------------
 
 
-def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users") -> APIRouter:
+def build_users_router(
+    *,
+    directory: UserDirectory | None,
+    event_bus: EventBus | None = None,
+    prefix: str = "/users",
+) -> APIRouter:
     """Build the user-admin router. Every endpoint requires the ``admin`` role.
 
     ``directory`` is ``None`` when the IdP-admin facade is unconfigured — every
-    route then returns ``503``.
+    route then returns ``503``. When ``event_bus`` is supplied, successful
+    create/update/delete actions are mirrored into the FDP audit trail (R-11).
     """
     router = APIRouter(prefix=prefix, tags=["users"])
+
+    async def _audit(operation: str, target: str, ctx: RequestContext) -> None:
+        if event_bus is not None:
+            await event_bus.publish(
+                AdminActionAudited(
+                    target=target,
+                    operation=operation,
+                    subject=ctx.subject,
+                    timestamp=datetime.now(UTC),
+                )
+            )
 
     def _require_admin(ctx: RequestContext) -> None:
         if _ADMIN_ROLE not in ctx.roles:
@@ -215,7 +243,9 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
         _validate_roles(body.roles)
         if body.send_invite and not (body.email or "").strip():
             raise BadRequest("email is required to send an invite")
-        return await _dir().create_user(body)
+        created = await _dir().create_user(body)
+        await _audit(_OP_CREATE, created.id, ctx)
+        return created
 
     @router.patch("/{user_id}", response_model=UserInfo, name="user_update")
     async def update_user(  # pyright: ignore[reportUnusedFunction]
@@ -238,7 +268,9 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
             await _guard_not_last_admin(
                 directory, current, removing_admin=removing_admin, disabling=disabling
             )
-        return await directory.update_user(user_id, body)
+        updated = await directory.update_user(user_id, body)
+        await _audit(_OP_UPDATE, user_id, ctx)
+        return updated
 
     @router.delete("/{user_id}", status_code=204, name="user_delete")
     async def delete_user(  # pyright: ignore[reportUnusedFunction]
@@ -253,6 +285,7 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
         current = await directory.get_user(user_id)  # 404s if missing
         await _guard_not_last_admin(directory, current, removing_admin=True, disabling=True)
         await directory.delete_user(user_id)
+        await _audit(_OP_DELETE, user_id, ctx)
 
     return router
 

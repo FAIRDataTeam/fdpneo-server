@@ -36,6 +36,7 @@ from fdp.metadata.events import (
     RecordModified,
     RecordStateChanged,
 )
+from fdp.shared.events import AdminActionAudited
 from fdp.storage.postgres.models import Base
 
 if TYPE_CHECKING:
@@ -53,6 +54,10 @@ class AuditOperation(StrEnum):
     MODIFY = "modify"
     DELETE = "delete"
     STATE_CHANGE = "state_change"
+    # User-management actions via the /users facade (audit R-11).
+    USER_CREATE = "user_create"
+    USER_UPDATE = "user_update"
+    USER_DELETE = "user_delete"
 
 
 class RecordAuditRow(Base):
@@ -99,13 +104,14 @@ class AuditLog:
         self._subs: list[Subscription] = []
 
     def start(self, bus: EventBus) -> None:
-        """Register handlers for the three record-modification event types."""
+        """Register handlers for record-modification + admin-action events."""
         self._subs.extend(
             [
                 bus.subscribe(RecordCreated, self._on_created),
                 bus.subscribe(RecordModified, self._on_modified),
                 bus.subscribe(RecordDeleted, self._on_deleted),
                 bus.subscribe(RecordStateChanged, self._on_state_changed),
+                bus.subscribe(AdminActionAudited, self._on_admin_action),
             ]
         )
         log.info("audit_log_started")
@@ -121,7 +127,7 @@ class AuditLog:
     async def _on_created(self, event: RecordCreated) -> None:
         await self._persist(
             record_iri=event.record_iri,
-            operation=AuditOperation.CREATE,
+            operation=AuditOperation.CREATE.value,
             subject=event.subject,
             etag=event.etag,
             occurred_at=event.timestamp,
@@ -130,7 +136,7 @@ class AuditLog:
     async def _on_modified(self, event: RecordModified) -> None:
         await self._persist(
             record_iri=event.record_iri,
-            operation=AuditOperation.MODIFY,
+            operation=AuditOperation.MODIFY.value,
             subject=event.subject,
             etag=event.etag,
             occurred_at=event.timestamp,
@@ -139,7 +145,7 @@ class AuditLog:
     async def _on_deleted(self, event: RecordDeleted) -> None:
         await self._persist(
             record_iri=event.record_iri,
-            operation=AuditOperation.DELETE,
+            operation=AuditOperation.DELETE.value,
             subject=event.subject,
             etag=None,  # no post-delete content to fingerprint
             occurred_at=event.timestamp,
@@ -148,7 +154,7 @@ class AuditLog:
     async def _on_state_changed(self, event: RecordStateChanged) -> None:
         await self._persist(
             record_iri=event.record_iri,
-            operation=AuditOperation.STATE_CHANGE,
+            operation=AuditOperation.STATE_CHANGE.value,
             subject=event.subject,
             # No content fingerprint for a lifecycle change; the etag column
             # carries the transition for at-a-glance audit reads.
@@ -156,11 +162,22 @@ class AuditLog:
             occurred_at=event.timestamp,
         )
 
+    async def _on_admin_action(self, event: AdminActionAudited) -> None:
+        # Generic admin actions (e.g. /users mutations, R-11). ``target`` is the
+        # acted-on resource id; ``operation`` is the stable code the producer set.
+        await self._persist(
+            record_iri=event.target,
+            operation=event.operation,
+            subject=event.subject,
+            etag=None,
+            occurred_at=event.timestamp,
+        )
+
     async def _persist(
         self,
         *,
         record_iri: str,
-        operation: AuditOperation,
+        operation: str,
         subject: str | None,
         etag: str | None,
         occurred_at: datetime,
@@ -169,7 +186,7 @@ class AuditLog:
             async with self._session_factory() as session:
                 row = RecordAuditRow(
                     record_iri=record_iri,
-                    operation=operation.value,
+                    operation=operation,
                     subject=subject,
                     etag=etag,
                     occurred_at=occurred_at,
@@ -180,7 +197,7 @@ class AuditLog:
             log.warning(
                 "audit_log_insert_failed",
                 record_iri=record_iri,
-                operation=operation.value,
+                operation=operation,
                 error=repr(err),
             )
 

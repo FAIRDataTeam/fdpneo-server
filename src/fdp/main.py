@@ -562,7 +562,9 @@ def create_app() -> FastAPI:
     app.include_router(build_license_router(service=app.state.license_service))
     # User-management admin facade (ADR-0013). Admin-gated; 503 when the IdP-admin
     # service account isn't configured. Registered before the LDP catch-all.
-    app.include_router(build_users_router(directory=app.state.user_directory))
+    app.include_router(
+        build_users_router(directory=app.state.user_directory, event_bus=app.state.event_bus)
+    )
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the

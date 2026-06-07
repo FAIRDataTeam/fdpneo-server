@@ -24,6 +24,7 @@ import weakref
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TypeVar
 
 import structlog
@@ -37,6 +38,22 @@ class Event:
 
     Concrete events are frozen dataclasses defined by the producing module.
     """
+
+
+@dataclass(frozen=True)
+class AdminActionAudited(Event):
+    """A privileged admin action to record in the audit trail (audit R-11).
+
+    Generic and cross-cutting so any context (e.g. the identity ``/users``
+    facade) can emit it and the audit log can persist it without the consumer
+    importing the producer. ``target`` is the resource acted on (e.g. a user
+    id), ``operation`` a stable code, ``subject`` the acting principal.
+    """
+
+    target: str
+    operation: str
+    subject: str | None
+    timestamp: datetime
 
 
 E = TypeVar("E", bound=Event)
@@ -131,4 +148,4 @@ class EventBus:
         ]
 
 
-__all__ = ["Event", "EventBus", "Handler", "Subscription"]
+__all__ = ["AdminActionAudited", "Event", "EventBus", "Handler", "Subscription"]

@@ -27,6 +27,8 @@ dependencies = [
   "uvicorn[standard]>=0.30",
 
   # RDF
+  # Keep rdflib >= 7: it neutralizes RDF/XML external-entity (XXE) expansion that
+  # earlier versions allowed on untrusted parse input (security audit R-01/R-02).
   "rdflib>=7.0",
   "pyshacl>=0.26",
 
