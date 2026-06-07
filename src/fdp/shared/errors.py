@@ -18,7 +18,8 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Final
+import json
+from typing import TYPE_CHECKING, ClassVar, Final
 
 import structlog
 from fastapi import FastAPI, Request
@@ -26,6 +27,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from fdp.shared.context import get_current
+
+if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 _DOCS_BASE: Final = "https://specs.fairdatapoint.org/errors#"
 
@@ -198,6 +202,24 @@ class TooManyRequests(FDPError):
     docs_url = _DOCS_BASE + "fdp.too_many_requests"
 
 
+class InternalError(FDPError):
+    """A generic 500 for an unexpected (non-domain) error — no internals exposed."""
+
+    code = "fdp.internal_error"
+    http_status = 500
+    docs_url = _DOCS_BASE + "fdp.internal_error"
+
+
+def _envelope(exc: FDPError) -> dict[str, object]:
+    """The documented error JSON: ``{code, message, docs_url, details}``."""
+    return {
+        "code": exc.code,
+        "message": exc.message,
+        "docs_url": exc.docs_url,
+        "details": jsonable_encoder(exc.details) if exc.details is not None else None,
+    }
+
+
 async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
     """Render an ``FDPError`` as the documented JSON envelope."""
     ctx = get_current()
@@ -208,13 +230,64 @@ async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
         message=exc.message,
         trace_id=ctx.trace_id if ctx is not None else None,
     )
-    body = {
-        "code": exc.code,
-        "message": exc.message,
-        "docs_url": exc.docs_url,
-        "details": jsonable_encoder(exc.details) if exc.details is not None else None,
-    }
-    return JSONResponse(status_code=exc.http_status, content=body)
+    return JSONResponse(status_code=exc.http_status, content=_envelope(exc))
+
+
+class CatchAllExceptionMiddleware:
+    """Render *any* exception that escapes the routes as the FDP error envelope.
+
+    Registered inside CORS so the envelope (and CORS headers) reach the client
+    for exceptions raised in the outer middleware layer or otherwise unhandled —
+    closing the gap where an unexpected error became a bare ``500`` with no
+    envelope/CORS (audit R-08). ``FDPError`` keeps its own status; anything else
+    becomes a generic ``500`` with the stack logged, never returned.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        started = False
+
+        async def guarded_send(message: Message) -> None:
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self._app(scope, receive, guarded_send)
+        except FDPError as exc:
+            if started:
+                raise
+            await _send_envelope(send, exc.http_status, _envelope(exc))
+        except Exception as exc:
+            ctx = get_current()
+            log.error(
+                "unhandled_exception",
+                error=repr(exc),
+                trace_id=ctx.trace_id if ctx is not None else None,
+                exc_info=exc,
+            )
+            if started:
+                raise
+            err = InternalError("an internal error occurred")
+            await _send_envelope(send, err.http_status, _envelope(err))
+
+
+async def _send_envelope(send: Send, status: int, body: dict[str, object]) -> None:
+    payload = json.dumps(body).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [(b"content-type", b"application/json")],
+        }
+    )
+    await send({"type": "http.response.body", "body": payload})
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -228,10 +301,12 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 __all__ = [
     "BadRequest",
+    "CatchAllExceptionMiddleware",
     "Conflict",
     "FDPError",
     "Forbidden",
     "GatewayTimeout",
+    "InternalError",
     "MethodNotAllowed",
     "NotAcceptable",
     "NotFound",

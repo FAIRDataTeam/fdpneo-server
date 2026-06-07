@@ -18,6 +18,7 @@ configured, ``directory`` is ``None`` and every endpoint returns
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Final, Protocol
 
 from fastapi import APIRouter, Depends, Query
@@ -28,6 +29,12 @@ from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, ServiceUnavailable
 
 _ADMIN_ROLE: Final = "admin"
+
+# IdP user ids are UUIDs (== the token `sub`). Validate the path param before it
+# is interpolated into the Admin REST URL — defense-in-depth (audit R-07).
+_UUID_RE: Final = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 # The curated set of FDP roles this facade manages and exposes via /users/roles.
 # Intentionally NOT the full realm role list (which includes IdP machinery like
@@ -139,6 +146,10 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
                 details={"unknown_roles": unknown, "assignable": list(ASSIGNABLE_ROLES)},
             )
 
+    def _require_uuid(user_id: str) -> None:
+        if not _UUID_RE.match(user_id):
+            raise BadRequest("user id must be a UUID", details={"id": user_id})
+
     def _caller_user_id(ctx: RequestContext) -> str:
         # ctx.subject is "{issuer}#{sub}"; the IdP user id == the sub.
         return (ctx.subject or "").rsplit("#", 1)[-1]
@@ -190,6 +201,7 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
         ctx: Annotated[RequestContext, Depends(require_auth)],
     ) -> UserInfo:
         _require_admin(ctx)
+        _require_uuid(user_id)
         return await _dir().get_user(user_id)
 
     @router.post("", response_model=UserInfo, status_code=201, name="user_create")
@@ -212,6 +224,7 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
         ctx: Annotated[RequestContext, Depends(require_auth)],
     ) -> UserInfo:
         _require_admin(ctx)
+        _require_uuid(user_id)
         if body.roles is not None:
             _validate_roles(body.roles)
         directory = _dir()
@@ -233,6 +246,7 @@ def build_users_router(*, directory: UserDirectory | None, prefix: str = "/users
         ctx: Annotated[RequestContext, Depends(require_auth)],
     ) -> None:
         _require_admin(ctx)
+        _require_uuid(user_id)
         directory = _dir()
         # Deleting yourself, or the last admin, locks the deployment out.
         await _guard_not_self_lockout(ctx, user_id, removing_admin=True, disabling=True)

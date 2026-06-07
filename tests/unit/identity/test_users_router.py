@@ -24,7 +24,9 @@ from fdp.shared.context import RequestContext
 from fdp.shared.errors import Conflict, NotFound
 
 ISSUER = "http://idp.local/realms/fdp"
-ADMIN_ID = "admin-1"
+ADMIN_ID = "11111111-1111-1111-1111-111111111111"
+STEWARD_ID = "22222222-2222-2222-2222-222222222222"
+ABSENT_ID = "33333333-3333-3333-3333-333333333333"
 
 
 # --- fake directory --------------------------------------------------------
@@ -83,8 +85,8 @@ def _seed() -> _FakeDirectory:
             ADMIN_ID: UserInfo(
                 id=ADMIN_ID, username="admin", email="a@x", roles=["admin", "steward"]
             ),
-            "steward-1": UserInfo(
-                id="steward-1", username="alice", email="al@x", roles=["steward"]
+            STEWARD_ID: UserInfo(
+                id=STEWARD_ID, username="alice", email="al@x", roles=["steward"]
             ),
         }
     )
@@ -111,7 +113,7 @@ def _admin() -> RequestContext:
 
 
 def _steward() -> RequestContext:
-    return RequestContext(subject=f"{ISSUER}#steward-1", roles=frozenset({"steward"}), trace_id="t")
+    return RequestContext(subject=f"{ISSUER}#{STEWARD_ID}", roles=frozenset({"steward"}), trace_id="t")
 
 
 def _anon() -> RequestContext:
@@ -150,7 +152,7 @@ def test_list_and_search_and_roles() -> None:
     assert c.get("/users", params={"search": "alice"}).json()["total"] == 1
     assert c.get("/users/roles").json()["roles"] == ["steward", "admin"]
     assert c.get(f"/users/{ADMIN_ID}").json()["username"] == "admin"
-    assert c.get("/users/nope").status_code == 404
+    assert c.get(f"/users/{ABSENT_ID}").status_code == 404
 
 
 @pytest.mark.unit
@@ -203,7 +205,7 @@ def test_create_duplicate_409() -> None:
 @pytest.mark.unit
 def test_update_roles_ok() -> None:
     r = _client(_seed(), ctx=_admin()).patch(
-        "/users/steward-1", json={"roles": ["steward", "admin"]}
+        f"/users/{STEWARD_ID}", json={"roles": ["steward", "admin"]}
     )
     assert r.status_code == 200
     assert set(r.json()["roles"]) == {"steward", "admin"}
@@ -211,7 +213,7 @@ def test_update_roles_ok() -> None:
 
 @pytest.mark.unit
 def test_update_unknown_role_400() -> None:
-    r = _client(_seed(), ctx=_admin()).patch("/users/steward-1", json={"roles": ["wizard"]})
+    r = _client(_seed(), ctx=_admin()).patch(f"/users/{STEWARD_ID}", json={"roles": ["wizard"]})
     assert r.status_code == 400
 
 
@@ -246,8 +248,8 @@ def test_cannot_demote_last_admin() -> None:
 @pytest.mark.unit
 def test_delete_ok() -> None:
     dir_ = _seed()
-    assert _client(dir_, ctx=_admin()).delete("/users/steward-1").status_code == 204
-    assert "steward-1" not in dir_.users
+    assert _client(dir_, ctx=_admin()).delete(f"/users/{STEWARD_ID}").status_code == 204
+    assert STEWARD_ID not in dir_.users
 
 
 @pytest.mark.unit
@@ -262,3 +264,16 @@ def test_cannot_delete_last_admin() -> None:
         subject=f"{ISSUER}#svc-key", roles=frozenset({"admin"}), trace_id="t"
     )
     assert _client(dir_, ctx=key_admin).delete(f"/users/{ADMIN_ID}").status_code == 409
+
+
+# --- user id validation (audit R-07) ----------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method", ["get", "patch", "delete"])
+def test_non_uuid_id_rejected_before_upstream(method: str) -> None:
+    client = _client(_seed(), ctx=_admin())
+    kwargs = {"json": {"roles": ["steward"]}} if method == "patch" else {}
+    resp = client.request(method.upper(), "/users/not-a-uuid", **kwargs)
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "fdp.bad_request"

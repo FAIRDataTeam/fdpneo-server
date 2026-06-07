@@ -93,7 +93,11 @@ from fdp.policy.parser import parse_offer
 from fdp.policy.resolver import GraphBackedOfferResolver
 from fdp.policy.runtime import RequestScopedPDP
 from fdp.shared.context import RequestContext
-from fdp.shared.errors import SchemaViolation, register_exception_handlers
+from fdp.shared.errors import (
+    CatchAllExceptionMiddleware,
+    SchemaViolation,
+    register_exception_handlers,
+)
 from fdp.shared.events import EventBus
 from fdp.shared.limits import BodySizeLimitMiddleware, RateLimitMiddleware
 from fdp.shared.logging import configure_logging
@@ -426,6 +430,11 @@ def create_app() -> FastAPI:
             window_seconds=settings.rate_limit.window_seconds,
             trust_forwarded_for=settings.rate_limit.trust_forwarded_for,
         )
+    # Catch-all error envelope (audit R-08) — just inside CORS so unexpected
+    # exceptions (incl. from the outer middleware layer) return the structured
+    # envelope WITH CORS headers, instead of a bare 500. FDPErrors keep their
+    # status; everything else becomes a generic 500 with the stack logged only.
+    app.add_middleware(CatchAllExceptionMiddleware)
     # CORS must wrap everything else (outermost) so it can answer the browser's
     # preflight OPTIONS directly — before auth — and so the Access-Control-*
     # headers are attached even to error responses from the inner middleware.
