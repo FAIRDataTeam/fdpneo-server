@@ -85,7 +85,23 @@ class GraphBackedOfferResolver:
         rights_iri = await self._resolve_rights_iri(resource_iri)
         if rights_iri is None:
             return None
-        return await self._fetch_and_parse(rights_iri)
+        offer = await self._fetch_and_parse(rights_iri)
+        if offer is None:
+            # The resource named an Offer (its own dct:rights, an ancestor's, or
+            # the deployment system-default) but no parseable Offer graph exists
+            # there. The PDP will now default-deny every non-anonymous action on
+            # this resource — surfacing as "policy denies modify on …". Logged
+            # loudly because the usual cause is operational: the offer was never
+            # seeded at this IRI, e.g. the deployment was upgraded across the
+            # ADR-0012 offer→managed-policy IRI change without re-applying the
+            # profile. Re-apply (or factory-reset) to seed it.
+            log.warning(
+                "offer_unresolved_default_deny",
+                resource_iri=resource_iri,
+                rights_iri=rights_iri,
+                system_default=self._system_default_provider(),
+            )
+        return offer
 
     # --- internals --------------------------------------------------------
 

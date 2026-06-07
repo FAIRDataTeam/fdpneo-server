@@ -22,6 +22,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from rdflib import URIRef
 
 from fdp import __version__
 from fdp.access.router import build_sparql_router
@@ -30,7 +31,9 @@ from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.identity.api_keys import ApiKeyRepository, ApiKeyService, build_api_keys_router
 from fdp.identity.bootstrap import build_bootstrap_router
+from fdp.identity.keycloak_admin import KeycloakUserDirectory
 from fdp.identity.principal import SubjectPrincipalRepository
+from fdp.identity.users import build_users_router
 from fdp.metadata.admin import ResetService, build_admin_router
 from fdp.metadata.audit import AuditLog
 from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
@@ -86,10 +89,11 @@ from fdp.metrics.pipeline import MetricsPipeline
 from fdp.metrics.salt import SaltRotator
 from fdp.operational import build_info_router, build_readiness_router
 from fdp.policy.model import Action
+from fdp.policy.parser import parse_offer
 from fdp.policy.resolver import GraphBackedOfferResolver
 from fdp.policy.runtime import RequestScopedPDP
 from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
+from fdp.shared.errors import SchemaViolation, register_exception_handlers
 from fdp.shared.events import EventBus
 from fdp.shared.logging import configure_logging
 from fdp.storage.postgres.engine import build_engine, build_session_factory
@@ -126,6 +130,15 @@ def _build_shared_state(app: FastAPI) -> None:
         repository=ApiKeyRepository(session_factory=app.state.session_factory),
         principals=app.state.subject_principal_repo,
         settings=settings.api_keys,
+    )
+
+    # User-management facade (ADR-0013). None — and the /users surface returns
+    # 503 — unless an IdP-admin service account is configured. Reuses the shared
+    # httpx client for outbound Admin REST calls.
+    app.state.user_directory = KeycloakUserDirectory.from_settings(
+        idp_admin=settings.idp_admin,
+        oidc=settings.oidc,
+        http_client=http_client,
     )
 
     app.state.event_bus = EventBus()
@@ -409,7 +422,8 @@ def create_app() -> FastAPI:
     # /spec, /expanded, /page, /resource-definitions (the runtime
     # resource-definition catalog + admin surface — ADR-0009), /schemas
     # (runtime SHACL-shape admin — Phase 10.1), /policies and /licenses
-    # (first-class ODRL policy + license documents — Phase 14 / ADR-0012), and
+    # (first-class ODRL policy + license documents — Phase 14 / ADR-0012),
+    # /users (IdP user-management facade — ADR-0013), and
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
@@ -502,6 +516,9 @@ def create_app() -> FastAPI:
     # and {base}/licenses/{id} as public, dereferenceable reference records.
     app.include_router(build_policy_router(service=app.state.policy_service))
     app.include_router(build_license_router(service=app.state.license_service))
+    # User-management admin facade (ADR-0013). Admin-gated; 503 when the IdP-admin
+    # service account isn't configured. Registered before the LDP catch-all.
+    app.include_router(build_users_router(directory=app.state.user_directory))
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the
@@ -656,8 +673,35 @@ async def _publish_runtime_state(
     """
     if system_default_offer_iri is not None:
         app.state.system_default_offer_iri = system_default_offer_iri
+        await _verify_system_default_offer(app, system_default_offer_iri)
     if resource_definitions is not None:
         await _publish_resource_definitions(app, resource_definitions)
+
+
+async def _verify_system_default_offer(app: FastAPI, iri: str) -> None:
+    """Warn loudly at startup if the system-default Offer can't be resolved.
+
+    Records without their own ``dct:rights`` fall back to this Offer (§8.3); if
+    its graph is missing or unparseable, every non-anonymous write default-denies
+    with "policy denies modify on …" and no other signal. The usual cause is an
+    upgrade across the ADR-0012 offer→managed-policy IRI change without a profile
+    re-apply, so the stored Offer sits at the old intrinsic IRI while this points
+    at ``{base}/policies/{id}``. Best-effort: never fails startup.
+    """
+    try:
+        graph = await app.state.metadata_repository.get_graph(iri)
+        if len(graph) == 0:
+            log.warning(
+                "system_default_offer_missing",
+                iri=iri,
+                hint="re-apply the profile (or factory-reset) to seed the offer at this IRI",
+            )
+            return
+        parse_offer(graph, URIRef(iri))
+    except SchemaViolation as err:
+        log.warning("system_default_offer_unparseable", iri=iri, error=err.message)
+    except Exception as err:  # pragma: no cover - diagnostics must not break startup
+        log.warning("system_default_offer_check_failed", iri=iri, error=repr(err))
 
 
 async def _publish_resource_definitions(app: FastAPI, cache: ResourceDefinitionCache) -> None:
@@ -679,9 +723,7 @@ async def _publish_resource_definitions(app: FastAPI, cache: ResourceDefinitionC
     """
     app.state.resource_definitions = cache
     app.openapi_schema = None  # type: ignore[assignment]
-    schema_iris = sorted(
-        {rd.schema_iri for rd in cache.all()} | {RD_SHAPE_IRI, LICENSE_SHAPE_IRI}
-    )
+    schema_iris = sorted({rd.schema_iri for rd in cache.all()} | {RD_SHAPE_IRI, LICENSE_SHAPE_IRI})
     try:
         await app.state.shacl_validator.bootstrap(schema_iris)
     except Exception as err:

@@ -329,10 +329,13 @@ def build_policy_router(*, service: PolicyService, prefix: str = "/policies") ->
     @router.get("", response_model=PolicyListView, name="policy_list")
     async def list_policies(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[RequestContext, Depends(current_context)],
+        published: bool = False,
     ) -> PolicyListView:
-        # Anonymous/non-admin callers see only PUBLISHED policies (the
-        # assignment catalog); admins see drafts + archived too, to manage them.
-        published_only = _ADMIN_ROLE not in ctx.roles
+        # Anonymous/non-admin callers see only PUBLISHED policies (the assignment
+        # catalog); admins see drafts + archived too, to manage them — unless they
+        # opt into the assignment view with ?published=true, which a `dct:rights`
+        # picker should pass (ADR-0012: only PUBLISHED is assignable).
+        published_only = published or _ADMIN_ROLE not in ctx.roles
         return PolicyListView(policies=await service.list_policies(published_only=published_only))
 
     @router.get("/{policy_id}", name="policy_get")

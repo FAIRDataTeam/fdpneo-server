@@ -154,6 +154,26 @@ class MethodNotAllowed(FDPError):
     docs_url = _DOCS_BASE + "fdp.method_not_allowed"
 
 
+class ServiceUnavailable(FDPError):
+    """Raised when an optional capability is requested but not configured.
+
+    Distinct from :class:`UpstreamError`: the dependency isn't down, it was
+    never wired up (e.g. the IdP user-management facade with no admin client).
+    """
+
+    code = "fdp.service_unavailable"
+    http_status = 503
+    docs_url = _DOCS_BASE + "fdp.service_unavailable"
+
+
+class UpstreamError(FDPError):
+    """Raised when a required upstream dependency (e.g. the IdP Admin API) fails."""
+
+    code = "fdp.upstream_error"
+    http_status = 502
+    docs_url = _DOCS_BASE + "fdp.upstream_error"
+
+
 async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
     """Render an ``FDPError`` as the documented JSON envelope."""
     ctx = get_current()
@@ -194,8 +214,10 @@ __all__ = [
     "PreconditionFailed",
     "PreconditionRequired",
     "SchemaViolation",
+    "ServiceUnavailable",
     "Unauthenticated",
     "UnsupportedMediaType",
+    "UpstreamError",
     "fdp_error_handler",
     "register_exception_handlers",
 ]

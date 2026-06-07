@@ -298,6 +298,32 @@ class DataSettings(BaseSettings):
     mode; oversize responses are aborted mid-stream."""
 
 
+class IdpAdminSettings(BaseSettings):
+    """Service-account credentials for the IdP user-management facade (ADR-0013).
+
+    When both ``client_id`` and ``client_secret`` are set, the ``/users`` admin
+    facade is enabled and the server calls the IdP's Admin REST API as this
+    confidential service-account client. Otherwise the facade is off (``503``)
+    and ``features.user_management`` is ``False``. ``base_url`` (the IdP origin,
+    e.g. ``http://localhost:8080``) and ``realm`` are derived from the OIDC
+    issuer when unset.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_IDP_ADMIN_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    client_id: str | None = None
+    client_secret: SecretStr | None = None
+    base_url: HttpUrl | None = None
+    realm: str | None = None
+    token_cache_leeway_seconds: int = 30
+
+    @property
+    def enabled(self) -> bool:
+        return self.client_id is not None and self.client_secret is not None
+
+
 class Settings(BaseSettings):
     """Top-level application settings.
 
@@ -341,6 +367,7 @@ class Settings(BaseSettings):
     schema_sync: SchemaSyncSettings = Field(default_factory=lambda: SchemaSyncSettings())
     api_keys: ApiKeySettings = Field(default_factory=lambda: ApiKeySettings())
     search: SearchSettings = Field(default_factory=lambda: SearchSettings())
+    idp_admin: IdpAdminSettings = Field(default_factory=lambda: IdpAdminSettings())
 
 
 @lru_cache(maxsize=1)

@@ -321,6 +321,14 @@ def test_anonymous_list_is_published_only_admin_sees_all() -> None:
 
 
 @pytest.mark.unit
+def test_published_query_param_forces_published_only_for_admin() -> None:
+    # The assignment picker passes ?published=true to get only assignable policies.
+    svc = _FakeService()
+    assert _client(svc, ctx=_admin()).get("/policies?published=true").status_code == 200
+    assert svc.list_published_only is True
+
+
+@pytest.mark.unit
 def test_put_requires_admin() -> None:
     svc = _FakeService()
     resp = _client(svc, ctx=_consumer()).put(

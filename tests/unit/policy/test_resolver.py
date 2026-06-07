@@ -177,6 +177,22 @@ async def test_no_walk_and_no_system_default_returns_none() -> None:
 
 
 @pytest.mark.unit
+async def test_system_default_pointing_at_missing_graph_returns_none() -> None:
+    # Operational failure mode (client report): the system-default IRI is set but
+    # no Offer graph exists there (e.g. upgraded across the ADR-0012 offer→managed
+    # -policy IRI change without re-applying). resolve_offer returns None so the
+    # PDP default-denies — the resolver logs `offer_unresolved_default_deny`.
+    rec = "https://fdp.example/catalog/c-1"
+    missing_default = "https://fdp.example/policies/system-default"
+    fetcher = _FakeFetcher(graphs={rec: ""})  # record empty; default graph absent
+    resolver = GraphBackedOfferResolver(
+        fetcher,  # type: ignore[arg-type]
+        system_default_provider=lambda: missing_default,
+    )
+    assert await resolver.resolve_offer(rec) is None
+
+
+@pytest.mark.unit
 async def test_resource_rights_win_over_system_default() -> None:
     """A record's own ``dct:rights`` wins over the deployment default."""
     rec = "https://fdp.example/dataset/d-1"

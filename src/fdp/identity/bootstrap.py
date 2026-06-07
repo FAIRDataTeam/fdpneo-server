@@ -61,6 +61,7 @@ class FeatureFlags(BaseModel):
     data_provider: bool
     search: bool = False
     index: bool = False
+    user_management: bool = False
 
 
 class BootstrapConfig(BaseModel):
@@ -113,6 +114,7 @@ def build_bootstrap_router(
                 data_provider=True,
                 search=settings.search.enabled,
                 # index stays False until the FDP Index protocol (Phase 8) ships.
+                user_management=settings.idp_admin.enabled,
             ),
         )
 

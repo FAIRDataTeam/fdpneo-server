@@ -76,6 +76,14 @@
         }
       ],
       "realmRoles": []
+    },
+    {
+      "username": "service-account-fdp-server",
+      "enabled": true,
+      "serviceAccountClientId": "fdp-server",
+      "clientRoles": {
+        "realm-management": ["view-users", "query-users", "manage-users", "view-realm"]
+      }
     }
   ],
 
@@ -143,6 +151,23 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "fdp-server",
+      "name": "FAIR Data Point Server (service account)",
+      "description": "Confidential service-account client for the /users admin facade (ADR-0013). Holds a least-privilege realm-management subset.",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "fdp-server-dev-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
     }
   ],
 

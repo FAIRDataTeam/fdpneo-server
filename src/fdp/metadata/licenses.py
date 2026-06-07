@@ -350,9 +350,12 @@ def build_license_router(*, service: LicenseService, prefix: str = "/licenses") 
     @router.get("", response_model=LicenseListView, name="license_list")
     async def list_licenses(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[RequestContext, Depends(current_context)],
+        published: bool = False,
     ) -> LicenseListView:
-        # Anonymous/non-admin callers see only PUBLISHED licenses; admins see all.
-        published_only = _ADMIN_ROLE not in ctx.roles
+        # Anonymous/non-admin callers see only PUBLISHED licenses; admins see all
+        # — unless they opt into the assignment view with ?published=true, which a
+        # `dct:license` picker should pass (ADR-0012: only PUBLISHED is assignable).
+        published_only = published or _ADMIN_ROLE not in ctx.roles
         return LicenseListView(licenses=await service.list_licenses(published_only=published_only))
 
     @router.get("/{license_id}", name="license_get")

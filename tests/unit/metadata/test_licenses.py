@@ -287,6 +287,13 @@ def test_anonymous_list_is_published_only_admin_sees_all() -> None:
 
 
 @pytest.mark.unit
+def test_published_query_param_forces_published_only_for_admin() -> None:
+    svc = _FakeService()
+    _client(svc, ctx=_admin()).get("/licenses?published=true")
+    assert svc.list_published_only is True
+
+
+@pytest.mark.unit
 def test_put_requires_admin() -> None:
     svc = _FakeService()
     resp = _client(svc, ctx=_consumer()).put(

@@ -20,6 +20,7 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0010](0010-metadata-publication-state.md) | Metadata publication state (draft/published/archived) | Accepted |
 | [0011](0011-api-keys.md) | API keys for machine-to-machine access | Accepted |
 | [0012](0012-first-class-odrl-policy-and-license-documents.md) | First-class ODRL policy and license documents | Accepted |
+| [0013](0013-user-management-facade.md) | User-management facade over the IdP Admin API | Accepted |
 
 ## Format
 
