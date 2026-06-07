@@ -91,3 +91,46 @@ def test_normalize_content_type_strips_parameters() -> None:
     assert normalize_content_type("text/turtle; charset=utf-8") == "text/turtle"
     assert normalize_content_type("APPLICATION/LD+JSON") == "application/ld+json"
     assert normalize_content_type(None) is None
+
+
+# --- JSON-LD remote @context SSRF guard (audit F-01) ------------------------
+
+
+_INLINE_JSONLD = (
+    b'{"@context": {"title": "http://purl.org/dc/terms/title"},'
+    b' "@id": "https://example.org/x", "title": "ok"}'
+)
+
+
+@pytest.mark.unit
+def test_jsonld_inline_context_is_accepted() -> None:
+    g = parse(_INLINE_JSONLD, JSON_LD, base="https://example.org/x")
+    assert any("title" in str(p) for _, p, _ in g)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"@context": "http://127.0.0.1:18080/evil", "@id": "", "x": 1}',  # remote string
+        b'{"@context": ["http://evil/ctx", {"a": "b"}], "@id": ""}',  # remote in array
+        b'{"@context": {"@import": "http://evil/ctx"}, "@id": ""}',  # remote @import
+        b'{"nested": {"@context": "http://evil/ctx"}}',  # nested scoped context
+    ],
+)
+def test_jsonld_remote_context_is_rejected(body: bytes) -> None:
+    with pytest.raises(ValueError, match=r"SSRF|@context"):
+        parse(body, JSON_LD, base="https://example.org/x")
+
+
+@pytest.mark.unit
+def test_jsonld_remote_context_rejected_before_any_parse(monkeypatch) -> None:
+    # Prove the guard short-circuits *before* rdflib touches the network.
+    import rdflib
+
+    def _boom(*_a, **_k):
+        raise AssertionError("graph.parse must not run for a remote @context")
+
+    monkeypatch.setattr(rdflib.Graph, "parse", _boom)
+    with pytest.raises(ValueError, match="SSRF"):
+        parse(b'{"@context": "http://evil/ctx", "@id": ""}', JSON_LD)

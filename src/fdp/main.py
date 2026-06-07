@@ -96,6 +96,7 @@ from fdp.shared.context import RequestContext
 from fdp.shared.errors import SchemaViolation, register_exception_handlers
 from fdp.shared.events import EventBus
 from fdp.shared.logging import configure_logging
+from fdp.shared.security_headers import SecurityHeadersMiddleware
 from fdp.storage.postgres.engine import build_engine, build_session_factory
 from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
@@ -411,6 +412,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["ETag", "Location", "Link"],
     )
+    # Baseline security headers (audit F-05). Added last → outermost, so the
+    # headers are attached to every response, including CORS preflights and
+    # errors from inner layers.
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Route-registration order matters: the LDP router catches /{path:path}
     # under every method, so anything that should NOT resolve as an LDP

@@ -10,10 +10,15 @@ unknown media types. The router decides what HTTP status to return.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from types import MappingProxyType
 
 from rdflib import Graph
+
+# JSON-LD keys whose *string* values are document references the parser would
+# fetch over the network (the @context document, or an @import inside one).
+_JSONLD_REF_KEYS = ("@context", "@import")
 
 TURTLE = "text/turtle"
 JSON_LD = "application/ld+json"
@@ -123,9 +128,53 @@ def parse(body: bytes, media_type: str, *, base: str | None = None) -> Graph:
     fmt = _RDFLIB_FORMAT.get(media_type)
     if fmt is None:
         raise ValueError(f"unsupported media type: {media_type}")
+    if media_type == JSON_LD:
+        _reject_remote_jsonld_context(body)
     graph = Graph()
     graph.parse(data=body.decode("utf-8"), format=fmt, publicID=base)
     return graph
+
+
+def _reject_remote_jsonld_context(body: bytes) -> None:
+    """Reject JSON-LD whose ``@context``/``@import`` references a remote document.
+
+    A *string*-valued ``@context`` (or ``@import``) is a reference rdflib's JSON-LD
+    parser would dereference over the network — an SSRF vector: an authenticated
+    writer could make the server issue GETs to arbitrary internal/loopback/cloud-
+    metadata URLs (security audit 2026-06-07, finding F-01). Inline (object)
+    contexts don't fetch and are allowed. Runs *before* ``graph.parse`` so no
+    network request is ever made. Malformed JSON is left to rdflib to report.
+    """
+    try:
+        document = json.loads(body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return
+    if _has_remote_jsonld_ref(document):
+        raise ValueError(
+            "remote JSON-LD @context/@import is not permitted (SSRF risk); use an inline context"
+        )
+
+
+def _has_remote_jsonld_ref(node: object) -> bool:
+    """True if any ``@context``/``@import`` anywhere in ``node`` is a string reference."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _JSONLD_REF_KEYS and _is_string_ref(value):
+                return True
+            if _has_remote_jsonld_ref(value):
+                return True
+        return False
+    if isinstance(node, list):
+        return any(_has_remote_jsonld_ref(item) for item in node)
+    return False
+
+
+def _is_string_ref(value: object) -> bool:
+    if isinstance(value, str):
+        return True
+    if isinstance(value, list):
+        return any(isinstance(item, str) for item in value)
+    return False
 
 
 def normalize_content_type(header: str | None) -> str | None:
