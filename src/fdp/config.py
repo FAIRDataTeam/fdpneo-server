@@ -301,12 +301,51 @@ class DataSettings(BaseSettings):
     bandwidth bottleneck."""
 
     proxy_timeout_seconds: float = 30.0
-    """Per-request timeout when streaming an upstream download. Applies
-    only in ``stream`` mode."""
+    """Per-operation (connect / read) timeout when streaming an upstream
+    download. Applies only in ``stream`` mode. This is *not* a total
+    deadline — a steadily-trickling upstream can keep a read alive
+    indefinitely; ``proxy_max_seconds`` bounds the whole transfer."""
 
-    proxy_max_bytes: int = 1024 * 1024 * 1024  # 1 GiB
-    """Hard cap on a streamed download's size. Applies only in ``stream``
-    mode; oversize responses are aborted mid-stream."""
+    proxy_max_seconds: float = 60.0
+    """Total wall-clock deadline for a single streamed download (audit
+    N-04). The stream is aborted once exceeded, independent of
+    ``proxy_timeout_seconds``, to bound slow-upstream worker occupancy."""
+
+    proxy_max_bytes: int = 256 * 1024 * 1024  # 256 MiB
+    """Hard cap on a streamed download's size (audit N-04). Applies only
+    in ``stream`` mode; oversize responses are aborted mid-stream. Lowered
+    from 1 GiB to a safer default — raise per deployment if large
+    distributions are served through the proxy rather than by redirect."""
+
+    proxy_max_redirects: int = 3
+    """Maximum redirect hops the stream-mode proxy will follow. Each hop is
+    re-validated by the SSRF guard (audit N-02), so an allow-listed host
+    cannot ``302`` the proxy inward."""
+
+    # ``NoDecode`` so the env value may be a comma-separated string as well as a
+    # JSON array, matching ``SchemaSyncSettings.allowed_hosts``.
+    allowed_download_hosts: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Optional egress allow-list for stream-mode download hosts (audit "
+            "N-02). Empty allows any *public* host (private/loopback/link-local "
+            "targets are always blocked). Set to lock the proxy to known hosts. "
+            "JSON array or comma-separated via FDP_DATA_ALLOWED_DOWNLOAD_HOSTS."
+        ),
+    )
+
+    @field_validator("allowed_download_hosts", mode="before")
+    @classmethod
+    def _split_download_hosts(cls, value: object) -> object:
+        """Parse the env value into a list of hostnames (JSON array or CSV)."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [host.strip() for host in text.split(",") if host.strip()]
+        return value
 
 
 class IdpAdminSettings(BaseSettings):
@@ -386,6 +425,12 @@ class Settings(BaseSettings):
             "W3ID-hosted FDP ontology."
         ),
     )
+
+    # Salt for pseudonymizing the OIDC subject in application logs (audit
+    # F-09 / R-10). When unset, a per-process random salt is used (subjects are
+    # still pseudonymized, but pseudonyms don't survive a restart). Set a stable
+    # secret value to correlate a principal across restarts during incidents.
+    log_subject_salt: SecretStr | None = None
 
     # Postgres
     postgres_dsn: PostgresDsn

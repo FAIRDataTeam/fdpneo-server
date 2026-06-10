@@ -48,8 +48,9 @@ def test_production_log_lines_are_json(capture_root_logs: StringIO) -> None:
 
 @pytest.mark.unit
 def test_request_context_is_merged_into_log_line(capture_root_logs: StringIO) -> None:
+    raw_subject = "https://idp.example/realms/fdp#alice"
     ctx = RequestContext(
-        subject="https://idp.example/realms/fdp#alice",
+        subject=raw_subject,
         roles=frozenset({"steward"}),
         request_timestamp=datetime.now(UTC),
         trace_id="trace-xyz",
@@ -60,8 +61,37 @@ def test_request_context_is_merged_into_log_line(capture_root_logs: StringIO) ->
     line = capture_root_logs.getvalue().strip().splitlines()[-1]
     payload = json.loads(line)
     assert payload["trace_id"] == "trace-xyz"
-    assert payload["subject"] == "https://idp.example/realms/fdp#alice"
     assert payload["is_anonymous"] is False
+    # The raw OIDC subject (PII) is never emitted — it is pseudonymized
+    # (audit F-09 / R-10).
+    assert payload["subject"] != raw_subject
+    assert payload["subject"].startswith("subj_")
+
+
+@pytest.mark.unit
+def test_explicit_subject_kwarg_is_pseudonymized(capture_root_logs: StringIO) -> None:
+    raw_subject = "https://idp.example/realms/fdp#bob"
+    log = structlog.get_logger("fdp.test")
+    # A call site that passes the subject explicitly (the F-09 offenders) is
+    # pseudonymized at the same chokepoint, no per-site change required.
+    log.info("api_key_minted", subject=raw_subject, owner_subject=raw_subject)
+    payload = json.loads(capture_root_logs.getvalue().strip().splitlines()[-1])
+    assert payload["subject"] != raw_subject
+    assert payload["subject"].startswith("subj_")
+    # ``owner_subject`` is covered too, and identical subjects map to the same
+    # pseudonym (stable within a process).
+    assert payload["owner_subject"] == payload["subject"]
+
+
+@pytest.mark.unit
+def test_configured_salt_makes_pseudonym_stable() -> None:
+    from fdp.shared.logging import pseudonymize_subject
+
+    subject = "https://idp.example/realms/fdp#carol"
+    first = pseudonymize_subject(subject, "salt-A")
+    assert first == pseudonymize_subject(subject, "salt-A")  # deterministic
+    assert first != pseudonymize_subject(subject, "salt-B")  # salt-dependent
+    assert first != subject  # not the raw identifier
 
 
 @pytest.mark.unit

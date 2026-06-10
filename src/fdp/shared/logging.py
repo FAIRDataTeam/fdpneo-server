@@ -17,7 +17,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets
 import sys
 from collections.abc import MutableMapping
 from typing import Any, Literal
@@ -30,6 +32,19 @@ from fdp.shared.context import get_current
 Environment = Literal["development", "staging", "production"]
 
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.access", "uvicorn.error")
+
+# Log fields that carry the OIDC subject (an identifier — PII under GDPR). Every
+# such field is pseudonymized before a line is emitted (security audit
+# 2026-06-07 F-09 / R-10). The *identified* trail lives in the audit log and the
+# audit named graph, which do not flow through structlog, so this loses nothing
+# for forensics while keeping raw identifiers out of application logs.
+_SUBJECT_FIELDS = ("subject", "owner_subject")
+
+# Fallback salt when none is configured: a fresh value per process. Subjects are
+# still pseudonymized (fail-safe — a raw subject is never emitted), but the
+# pseudonyms aren't stable across restarts. Set ``FDP_LOG_SUBJECT_SALT`` for a
+# stable pseudonym that survives restarts (useful for incident correlation).
+_DEFAULT_SUBJECT_SALT = secrets.token_hex(16)
 
 
 def _request_context_processor(
@@ -46,15 +61,57 @@ def _request_context_processor(
     return event_dict
 
 
-def configure_logging(env: Environment) -> None:
+def pseudonymize_subject(subject: str, salt: str) -> str:
+    """Return a stable, salted pseudonym for an OIDC ``subject``.
+
+    Same ``subject`` + ``salt`` always yields the same token, so a principal's
+    actions stay correlatable across log lines, but the raw identifier is not
+    recoverable from the logs without the salt. Not reversible.
+    """
+    digest = hashlib.sha256(f"{salt}\x00{subject}".encode()).hexdigest()
+    return f"subj_{digest[:16]}"
+
+
+def _make_subject_pseudonymizer(
+    salt: str,
+) -> structlog.types.Processor:
+    """Build the processor that replaces subject identifiers with pseudonyms.
+
+    Runs after :func:`_request_context_processor` (which injects the active
+    subject) so it catches both the auto-injected subject and any subject passed
+    explicitly at a call site — one chokepoint, no per-call-site discipline
+    required.
+    """
+
+    def processor(
+        _logger: object,
+        _method_name: str,
+        event_dict: MutableMapping[str, Any],
+    ) -> MutableMapping[str, Any]:
+        for field in _SUBJECT_FIELDS:
+            value = event_dict.get(field)
+            if isinstance(value, str) and value:
+                event_dict[field] = pseudonymize_subject(value, salt)
+        return event_dict
+
+    return processor
+
+
+def configure_logging(env: Environment, *, subject_salt: str | None = None) -> None:
     """Configure structlog and the root stdlib logger for ``env``.
 
     Safe to call multiple times — each invocation rebuilds the processor
     chain and re-attaches the root handler. Tests rely on this idempotence.
+
+    ``subject_salt`` salts the subject pseudonymization (F-09 / R-10). When
+    omitted, a per-process random salt is used, so subjects are always
+    pseudonymized but the pseudonyms aren't stable across restarts.
     """
+    salt = subject_salt or _DEFAULT_SUBJECT_SALT
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         _request_context_processor,
+        _make_subject_pseudonymizer(salt),
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.CallsiteParameterAdder(
@@ -105,4 +162,4 @@ def configure_logging(env: Environment) -> None:
         uvicorn_logger.propagate = True
 
 
-__all__ = ["Environment", "configure_logging"]
+__all__ = ["Environment", "configure_logging", "pseudonymize_subject"]

@@ -27,6 +27,7 @@ provider does not maintain a separate slug-to-URI map.
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -40,9 +41,16 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fdp.data.distributions import DistributionInfo, RecordReader, resolve_distribution
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Forbidden, NotFound, UnsupportedMediaType
+from fdp.shared.errors import (
+    BadRequest,
+    Forbidden,
+    NotFound,
+    UnsupportedMediaType,
+    UpstreamError,
+)
 from fdp.shared.graphs import data_graph_uri
 from fdp.shared.sparql_safety import assert_query_safe
+from fdp.shared.ssrf import assert_public_url
 
 if TYPE_CHECKING:
     from fdp.config import DataSettings
@@ -103,12 +111,11 @@ def build_data_router(
         url = info.download_url
         if settings.download_mode == "redirect":
             return RedirectResponse(url, status_code=302)
-        return _stream_upstream(
+        return await _stream_upstream(
             url=url,
             client=http_client,
             request=request,
-            timeout=settings.proxy_timeout_seconds,
-            max_bytes=settings.proxy_max_bytes,
+            settings=settings,
         )
 
     @router.get("/{distribution_id}/sparql", name="data_sparql_get")
@@ -224,43 +231,79 @@ def _trace_id(request: Request) -> str:
 # --- file download (stream mode) -------------------------------------------
 
 
-def _stream_upstream(
+async def _stream_upstream(
     *,
     url: str,
     client: httpx.AsyncClient,
     request: Request,
-    timeout: float,
-    max_bytes: int,
+    settings: DataSettings,
 ) -> StreamingResponse:
     """Proxy an upstream download, forwarding Range / If-* request headers.
 
-    The response carries the upstream's status, content-type,
-    content-length, and accept-ranges. Cap on byte volume aborts the
-    stream — this is the FDP's protection against unintentionally
-    pulling multi-GiB blobs.
+    The upstream URL comes from steward-supplied ``dcat:downloadURL`` metadata,
+    so it passes the SSRF guard (:func:`assert_public_url`, audit N-02) before
+    the entry fetch *and* at every redirect hop — redirects are resolved
+    manually (``follow_redirects=False``) precisely so each hop is re-validated,
+    closing the "allow-listed host 302s inward" gap. The entry URL is validated
+    here so a blocked target fails cleanly with ``502`` before any streaming
+    response is committed; a redirect that later points inward aborts the
+    in-flight stream instead (the status line is already sent).
+
+    Volume is capped by ``proxy_max_bytes`` and the whole transfer by a
+    wall-clock ``proxy_max_seconds`` deadline (audit N-04) — defense against
+    large-blob / slow-upstream worker exhaustion.
     """
+    allowed = frozenset(settings.allowed_download_hosts) or None
+    await assert_public_url(url, allowed_hosts=allowed)
     forwarded = _forwarded_headers(request)
 
     async def iterator() -> AsyncIterator[bytes]:
+        deadline = time.monotonic() + settings.proxy_max_seconds
         bytes_sent = 0
-        async with client.stream(
-            "GET",
-            url,
-            headers=forwarded,
-            timeout=timeout,
-            follow_redirects=True,
-        ) as response:
-            response.raise_for_status()
-            async for chunk in response.aiter_bytes():
-                bytes_sent += len(chunk)
-                if bytes_sent > max_bytes:
-                    log.warning(
-                        "data_provider_proxy_size_exceeded",
-                        url=url,
-                        max_bytes=max_bytes,
-                    )
-                    return
-                yield chunk
+        current = url
+        hops = 0
+        while True:
+            async with client.stream(
+                "GET",
+                current,
+                headers=forwarded,
+                timeout=settings.proxy_timeout_seconds,
+                follow_redirects=False,
+            ) as response:
+                if response.is_redirect:
+                    hops += 1
+                    location = response.headers.get("location")
+                    if location is None or hops > settings.proxy_max_redirects:
+                        log.warning(
+                            "data_provider_proxy_redirect_stopped",
+                            url=url,
+                            hops=hops,
+                        )
+                        return
+                    current = urljoin(current, location)
+                    try:
+                        await assert_public_url(current, allowed_hosts=allowed)
+                    except UpstreamError:
+                        # Status line already sent; can't 502 now — log and
+                        # truncate rather than fetch the inward target.
+                        log.warning("data_provider_proxy_redirect_blocked", target=current)
+                        return
+                    continue
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    if time.monotonic() > deadline:
+                        log.warning("data_provider_proxy_deadline_exceeded", url=url)
+                        return
+                    bytes_sent += len(chunk)
+                    if bytes_sent > settings.proxy_max_bytes:
+                        log.warning(
+                            "data_provider_proxy_size_exceeded",
+                            url=url,
+                            max_bytes=settings.proxy_max_bytes,
+                        )
+                        return
+                    yield chunk
+                return
 
     # We can't introspect the upstream response without buffering it;
     # rely on the streaming response to pass through chunked encoding

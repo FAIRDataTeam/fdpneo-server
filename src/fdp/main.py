@@ -388,7 +388,14 @@ def create_app() -> FastAPI:
     isolated apps with different settings.
     """
     settings = get_settings()
-    configure_logging(settings.environment)
+    configure_logging(
+        settings.environment,
+        subject_salt=(
+            settings.log_subject_salt.get_secret_value()
+            if settings.log_subject_salt is not None
+            else None
+        ),
+    )
 
     docs_on = _docs_enabled(settings.environment, settings.expose_api_docs)
     app = FastAPI(

@@ -179,13 +179,20 @@ def test_download_redirects_to_upstream_in_redirect_mode() -> None:
 # --- stream mode ----------------------------------------------------------
 
 
+# A literal *public* IP upstream so the SSRF guard validates without a real DNS
+# lookup (security audit N-02). respx still intercepts the HTTP call.
+_PUBLIC_UPSTREAM = "https://8.8.8.8/d1.csv"
+_INTERNAL_UPSTREAM = "http://169.254.169.254/latest/meta-data/"
+
+
 @pytest.mark.unit
 def test_download_streams_upstream_bytes_in_stream_mode() -> None:
-    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph()})
-    upstream = "https://files.example.org/d1.csv"
+    repo = _FakeRepo(
+        graphs={DIST_IRI: _distribution_graph(download_url=_PUBLIC_UPSTREAM)}
+    )
 
     with respx.mock(assert_all_called=True) as mock:
-        mock.get(upstream).mock(
+        mock.get(_PUBLIC_UPSTREAM).mock(
             return_value=httpx.Response(
                 200,
                 content=b"hello,world\n",
@@ -205,6 +212,61 @@ def test_download_streams_upstream_bytes_in_stream_mode() -> None:
 
     assert response.status_code == 200
     assert response.content == b"hello,world\n"
+
+
+@pytest.mark.unit
+def test_stream_mode_blocks_internal_download_url_with_502() -> None:
+    # An attacker-supplied downloadURL pointing at the cloud-metadata service
+    # is rejected up front (audit N-02) — the proxy never issues the request.
+    repo = _FakeRepo(
+        graphs={DIST_IRI: _distribution_graph(download_url=_INTERNAL_UPSTREAM)}
+    )
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(_INTERNAL_UPSTREAM).mock(
+            return_value=httpx.Response(200, content=b"secrets")
+        )
+        app = _build_app(
+            repo=repo,
+            pdp=_FakePDP(),
+            adapter=_FakeAdapter(),
+            settings=DataSettings(download_mode="stream"),
+            http_client=httpx.AsyncClient(),
+        )
+        client = TestClient(app)
+        response = client.get(f"/data/{DIST_ID}")
+    assert response.status_code == 502
+    assert response.json()["code"] == "fdp.upstream_error"
+    assert not route.called
+
+
+@pytest.mark.unit
+def test_stream_mode_does_not_follow_redirect_to_internal_host() -> None:
+    # A public upstream that 302s inward must not be followed — each hop is
+    # re-validated (audit N-02). The body is truncated rather than fetched.
+    repo = _FakeRepo(
+        graphs={DIST_IRI: _distribution_graph(download_url=_PUBLIC_UPSTREAM)}
+    )
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(_PUBLIC_UPSTREAM).mock(
+            return_value=httpx.Response(302, headers={"location": _INTERNAL_UPSTREAM})
+        )
+        internal = mock.get(_INTERNAL_UPSTREAM).mock(
+            return_value=httpx.Response(200, content=b"secrets")
+        )
+        app = _build_app(
+            repo=repo,
+            pdp=_FakePDP(),
+            adapter=_FakeAdapter(),
+            settings=DataSettings(download_mode="stream"),
+            http_client=httpx.AsyncClient(),
+        )
+        client = TestClient(app)
+        response = client.get(f"/data/{DIST_ID}")
+    # Entry URL was public so a 200 stream started; the inward redirect is
+    # dropped, so the internal target is never fetched and the body is empty.
+    assert response.status_code == 200
+    assert response.content == b""
+    assert not internal.called
 
 
 # --- SPARQL forwarding ----------------------------------------------------
