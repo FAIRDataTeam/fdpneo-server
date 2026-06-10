@@ -34,12 +34,12 @@ common operator need without another schema migration.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Annotated, Any, Final, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, cast
 
 import structlog
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import JSON, String, delete, select
+from sqlalchemy import JSON, CursorResult, String, delete, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime, TypeDecorator
@@ -393,8 +393,11 @@ class SettingsRepository:
         if key not in SETTINGS_REGISTRY:
             raise NotFound(f"unknown settings key: {key}")
         async with self._session_factory() as session:
-            result = await session.execute(
-                delete(RuntimeSettingRow).where(RuntimeSettingRow.key == key)
+            result = cast(
+                "CursorResult[Any]",
+                await session.execute(
+                    delete(RuntimeSettingRow).where(RuntimeSettingRow.key == key)
+                ),
             )
             await session.commit()
         removed = (result.rowcount or 0) > 0
@@ -409,7 +412,9 @@ class SettingsRepository:
         override rows removed. Audit-logged via structlog.
         """
         async with self._session_factory() as session:
-            result = await session.execute(delete(RuntimeSettingRow))
+            result = cast(
+                "CursorResult[Any]", await session.execute(delete(RuntimeSettingRow))
+            )
             await session.commit()
         removed = result.rowcount or 0
         log.info("settings_cleared_all", removed=removed, subject=subject)

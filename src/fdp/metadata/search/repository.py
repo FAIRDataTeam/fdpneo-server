@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Float, and_, delete, func, or_, select
+from sqlalchemy import Float, and_, delete, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from fdp.metadata.search.model import SearchRow
@@ -216,7 +216,7 @@ class SearchIndexRepository:
     def _rank(q: SearchQuery) -> ColumnElement[float]:
         if not q.text or not q.text.strip():
             # No text query → rank is constant; order falls back to updated_at.
-            return func.cast(0, Float())
+            return func.cast(literal(0), Float())
         tsquery = func.plainto_tsquery(q.language, q.text)
         return func.ts_rank(SearchRow.search_text, tsquery)
 

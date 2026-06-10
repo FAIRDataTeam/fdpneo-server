@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Annotated, Final
+from typing import TYPE_CHECKING, Annotated, Final, Protocol
 
 import structlog
 from fastapi import APIRouter, Depends, Request, Response
@@ -54,9 +54,19 @@ from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, ODRL, OWL
 
 if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
-    from fdp.policy.pdp import PDP
     from fdp.shared.events import Event, EventBus
     from fdp.storage.triplestore import TripleStoreAdapter
+
+
+class _CacheInvalidatingPDP(Protocol):
+    """The slice of the PDP that PolicyService depends on: clearing the cache.
+
+    Both the concrete ``policy.pdp.PDP`` and the ``RequestScopedPDP`` runtime
+    facade satisfy this, so the service accepts either without importing the
+    facade — the dependency stays a typing-only protocol.
+    """
+
+    async def invalidate_all(self) -> int: ...
 
 log = structlog.get_logger(__name__)
 
@@ -107,7 +117,7 @@ class PolicyService:
         *,
         repository: MetadataRepository,
         adapter: TripleStoreAdapter,
-        pdp: PDP,
+        pdp: _CacheInvalidatingPDP,
         base_url: str,
         event_bus: EventBus | None = None,
     ) -> None:

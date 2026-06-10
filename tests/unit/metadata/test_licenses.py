@@ -117,7 +117,7 @@ async def test_put_stores_license_document() -> None:
     store = _Store()
     info = await _service(store).put("cc-by-4.0", CC_BY, subject="admin")
     assert info.iri == f"{BASE}/fdp-api/licenses/cc-by-4.0"
-    assert info.title.startswith("Creative Commons")
+    assert (info.title or "").startswith("Creative Commons")
     assert f"{BASE}/fdp-api/licenses/cc-by-4.0" in store.graphs
     assert store.events == ["RecordModified"]
 
@@ -194,7 +194,7 @@ async def test_list_returns_managed_licenses() -> None:
     await svc.put("cc-by-4.0", CC_BY, subject="admin")
     listed = await svc.list_licenses()
     assert [lic.id for lic in listed] == ["cc-by-4.0"]
-    assert listed[0].title.startswith("Creative Commons")
+    assert (listed[0].title or "").startswith("Creative Commons")
 
 
 @pytest.mark.unit

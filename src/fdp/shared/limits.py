@@ -41,7 +41,12 @@ def _client_ip(scope: Scope, *, trust_forwarded_for: bool) -> str:
     return client[0] if client else "unknown"
 
 
-async def _send_envelope(send: Send, error: TooManyRequests | PayloadTooLarge, *, extra_headers=()):
+async def _send_envelope(
+    send: Send,
+    error: TooManyRequests | PayloadTooLarge,
+    *,
+    extra_headers: tuple[tuple[bytes, bytes], ...] = (),
+) -> None:
     body = json.dumps(
         {"code": error.code, "message": error.message, "docs_url": error.docs_url, "details": None}
     ).encode("utf-8")

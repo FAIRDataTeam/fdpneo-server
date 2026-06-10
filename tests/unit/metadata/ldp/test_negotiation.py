@@ -124,11 +124,13 @@ def test_jsonld_remote_context_is_rejected(body: bytes) -> None:
 
 
 @pytest.mark.unit
-def test_jsonld_remote_context_rejected_before_any_parse(monkeypatch) -> None:
+def test_jsonld_remote_context_rejected_before_any_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Prove the guard short-circuits *before* rdflib touches the network.
     import rdflib
 
-    def _boom(*_a, **_k):
+    def _boom(*_a: object, **_k: object) -> None:
         raise AssertionError("graph.parse must not run for a remote @context")
 
     monkeypatch.setattr(rdflib.Graph, "parse", _boom)

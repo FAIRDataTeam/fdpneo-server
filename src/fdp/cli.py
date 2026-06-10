@@ -78,7 +78,7 @@ def profile_validate(
             f"[green]ok[/] {profile.name} {profile.version} — "
             f"{len(profile.schemas)} schemas, "
             f"{len(profile.offers)} offers, "
-            f"{len(profile.manifest.containers)} containers, "
+            f"{len(profile.manifest.resource_definitions)} resource definitions, "
             f"{len(profile.seed_records)} seed records"
         )
         return

@@ -162,6 +162,11 @@ reportMissingTypeStubs = "warning"
 reportUnknownMemberType = "warning"
 reportUnknownVariableType = "warning"
 reportUnknownArgumentType = "warning"
+# Unit tests legitimately reach into a module's internals (e.g. `mod._helper`),
+# which is the intended way to test them. There is no cross-module private
+# access in src today, so disabling this rule is test-ergonomics only, not a
+# loosening of the production type contract.
+reportPrivateUsage = false
 
 # ----------------------------------------------------------------------------
 # Pytest

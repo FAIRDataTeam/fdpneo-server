@@ -14,11 +14,11 @@ def _app() -> TestClient:
     app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/thing")
-    async def thing() -> dict[str, str]:
+    async def thing() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         return {"ok": "yes"}
 
     @app.get("/fdp-api/docs")  # stand-in for the Swagger UI path
-    async def docs() -> dict[str, str]:
+    async def docs() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         return {"ui": "swagger"}
 
     return TestClient(app)

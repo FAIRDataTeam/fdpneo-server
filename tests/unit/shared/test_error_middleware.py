@@ -16,11 +16,11 @@ def _client(*, with_cors: bool = False) -> TestClient:
     app = FastAPI()
 
     @app.get("/boom")
-    async def boom() -> None:
+    async def boom() -> None:  # pyright: ignore[reportUnusedFunction]
         raise RuntimeError("secret internal detail")
 
     @app.get("/conflict")
-    async def conflict() -> None:
+    async def conflict() -> None:  # pyright: ignore[reportUnusedFunction]
         raise Conflict("dup", details={"x": 1})
 
     # Deliberately NO register_exception_handlers: exercise the middleware path

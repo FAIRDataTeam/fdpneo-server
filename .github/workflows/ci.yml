@@ -20,7 +20,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --frozen
+      # --extra dev: ruff/pytest/pyright live in [project.optional-dependencies]
+      # dev, which a plain `uv sync` does not install (the tool would then fail
+      # with "Failed to spawn").
+      - run: uv sync --frozen --extra dev
       - run: uv run ruff check .
 
   types:
@@ -31,7 +34,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --frozen --extra dev
       - run: uv run pyright
 
   test:
@@ -42,7 +45,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --frozen --extra dev
       # Unit + contract are fast and need no services. The testcontainers-backed
       # integration suite (GraphDB/Fuseki/Postgres) can be added as a separate
       # job with Docker services when desired.

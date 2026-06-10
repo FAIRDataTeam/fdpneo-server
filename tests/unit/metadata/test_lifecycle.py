@@ -61,7 +61,7 @@ class _DatasetAdapter:
         res = self.ds.query(sparql)
         fmt = "turtle" if res.type == "CONSTRUCT" else "json"
         out = res.serialize(format=fmt)
-        return out if isinstance(out, bytes) else out.encode("utf-8")
+        return out if isinstance(out, bytes) else (out or "").encode("utf-8")
 
     async def ask(self, sparql: str) -> bool:
         return bool(self.ds.query(sparql).askAnswer)

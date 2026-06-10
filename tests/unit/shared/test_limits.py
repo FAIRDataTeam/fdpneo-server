@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.types import Message, Receive, Scope, Send
 
 from fdp.shared.limits import BodySizeLimitMiddleware, RateLimitMiddleware
 
@@ -16,7 +17,7 @@ def _rate_app(limit: int) -> TestClient:
     app.add_middleware(RateLimitMiddleware, requests_per_window=limit, window_seconds=60)
 
     @app.get("/ping")
-    async def ping() -> dict[str, str]:
+    async def ping() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         return {"ok": "yes"}
 
     return TestClient(app)
@@ -40,7 +41,7 @@ def _body_app(max_bytes: int) -> TestClient:
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=max_bytes)
 
     @app.post("/echo")
-    async def echo(request: Request) -> dict[str, int]:
+    async def echo(request: Request) -> dict[str, int]:  # pyright: ignore[reportUnusedFunction]
         body = await request.body()
         return {"len": len(body)}
 
@@ -64,9 +65,9 @@ def test_body_over_cap_rejected_via_content_length() -> None:
 async def test_streaming_body_over_cap_rejected_without_content_length() -> None:
     # Drive the middleware as raw ASGI with chunked body and no Content-Length,
     # so the streaming byte-counter (not the fast path) does the rejecting.
-    sent: list[dict] = []
+    sent: list[Message] = []
 
-    async def app(scope, receive, send) -> None:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
         body = b""
         while True:
             message = await receive()
@@ -85,10 +86,10 @@ async def test_streaming_body_over_cap_rejected_without_content_length() -> None
         ]
     )
 
-    async def receive() -> dict:
+    async def receive() -> Message:
         return next(chunks)
 
-    async def send(message: dict) -> None:
+    async def send(message: Message) -> None:
         sent.append(message)
 
     await mw(scope, receive, send)

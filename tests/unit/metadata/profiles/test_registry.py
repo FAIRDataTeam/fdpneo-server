@@ -77,8 +77,9 @@ def test_all_preserves_manifest_order() -> None:
 @pytest.mark.unit
 def test_by_prefix_and_root() -> None:
     cache = _three_type_cache()
-    assert cache.by_prefix("catalog") is not None
-    assert cache.by_prefix("catalog").name == "Catalog"
+    catalog = cache.by_prefix("catalog")
+    assert catalog is not None
+    assert catalog.name == "Catalog"
     assert cache.by_prefix("not-a-thing") is None
     root = cache.root()
     assert root is not None

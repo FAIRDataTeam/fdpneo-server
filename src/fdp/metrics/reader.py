@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import Select, desc, func, select
 
 from fdp.metrics.repository import MetricsDaily
 
@@ -206,24 +206,21 @@ class MetricsReader:
 
     @staticmethod
     def _apply_filters(
-        stmt: object,
+        stmt: Select[Any],
         since: date,
         until: date,
         resource_iri: str | None,
         event_type: str | None,
-    ) -> object:
+    ) -> Select[Any]:
         """Apply the standard ``WHERE`` clauses common to every reader query."""
-        # ``stmt`` is typed as object because SQLAlchemy's Select type is
-        # parameterized in ways that don't compose cleanly across the various
-        # callers; the runtime calls below are all valid on Select instances.
-        stmt = stmt.where(  # type: ignore[union-attr]
+        stmt = stmt.where(
             MetricsDaily.bucket >= since,
             MetricsDaily.bucket <= until,
         )
         if resource_iri is not None:
-            stmt = stmt.where(MetricsDaily.resource_iri == resource_iri)  # type: ignore[union-attr]
+            stmt = stmt.where(MetricsDaily.resource_iri == resource_iri)
         if event_type is not None:
-            stmt = stmt.where(MetricsDaily.event_type == event_type)  # type: ignore[union-attr]
+            stmt = stmt.where(MetricsDaily.event_type == event_type)
         return stmt
 
 

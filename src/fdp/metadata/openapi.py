@@ -309,9 +309,7 @@ def inject_resource_definition_paths(
 
     # 2. Drop FDP-generated tags too — they belong to types that may no
     #    longer exist.
-    spec["tags"] = [
-        t for t in tags if not (isinstance(t, dict) and t.get("name", "").startswith(_TAG_PREFIX))
-    ]
+    spec["tags"] = [t for t in tags if not str(t.get("name", "")).startswith(_TAG_PREFIX)]
     tags = spec["tags"]
 
     # 3. Emit new paths + tags.

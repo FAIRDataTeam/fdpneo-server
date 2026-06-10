@@ -9,6 +9,7 @@ The Keycloak adapter is tested separately in ``test_keycloak_admin.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -17,11 +18,13 @@ from fastapi.testclient import TestClient
 from fdp.identity.users import (
     CreateUserRequest,
     UpdateUserRequest,
+    UserDirectory,
     UserInfo,
     build_users_router,
 )
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import Conflict, NotFound
+from fdp.shared.events import EventBus
 
 ISSUER = "http://idp.local/realms/fdp"
 ADMIN_ID = "11111111-1111-1111-1111-111111111111"
@@ -36,7 +39,9 @@ ABSENT_ID = "33333333-3333-3333-3333-333333333333"
 class _FakeDirectory:
     users: dict[str, UserInfo] = field(default_factory=dict)
 
-    async def list_users(self, *, search, limit, offset):
+    async def list_users(
+        self, *, search: str | None, limit: int, offset: int
+    ) -> tuple[list[UserInfo], int]:
         items = list(self.users.values())
         if search:
             items = [u for u in items if search.lower() in (u.username + (u.email or "")).lower()]
@@ -95,7 +100,12 @@ def _seed() -> _FakeDirectory:
 # --- client harness --------------------------------------------------------
 
 
-def _client(directory, *, ctx: RequestContext, event_bus=None) -> TestClient:
+def _client(
+    directory: UserDirectory | None,
+    *,
+    ctx: RequestContext,
+    event_bus: EventBus | None = None,
+) -> TestClient:
     from fdp.identity.deps import current_context
     from fdp.shared.errors import register_exception_handlers
 
@@ -108,9 +118,11 @@ def _client(directory, *, ctx: RequestContext, event_bus=None) -> TestClient:
 
 @dataclass
 class _CapturingBus:
-    events: list = field(default_factory=list)
+    # A capturing stand-in for EventBus; events are read back via isinstance
+    # checks in the assertions, so the element type is intentionally Any.
+    events: list[Any] = field(default_factory=list)
 
-    async def publish(self, event) -> None:
+    async def publish(self, event: object) -> None:
         self.events.append(event)
 
 
@@ -296,7 +308,7 @@ def test_mutations_emit_admin_action_audit_events() -> None:
 
     bus = _CapturingBus()
     dir_ = _seed()
-    client = _client(dir_, ctx=_admin(), event_bus=bus)
+    client = _client(dir_, ctx=_admin(), event_bus=cast(EventBus, bus))
 
     client.post("/users", json={"username": "jdoe", "email": "j@x", "roles": ["steward"]})
     client.patch(f"/users/{STEWARD_ID}", json={"roles": ["steward", "admin"]})
@@ -315,7 +327,7 @@ def test_mutations_emit_admin_action_audit_events() -> None:
 def test_rejected_mutation_emits_no_audit_event() -> None:
     bus = _CapturingBus()
     # self-lockout (409) must not produce an audit row.
-    _client(_seed(), ctx=_admin(), event_bus=bus).patch(
+    _client(_seed(), ctx=_admin(), event_bus=cast(EventBus, bus)).patch(
         f"/users/{ADMIN_ID}", json={"roles": ["steward"]}
     )
     assert bus.events == []

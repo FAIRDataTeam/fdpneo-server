@@ -14,7 +14,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -112,7 +112,7 @@ class _FakeSession:
 
 def _fake_session_factory(*, fail: bool = False, delay: float = 0.0) -> Any:
     @asynccontextmanager
-    async def _session() -> AsyncIterator[_FakeSession]:
+    async def _session() -> AsyncGenerator[_FakeSession, None]:
         yield _FakeSession(fail=fail, delay=delay)
 
     def _factory() -> Any:

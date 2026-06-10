@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
@@ -54,7 +54,7 @@ def _fake_session_factory(row: ProfileAppliedRow | None) -> Any:
     """Return an async_sessionmaker-shaped callable that yields ``_FakeSession``."""
 
     @asynccontextmanager
-    async def _session() -> AsyncIterator[_FakeSession]:
+    async def _session() -> AsyncGenerator[_FakeSession, None]:
         yield _FakeSession(row)
 
     def _factory() -> Any:
