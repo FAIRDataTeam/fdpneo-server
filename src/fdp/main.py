@@ -255,6 +255,11 @@ def _build_shared_state(app: FastAPI) -> None:
         adapter=app.state.triplestore,
         validator=app.state.shacl_validator,
         base_url=str(settings.base_url),
+        # The FDP root schema (the root RD's schema) is editable but not
+        # deletable (task 10.5). Resolved per-call from the live RD cache, which
+        # is published after this point and swapped on every profile re-apply /
+        # RD mutation.
+        root_schema_iri_provider=lambda: _root_schema_iri(app),
     )
 
     # First-class ODRL policy and license documents (Phase 14 / ADR-0012). Two
@@ -852,6 +857,19 @@ async def _publish_resource_definitions(app: FastAPI, cache: ResourceDefinitionC
         resource_definitions=len(cache.all()),
         shapes_warmed=len(schema_iris),
     )
+
+
+def _root_schema_iri(app: FastAPI) -> str | None:
+    """The FDP root schema IRI from the live RD cache, or ``None`` before bootstrap.
+
+    Feeds ``SchemaService``'s delete-guard so the root resource type's schema
+    (``fdp:Repository`` in the default profile) is editable but not deletable.
+    """
+    cache: ResourceDefinitionCache | None = getattr(app.state, "resource_definitions", None)
+    if cache is None:
+        return None
+    root = cache.root()
+    return root.schema_iri if root is not None else None
 
 
 def _container_targets(cache: ResourceDefinitionCache) -> list[str]:

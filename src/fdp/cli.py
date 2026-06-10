@@ -13,6 +13,8 @@ Subcommands:
 * ``fdp db migrate``              — run Alembic migrations.
 * ``fdp metrics rollup``          — run metrics rollups (cron-driven).
 * ``fdp schema sync``             — refetch remote-sourced schemas (cron-driven).
+* ``fdp schema migrate-namespace`` — relocate profile schemas into the
+  schemas namespace (one-shot, for pre-10.5 deployments).
 * ``fdp search reindex``          — rebuild the metadata search index.
 
 The CLI is built with Typer for argument parsing and Rich for output.
@@ -30,6 +32,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from fdp.metadata.profiles.applier import ApplyReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
+    from fdp.metadata.profiles.migrate import MigrationReport
     from fdp.metadata.schema_sync import SyncReport
     from fdp.metrics.aggregation import RollupResult
 
@@ -354,6 +357,66 @@ def schema_sync(
     )
     if report.failed:
         raise typer.Exit(code=1)
+
+
+@schema_app.command("migrate-namespace")
+def schema_migrate_namespace(
+    path: Path = typer.Argument(..., exists=True, file_okay=False),
+) -> None:
+    """Relocate a profile's schemas into the schemas namespace (task 10.5).
+
+    Non-destructive, one-shot, idempotent. For deployments bootstrapped before
+    profile schemas moved to ``{base}/fdp-api/schemas/{slug}``: copies each
+    schema graph from its old vocabulary IRI to the new storage IRI, repoints
+    resource definitions, and drops the old graph. Pass the same profile bundle
+    the deployment was applied with. A no-op on an already-migrated deployment.
+    """
+    from fdp.metadata.profiles import load_profile
+    from fdp.shared.errors import FDPError
+
+    try:
+        profile = load_profile(path)
+    except FDPError as err:
+        console.print(f"[red]profile load failed:[/] {err.message}")
+        raise typer.Exit(code=1) from err
+
+    try:
+        report = asyncio.run(_run_schema_migration(profile))
+    except Exception as err:
+        console.print(f"[red]schema migration failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if not report.changed:
+        console.print("[green]nothing to migrate[/] — schemas already in the schemas namespace")
+        return
+    console.print(
+        f"[green]migrated[/] {len(report.moved)} schema(s), "
+        f"repointed {len(report.resource_definitions_repointed)} resource definition(s)"
+    )
+    for old, new in report.moved:
+        console.print(f"  {old} → {new}")
+
+
+async def _run_schema_migration(profile: DeploymentProfile) -> MigrationReport:
+    """Build the runtime collaborators and run one migration pass."""
+    from fdp.config import get_settings
+    from fdp.metadata.profiles.migrate import migrate_schema_namespace
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.shacl import ShaclValidator
+    from fdp.metadata.shape_provider import MetadataShapeProvider
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        repository = MetadataRepository(adapter)
+        validator = ShaclValidator(MetadataShapeProvider(repository))
+        return await migrate_schema_namespace(
+            profile,
+            repository=repository,
+            adapter=adapter,
+            settings=settings,
+            validator=validator,
+        )
 
 
 async def _run_schema_sync() -> SyncReport:

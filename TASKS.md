@@ -762,6 +762,144 @@ no-bundle guard). Full unit suite green (668).
 References: `MetadataSchemaService.java`, `ResourceDefinitionService.java`,
 `ResetService.java`, `FactoryDefaults.java`.
 
+### 10.5 [x] Profile schemas are first-class editable schemas
+
+**Problem.** When a profile is applied, its SHACL schemas should — from that
+point on — behave exactly like a runtime/user-published schema (listable in
+`GET /schemas`, editable via `PUT /schemas/{id}`, deletable via `DELETE`),
+with the sole exception of the **FDP root schema** (the root resource
+definition's schema, `fdp:Repository` in the default profile), which is
+**editable but not deletable**. Today they are neither listable nor editable:
+the client cannot see the default DCAT schemas in the Schema-list UI and
+cannot edit them.
+
+**Root cause.** Profile schemas and runtime schemas live in two different
+namespaces. The applier stores each profile schema at its **vocabulary IRI**
+(`expander.schema_iri("dcat:Catalog")` → `http://www.w3.org/ns/dcat#Catalog`,
+[`applier.py`](src/fdp/metadata/profiles/applier.py) step 1), and the root RD
+references it via `ldp:constrainedBy`
+([`rd_records.py`](src/fdp/metadata/profiles/rd_records.py)). The schema-admin
+API ([`schemas.py`](src/fdp/metadata/schemas.py)) only ever manages the
+reserved `{base}/fdp-api/schemas/{slug}` namespace — `list_schemas` filters
+`STRSTARTS(?g, "{schema_namespace}/")` and `GET/PUT/DELETE /schemas/{id}`
+resolve through `schema_graph_uri(base, id)` — so profile schemas are invisible
+to the list and 404 on edit/delete. `SEED_STATE` is **not** the blocker;
+it is purely the namespace split.
+
+**Chosen approach — migrate profile schemas into the schemas namespace.**
+Store profile schemas at `{base}/fdp-api/schemas/{slug}` like user schemas, and
+point RD `ldp:constrainedBy` at that storage IRI. The shape node and its
+`sh:targetClass` inside the graph stay the class IRI (`dcat:Catalog`), so
+pySHACL matching against record `rdf:type` is unchanged — only the *graph IRI*
+(the storage/fetch key) moves. Server-owned machinery shapes (meta-metadata
+`META_SHAPE_IRI`, license `LICENSE_SHAPE_IRI`, RD `RD_SHAPE_IRI`) stay at their
+fixed IRIs and are deliberately **not** exposed as user-editable schemas.
+
+Sub-tasks:
+
+- **Slug derivation.** Add a shared, deterministic `schema_slug(curie)` helper
+  (kebab-cased local name: `dcat:DataService` → `data-service`,
+  `fdp:Repository` → `repository`) used by *both* the schema-write step and the
+  RD-build step so a schema and the RD that references it resolve to the same
+  `{base}/fdp-api/schemas/{slug}` IRI. Enforce slug uniqueness across the
+  profile in `validate_profile` (collision → structural validation error).
+- **Applier change.** In `apply_profile` step 1, write each `profile.schemas`
+  entry to `schema_graph_uri(base, schema_slug(id))` instead of
+  `expander.schema_iri(id)`. Keep `initial_state=SEED_STATE`. Track the written
+  IRIs in `ApplyReport.schemas_written` as today.
+- **RD reference rewrite.** Make the registry's schema-IRI resolution
+  (`records_from_manifest` / `build_cache_from_manifest`, via `IRIExpander`)
+  map a declared-schema CURIE to its `{base}/fdp-api/schemas/{slug}` IRI rather
+  than the class IRI, so `ResourceDefinition.schema_iri` (→ `ldp:constrainedBy`)
+  and the in-memory RD cache both point at the new location. A CURIE that is
+  *not* a declared profile schema keeps falling back to the expanded class IRI
+  (or errors — decide and test). `resolve_runtime_state` (startup re-derive,
+  profile already applied) must produce the **same** IRIs.
+- **Validator/shape-provider.** No code change expected — `MetadataShapeProvider`
+  fetches whatever IRI the RD's `constrainedBy` names. Add a test asserting a
+  record validates against its profile schema at the new IRI, and that
+  `PredefinedShapeProvider` still answers the server-owned fixed IRIs.
+- **FDP-root protection (editable, not deletable).** Teach `SchemaService` the
+  root schema IRI (derive from the RD cache root: `rd_cache.root().schema_iri`;
+  inject at bootstrap and on every profile (re)apply / RD mutation). In
+  `delete()`, hard-refuse the root schema with a `Forbidden` carrying a stable
+  code (e.g. `fdp.schema_protected`) — distinct from the existing
+  `_is_referenced` 409. `put()` on the root stays allowed. (Note: non-root
+  profile schemas remain subject to the existing `ldp:constrainedBy`
+  delete-guard — they can only be deleted after their RD is removed/repointed,
+  same as user schemas; that is intended, not part of this task.)
+- **List response flag.** Add `deletable: bool` (and/or `protected: bool`) to
+  `SchemaInfo` so the client can render the lock and hide the delete action on
+  the FDP root schema. Populate from the root-schema-IRI check.
+- **Data migration for already-applied deployments.** Schemas live in the
+  triple store (no Alembic). Provide a one-shot reconciliation (a new
+  `fdp schema migrate-namespace` CLI command, or an idempotent startup
+  reconcile): for each profile schema currently at a vocabulary IRI, copy the
+  graph to `{base}/fdp-api/schemas/{slug}`, rewrite every RD `ldp:constrainedBy`
+  pointing at the old IRI, drop the old graph + its `/meta` sibling, and
+  invalidate the validator cache. Idempotent (skip if already migrated). Decide
+  whether dev deployments simply `force-apply` instead and document the choice.
+- **SPARQL projection check.** Profile schemas moving under `/fdp-api/schemas/`
+  are now recognised by `is_schema_graph_uri` and treated like policies/licenses
+  (public reference docs, anonymous-readable, not internal). Verify
+  `PDP.authorized_graphs` and the public-dataset projection behave correctly
+  (a schema previously surfaced at a vocab IRI in the public KG should not
+  silently disappear from any expected query) — add/extend a projection test.
+- **OpenAPI + client coordination.** The `SchemaInfo` change updates
+  `/openapi.json`; regenerate types in `fdp-client` and surface profile schemas
+  (with the FDP-root lock) in the Schema-list UI. Cross-repo follow-up.
+
+Tests: unit — slug derivation + uniqueness validation; applier stores schemas
+in the schemas namespace; RD `constrainedBy` resolves to the new IRI;
+`resolve_runtime_state` parity; root-schema `DELETE` → 403, `PUT` → ok; non-root
+`DELETE` after RD removal → ok; `list_schemas` includes profile schemas with the
+`deletable` flag. Integration — apply default profile over GraphDB/Oxigraph,
+`GET /schemas` lists all five DCAT schemas (four deletable + the protected
+root), edit `dcat:Catalog`, a Catalog record still validates, `DELETE` the root
+schema → 403, run the migration against a pre-existing vocab-IRI deployment and
+re-assert the above.
+
+References: architecture §10.1, §12.2 (profile bootstrap),
+[ADR-0009](docs/adr/0009-runtime-resource-definitions.md) (RD ↔ schema
+references), `metadata/profiles/applier.py`, `metadata/profiles/registry.py`,
+`metadata/profiles/iri.py`, `metadata/schemas.py`, `shared/graphs.py`.
+
+**Delivered (server-side):**
+
+- `schema_slug()` + `IRIExpander.schema_storage_iri()` in
+  `metadata/profiles/iri.py` (kebab-cased local name → `{base}/fdp-api/schemas/{slug}`),
+  with a `duplicate_schema_slug` structural check in `validate_profile`.
+- Applier writes profile schemas to the storage IRI; the registry points RD
+  `ldp:constrainedBy` there (the `relationUri` predicate stays the class IRI).
+  The shape node + `sh:targetClass` are unchanged, so SHACL matching is intact.
+- `SchemaService` learns the FDP root schema IRI via a provider
+  (`main._root_schema_iri`, read from the live RD cache): `DELETE` of the root
+  raises `fdp.schema_protected` (403); `PUT` stays allowed; `SchemaInfo` gained
+  a `deletable` flag.
+- Non-destructive, idempotent reconciliation `migrate_schema_namespace`
+  (`metadata/profiles/migrate.py`) + `fdp schema migrate-namespace <bundle>` CLI
+  for pre-10.5 deployments.
+- Tests: `test_iri.py`, `test_migrate.py`, slug-collision in `test_validator.py`,
+  registry/applier assertions updated, root-protection + `deletable` cases in
+  `test_schemas.py`, and an end-to-end integration test
+  `tests/integration/metadata/test_schema_namespace.py` (testcontainers Oxigraph
+  + Postgres): apply → `GET /fdp-api/schemas` lists both profile schemas (root
+  `deletable:false`, other `true`), the relocated shape is fetchable, root
+  `DELETE` → 403 `fdp.schema_protected` while `PUT` → 200, non-root `DELETE` →
+  409 (RD reference guard). Unit suite green (907) + integration (2/2); ruff +
+  pyright clean.
+- Live-verified on the GraphDB dev stack: migrated the running deployment (5
+  schemas moved, 5 RDs repointed), `GET /fdp-api/schemas` lists all five
+  (root `deletable:false`, others `true`), the relocated shape is fetchable and
+  resolves for validation, and the old vocabulary IRI graph is emptied. Wiring
+  the RD cache at startup needs `FDP_PROFILE_AUTO_APPLY=true` (added to dev
+  `.env`); without it `app.state.resource_definitions` is `None` and the
+  root-protection provider can't engage.
+
+**Remaining (cross-repo, not this repo):** the `fdp-client` work — regenerate
+types for the `deletable` field and surface profile schemas (with the root lock)
+in the Schema-list UI. Tracked in the client repo.
+
 ---
 
 ## Phase 11 — Authentication extensions

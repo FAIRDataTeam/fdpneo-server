@@ -128,7 +128,7 @@ async def test_apply_writes_schemas_then_offers_then_repository_seed(
     # Repository seed itself lives at the configured base_url (the API root) so
     # the LDP layer serves it at "/".
     assert iris == [
-        "http://www.w3.org/ns/dcat#Catalog",
+        "http://localhost:8000/fdp-api/schemas/catalog",
         "http://localhost:8000/fdp-api/policies/system-default",
         "https://w3id.org/fdp/o#LicenseDocumentShape",
         "http://localhost:8000/fdp-api/licenses/cc0-1.0",
@@ -309,7 +309,7 @@ async def test_apply_rolls_back_on_triple_store_failure(
         "http://localhost:8000/fdp-api/licenses/cc0-1.0",
         "https://w3id.org/fdp/o#LicenseDocumentShape",
         "http://localhost:8000/fdp-api/policies/system-default",
-        "http://www.w3.org/ns/dcat#Catalog",
+        "http://localhost:8000/fdp-api/schemas/catalog",
     ]
     assert session.rolled_back is True
     assert state.recorded is None

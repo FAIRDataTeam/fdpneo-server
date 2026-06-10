@@ -250,9 +250,15 @@ def records_from_manifest(
         ResourceDefinitionRecord(
             url_prefix=entry.url_prefix,
             name=entry.name,
-            schema_iri=expander.schema_iri(entry.schema_id),
+            # constrainedBy points at where the schema is *stored* (the schemas
+            # namespace), not the class IRI — so it matches the applier's write
+            # location (task 10.5) and resolves like any runtime schema. The
+            # validator already enforces the schema is declared in schemas[].
+            schema_iri=expander.schema_storage_iri(entry.schema_id),
             children=tuple(
                 ChildLinkRecord(
+                    # relation_uri is a vocabulary *predicate* (e.g. dcat:catalog),
+                    # not a schema reference — it stays the expanded class IRI.
                     relation_uri=expander.schema_iri(link.relation_uri),
                     target_prefix=link.target,
                     title=link.title,
