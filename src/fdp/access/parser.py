@@ -42,7 +42,6 @@ architecture §9.3.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -54,6 +53,11 @@ from rdflib.plugins.sparql.processor import prepareQuery
 from rdflib.term import URIRef
 
 from fdp.shared.errors import BadRequest
+from fdp.shared.sparql_safety import (
+    LOAD_REJECTED_MESSAGE,
+    reject_service as _reject_service,
+    walk_compvalues as _walk_compvalues,
+)
 
 
 class QueryForm(StrEnum):
@@ -229,10 +233,7 @@ def _parse_update(body: str) -> ParsedUpdate:
             # graph is authorized by the PEP, not the source, so reject outright
             # (security audit 2026-06-07, R-03b). Bulk import is an admin/server-
             # side operation, not a public SPARQL one.
-            raise BadRequest(
-                "LOAD is not permitted: its source URL would be fetched by the "
-                "triple store (SSRF risk)"
-            )
+            raise BadRequest(LOAD_REJECTED_MESSAGE)
         op_targets = _explicit_targets(op)
         if op_targets is None:
             raise BadRequest(
@@ -309,12 +310,6 @@ def _first_keyword(body: str) -> str | None:
     return match.group(1).upper() if match else None
 
 
-def _reject_service(node: Any) -> None:
-    for descendant in _walk_compvalues(node):
-        if descendant.name == "ServiceGraphPattern":
-            raise BadRequest("SERVICE clauses are not supported (no federation in v1)")
-
-
 def _collect_inline_graph_iris(node: Any) -> list[str]:
     found: list[str] = []
     for descendant in _walk_compvalues(node):
@@ -323,20 +318,6 @@ def _collect_inline_graph_iris(node: Any) -> list[str]:
             if isinstance(term, URIRef):
                 found.append(str(term))
     return found
-
-
-def _walk_compvalues(node: Any) -> Iterator[CompValue]:
-    """Yield ``node`` and every nested CompValue descendant."""
-    if isinstance(node, CompValue):
-        yield node
-        for value in node.values():  # pyright: ignore[reportUnknownVariableType]
-            yield from _walk_compvalues(value)
-    elif isinstance(node, (list, tuple, set, frozenset)):
-        for item in node:  # pyright: ignore[reportUnknownVariableType]
-            yield from _walk_compvalues(item)
-    elif isinstance(node, dict):
-        for value in node.values():  # pyright: ignore[reportUnknownVariableType]
-            yield from _walk_compvalues(value)
 
 
 __all__ = [

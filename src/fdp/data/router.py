@@ -42,6 +42,7 @@ from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Forbidden, NotFound, UnsupportedMediaType
 from fdp.shared.graphs import data_graph_uri
+from fdp.shared.sparql_safety import assert_query_safe
 
 if TYPE_CHECKING:
     from fdp.config import DataSettings
@@ -294,9 +295,17 @@ def _stream_sparql(
     Negotiation is delegated to the triple store — the Accept header is
     forwarded verbatim and the store returns 406 if no negotiated
     format is available. Streaming keeps memory bounded for large
-    ``CONSTRUCT`` / ``DESCRIBE`` payloads, but applies to every form
-    uniformly so the data provider does not parse the query.
+    ``CONSTRUCT`` / ``DESCRIBE`` payloads.
+
+    Before forwarding, the query passes the shared federation/SSRF gate
+    (:func:`assert_query_safe`, security audit 2026-06-10 N-01): a
+    ``SERVICE`` clause would let an anonymous caller pivot the store into the
+    internal network, and only read forms are valid on this query-only
+    surface. ``LOAD`` / update bodies fail the gate as non-queries. Graph
+    *authorization* stays the data provider's own concern — scoping to the
+    distribution's ``<iri>/data`` graph — and is unaffected by the gate.
     """
+    assert_query_safe(query)
     accept = request.headers.get("accept") or _DEFAULT_ACCEPT
     data_graph = str(data_graph_uri(info.iri))
     stream = adapter.query_stream(

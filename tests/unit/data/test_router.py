@@ -307,6 +307,59 @@ def test_sparql_post_form_without_query_returns_400() -> None:
     assert response.status_code == 400
 
 
+# --- federation / SSRF gate (security audit 2026-06-10, N-01) -------------
+
+
+@pytest.mark.unit
+def test_sparql_get_rejects_service_clause_without_forwarding() -> None:
+    adapter = _FakeAdapter()
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph()})
+    app = _build_app(repo=repo, pdp=_FakePDP(), adapter=adapter)
+    client = TestClient(app)
+    response = client.get(
+        f"/data/{DIST_ID}/sparql",
+        params={
+            "query": "SELECT * WHERE { SERVICE <http://169.254.169.254/> { ?s ?p ?o } }"
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "fdp.bad_request"
+    # The query must never reach the store — that is the whole point of N-01.
+    assert adapter.calls == []
+
+
+@pytest.mark.unit
+def test_sparql_post_rejects_service_clause_without_forwarding() -> None:
+    adapter = _FakeAdapter()
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph()})
+    app = _build_app(repo=repo, pdp=_FakePDP(), adapter=adapter)
+    client = TestClient(app)
+    response = client.post(
+        f"/data/{DIST_ID}/sparql",
+        content="SELECT * WHERE { SERVICE <http://internal/> { ?s ?p ?o } }",
+        headers={"content-type": "application/sparql-query"},
+    )
+    assert response.status_code == 400
+    assert adapter.calls == []
+
+
+@pytest.mark.unit
+def test_sparql_post_rejects_update_body_on_query_surface() -> None:
+    adapter = _FakeAdapter()
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph()})
+    app = _build_app(repo=repo, pdp=_FakePDP(), adapter=adapter)
+    client = TestClient(app)
+    # A LOAD smuggled in via the raw-query content type is not a read query and
+    # must be rejected before forwarding (it would otherwise SSRF via the store).
+    response = client.post(
+        f"/data/{DIST_ID}/sparql",
+        content="LOAD <http://169.254.169.254/> INTO GRAPH <urn:x>",
+        headers={"content-type": "application/sparql-query"},
+    )
+    assert response.status_code == 400
+    assert adapter.calls == []
+
+
 # --- accept passthrough ---------------------------------------------------
 
 
