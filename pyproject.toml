@@ -25,6 +25,9 @@ dependencies = [
   "pydantic>=2.7",
   "pydantic-settings>=2.4",
   "uvicorn[standard]>=0.30",
+  # Transitive via fastapi; floor clears PYSEC-2026-161 (fixed in starlette
+  # 1.0.1). Keep until fastapi requires a safe starlette (pip-audit gate).
+  "starlette>=1.0.1",
 
   # RDF
   # Keep rdflib >= 7: it neutralizes RDF/XML external-entity (XXE) expansion that
@@ -34,7 +37,9 @@ dependencies = [
 
   # Identity / OIDC
   "authlib>=1.3",
-  "pyjwt[crypto]>=2.9",
+  # JWT validation library on the auth path — keep >= 2.13.0, which fixes
+  # PYSEC-2026-175/177/178/179 (token-validation issues in earlier 2.x).
+  "pyjwt[crypto]>=2.13.0",
   "httpx>=0.27",
 
   # Storage
@@ -55,6 +60,10 @@ dependencies = [
 
   # Geo lookup for anonymized metrics
   "geoip2>=4.8",
+  # Transitive via geoip2; pinned to a floor that clears CVE-2026-34993 and
+  # CVE-2026-47265 (fixed in aiohttp 3.14.0). Keep until geoip2 itself
+  # requires a safe aiohttp (security-scan / pip-audit gate).
+  "aiohttp>=3.14.0",
 
   # CLI
   "typer>=0.12",
