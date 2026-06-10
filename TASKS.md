@@ -896,9 +896,10 @@ references), `metadata/profiles/applier.py`, `metadata/profiles/registry.py`,
   `.env`); without it `app.state.resource_definitions` is `None` and the
   root-protection provider can't engage.
 
-**Remaining (cross-repo, not this repo):** the `fdp-client` work — regenerate
-types for the `deletable` field and surface profile schemas (with the root lock)
-in the Schema-list UI. Tracked in the client repo.
+**Client (cross-repo): done.** `fdp-client` regenerated its API types for the
+`deletable` field and now surfaces profile schemas in the Schema-list UI with
+the root schema locked (delete disabled, `fdp.schema_protected` 403 handled).
+Server + client are aligned; 10.5 is fully closed.
 
 ---
 
