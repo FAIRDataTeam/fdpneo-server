@@ -38,12 +38,12 @@ OFFER_TTL = f"""\
 def test_default_license_set_is_seeded_at_local_iris() -> None:
     seeded = dict(default_license_graphs(BASE))
     assert set(seeded) == {
-        f"{BASE}/licenses/cc0-1.0",
-        f"{BASE}/licenses/cc-by-4.0",
-        f"{BASE}/licenses/cc-by-sa-4.0",
+        f"{BASE}/fdp-api/licenses/cc0-1.0",
+        f"{BASE}/fdp-api/licenses/cc-by-4.0",
+        f"{BASE}/fdp-api/licenses/cc-by-sa-4.0",
     }
-    g = seeded[f"{BASE}/licenses/cc-by-4.0"]
-    subject = URIRef(f"{BASE}/licenses/cc-by-4.0")
+    g = seeded[f"{BASE}/fdp-api/licenses/cc-by-4.0"]
+    subject = URIRef(f"{BASE}/fdp-api/licenses/cc-by-4.0")
     assert (subject, RDF.type, DCT.LicenseDocument) in g
     assert str(next(g.objects(subject, DCT.title))).startswith("Creative Commons")
     # Links to the canonical license IRI for cross-reference.
@@ -56,7 +56,7 @@ def test_default_license_set_is_seeded_at_local_iris() -> None:
 def test_offer_rewrite_yields_parseable_managed_policy() -> None:
     source = Graph()
     source.parse(data=OFFER_TTL, format="turtle")
-    managed = URIRef(f"{BASE}/policies/system-default")
+    managed = URIRef(f"{BASE}/fdp-api/policies/system-default")
 
     rewritten = _rewrite_subject(source, URIRef(INTRINSIC), managed)
 

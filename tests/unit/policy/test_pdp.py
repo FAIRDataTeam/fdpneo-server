@@ -248,7 +248,7 @@ async def test_authorized_graphs_excludes_internal_graphs() -> None:
     # is granted READ — e.g. so the client can fetch the type catalog over
     # REST — it must never enter the SPARQL projection. The exclusion is
     # structural in authorized_graphs, independent of what the cache holds.
-    rd_iri = "http://localhost:8000/resource-definitions/catalog"
+    rd_iri = "http://localhost:8000/fdp-api/resource-definitions/catalog"
     meta_iri = RESOURCE + "/meta"
     pdp, _cache, _ = _pdp(
         offers={

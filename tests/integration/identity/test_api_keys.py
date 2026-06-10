@@ -219,16 +219,18 @@ def test_api_key_auth_live_roles_and_revoke(app_env: str) -> None:
 
     with _make_client() as client:
         # 1. The key authenticates as its owner — listing own keys needs auth.
-        listed = client.get("/me/api-keys", headers=auth)
+        listed = client.get("/fdp-api/me/api-keys", headers=auth)
         assert listed.status_code == 200, listed.text
         assert any(k["id"] == "key-1" for k in listed.json()["keys"])
 
         # No header → anonymous → 401 on the same protected endpoint.
-        assert client.get("/me/api-keys").status_code == 401
+        assert client.get("/fdp-api/me/api-keys").status_code == 401
 
         # 2a. With no roles yet, the admin-gated dashboard view is forbidden.
         assert (
-            client.get("/me/dashboard", params={"as_admin": "true"}, headers=auth).status_code
+            client.get(
+                "/fdp-api/me/dashboard", params={"as_admin": "true"}, headers=auth
+            ).status_code
             == 403
         )
 
@@ -236,10 +238,12 @@ def test_api_key_auth_live_roles_and_revoke(app_env: str) -> None:
         # would) — the SAME key now resolves admin live, no re-mint.
         _record_admin_principal(dsn)
         assert (
-            client.get("/me/dashboard", params={"as_admin": "true"}, headers=auth).status_code
+            client.get(
+                "/fdp-api/me/dashboard", params={"as_admin": "true"}, headers=auth
+            ).status_code
             == 200
         )
 
         # 3. Owner self-revoke, then the key is rejected.
-        assert client.delete("/me/api-keys/key-1", headers=auth).status_code == 204
-        assert client.get("/me/api-keys", headers=auth).status_code == 401
+        assert client.delete("/fdp-api/me/api-keys/key-1", headers=auth).status_code == 204
+        assert client.get("/fdp-api/me/api-keys", headers=auth).status_code == 401

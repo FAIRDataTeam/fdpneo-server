@@ -1,0 +1,154 @@
+# Full-stack FDP deployment — one command brings up the client, the server, and
+# the backing services (GraphDB, Postgres, Keycloak) with the GraphDB repository
+# and database schema bootstrapped automatically.
+#
+#   cp .env.example .env      # then edit PUBLIC_HOST / secrets
+#   docker compose -f deploy/stack/compose.yaml --env-file deploy/stack/.env up -d
+#
+# Browser-facing: client (CLIENT_PORT), server API (SERVER_PORT), Keycloak
+# (KEYCLOAK_PORT). GraphDB + Postgres stay on the internal network. The client
+# image is configured at runtime to call the API at PUBLIC_HOST:SERVER_PORT; the
+# server's CORS allows PUBLIC_HOST:CLIENT_PORT.
+#
+# ⚠ The bundled Keycloak realm + credentials (admin/admin, fdp-server-dev-secret,
+#   start-dev mode) are DEVELOPMENT-ONLY. Rotate every secret and harden Keycloak
+#   (TLS, production mode) before any real deployment — see README.md.
+
+name: fdp
+
+
+services:
+  # --- backing services ----------------------------------------------------
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fdp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fdp}
+      POSTGRES_DB: ${POSTGRES_DB:-fdp}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fdp} -d ${POSTGRES_DB:-fdp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  graphdb:
+    image: ontotext/graphdb:10.7.0
+    restart: unless-stopped
+    environment:
+      GDB_JAVA_OPTS: >-
+        -Xmx2g -Xms1g
+        -Dgraphdb.workbench.cors.enable=true
+    volumes:
+      - graphdb-data:/opt/graphdb/home
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7200/rest/repositories"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  # Oneshot: create the `fdp` GraphDB repository if it does not exist yet.
+  # Idempotent — checks /repositories/fdp/size first, only POSTs the config when
+  # the repo is missing. Exits 0 either way so the server can start.
+  graphdb-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      graphdb:
+        condition: service_healthy
+    volumes:
+      - ../graphdb/fdp-repo-config.ttl:/config/fdp-repo-config.ttl:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if curl -fsS "http://graphdb:7200/repositories/fdp/size" >/dev/null 2>&1; then
+          echo "[graphdb-init] repository 'fdp' already exists — nothing to do."
+        else
+          echo "[graphdb-init] creating repository 'fdp'..."
+          curl -fsS -X POST "http://graphdb:7200/rest/repositories" \
+            -F "config=@/config/fdp-repo-config.ttl" \
+            && echo "[graphdb-init] repository 'fdp' created."
+        fi
+    restart: "no"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      # Lenient hostname (start-dev) → the token issuer follows the request URL,
+      # so browser and server agree as long as both use PUBLIC_HOST:KEYCLOAK_PORT.
+    volumes:
+      - ../keycloak/realm-fdp-dev.json:/opt/keycloak/data/import/realm-fdp-dev.json:ro
+    ports:
+      - "${KEYCLOAK_PORT:-8081}:8080"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  # --- application tier -----------------------------------------------------
+  server:
+    image: ghcr.io/fairdatateam/fdpneo-server:${IMAGE_TAG:-main}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      graphdb-init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    # Make PUBLIC_HOST resolve to the docker host so the server can reach the
+    # Keycloak issuer URL (PUBLIC_HOST:KEYCLOAK_PORT) the browser also uses.
+    extra_hosts:
+      - "${PUBLIC_HOST:-localhost}:host-gateway"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      BASE_URL: http://${PUBLIC_HOST:-localhost}:${SERVER_PORT:-8000}
+      POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-fdp}:${POSTGRES_PASSWORD:-fdp}@postgres:5432/${POSTGRES_DB:-fdp}
+      FDP_TRIPLESTORE_QUERY_ENDPOINT: http://graphdb:7200/repositories/fdp
+      FDP_TRIPLESTORE_UPDATE_ENDPOINT: http://graphdb:7200/repositories/fdp/statements
+      FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT: http://graphdb:7200/repositories/fdp/rdf-graphs/service
+      FDP_TRIPLESTORE_SUPPORTS_REPOSITORY_MANAGEMENT: "true"
+      FDP_OIDC_ISSUER: http://${PUBLIC_HOST:-localhost}:${KEYCLOAK_PORT:-8081}/realms/fdp-dev
+      FDP_OIDC_AUDIENCE: ${FDP_OIDC_AUDIENCE:-fdp}
+      FDP_CORS_ALLOW_ORIGINS: http://${PUBLIC_HOST:-localhost}:${CLIENT_PORT:-8080}
+      FDP_CORS_ALLOW_CREDENTIALS: "true"
+      # Enable the /fdp-api/users IdP-admin facade (confidential service account).
+      FDP_IDP_ADMIN_CLIENT_ID: ${FDP_IDP_ADMIN_CLIENT_ID:-fdp-server}
+      FDP_IDP_ADMIN_CLIENT_SECRET: ${FDP_IDP_ADMIN_CLIENT_SECRET:-fdp-server-dev-secret}
+      FDP_IDP_ADMIN_BASE_URL: http://keycloak:8080
+      FDP_PROFILE_AUTO_APPLY: "true"
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+
+  client:
+    image: ghcr.io/fairdatateam/fdpneo-client:${IMAGE_TAG:-main}
+    build:
+      context: ../../../client
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+    environment:
+      # Injected into /config.js at container start (see client entrypoint).
+      FDP_API_URL: http://${PUBLIC_HOST:-localhost}:${SERVER_PORT:-8000}
+      FDP_PUBLIC_ORIGIN: http://${PUBLIC_HOST:-localhost}:${CLIENT_PORT:-8080}
+    ports:
+      - "${CLIENT_PORT:-8080}:80"
+
+volumes:
+  postgres-data:
+  graphdb-data:

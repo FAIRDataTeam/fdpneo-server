@@ -61,11 +61,11 @@ BASE = "http://localhost:8000"
 @pytest.mark.unit
 def test_resource_definition_graph_uri() -> None:
     assert resource_definition_graph_uri(BASE, "catalog") == URIRef(
-        f"{BASE}/resource-definitions/catalog"
+        f"{BASE}/fdp-api/resource-definitions/catalog"
     )
     # Trailing slash on base is normalised.
     assert resource_definition_graph_uri(BASE + "/", "catalog") == URIRef(
-        f"{BASE}/resource-definitions/catalog"
+        f"{BASE}/fdp-api/resource-definitions/catalog"
     )
 
 

@@ -19,7 +19,6 @@ from fdp.metrics.middleware import RequestObservationMiddleware
 from fdp.shared.context import RequestContext, bound
 from fdp.shared.events import EventBus
 
-
 # --- ASGI driver helpers ---------------------------------------------------
 
 
@@ -72,9 +71,7 @@ def _echo_app(
         )
         for chunk in body_chunks[:-1]:
             await send({"type": "http.response.body", "body": chunk, "more_body": True})
-        await send(
-            {"type": "http.response.body", "body": body_chunks[-1], "more_body": False}
-        )
+        await send({"type": "http.response.body", "body": body_chunks[-1], "more_body": False})
 
     return app
 
@@ -124,21 +121,21 @@ def _build(
 @pytest.mark.unit
 async def test_healthz_is_skipped() -> None:
     mw, recorder, _ = _build()
-    await _drive(mw, _scope(path="/healthz"))
+    await _drive(mw, _scope(path="/fdp-api/healthz"))
     assert recorder.events == []
 
 
 @pytest.mark.unit
 async def test_metrics_dashboard_is_skipped() -> None:
     mw, recorder, _ = _build()
-    await _drive(mw, _scope(path="/metrics/summary"))
+    await _drive(mw, _scope(path="/fdp-api/metrics/summary"))
     assert recorder.events == []
 
 
 @pytest.mark.unit
 async def test_openapi_paths_are_skipped() -> None:
     mw, recorder, _ = _build()
-    for path in ("/openapi.json", "/docs", "/redoc"):
+    for path in ("/fdp-api/openapi.json", "/fdp-api/docs", "/fdp-api/redoc"):
         await _drive(mw, _scope(path=path))
     assert recorder.events == []
 
@@ -192,7 +189,7 @@ async def test_delete_emits_delete() -> None:
 @pytest.mark.unit
 async def test_top_level_sparql_emits_sparql_query_with_no_resource() -> None:
     mw, recorder, _ = _build()
-    await _drive(mw, _scope(method="GET", path="/sparql"))
+    await _drive(mw, _scope(method="GET", path="/fdp-api/sparql"))
     assert recorder.events[0].event_type is MetricEventType.SPARQL_QUERY
     assert recorder.events[0].resource_iri is None
 
@@ -200,19 +197,19 @@ async def test_top_level_sparql_emits_sparql_query_with_no_resource() -> None:
 @pytest.mark.unit
 async def test_data_download_emits_download() -> None:
     mw, recorder, _ = _build()
-    await _drive(mw, _scope(path="/data/dist-1"))
+    await _drive(mw, _scope(path="/fdp-api/data/dist-1"))
     assert recorder.events[0].event_type is MetricEventType.DOWNLOAD
 
 
 @pytest.mark.unit
 async def test_data_distribution_sparql_emits_sparql_query() -> None:
     mw, recorder, _ = _build()
-    await _drive(mw, _scope(path="/data/dist-1/sparql"))
+    await _drive(mw, _scope(path="/fdp-api/data/dist-1/sparql"))
     assert recorder.events[0].event_type is MetricEventType.SPARQL_QUERY
     # The per-distribution SPARQL endpoint targets a known resource;
     # the iri should be present (the distribution's URL).
     assert recorder.events[0].resource_iri is not None
-    assert "/data/dist-1/sparql" in (recorder.events[0].resource_iri or "")
+    assert "/fdp-api/data/dist-1/sparql" in (recorder.events[0].resource_iri or "")
 
 
 # --- captured fields ------------------------------------------------------
@@ -303,7 +300,7 @@ async def test_response_messages_pass_through_unchanged() -> None:
 
 @pytest.mark.unit
 async def test_non_http_scope_passes_through_without_emitting() -> None:
-    mw, recorder, _ = _build()
+    _mw, recorder, _ = _build()
     scope = {"type": "lifespan"}
 
     received: list[dict[str, Any]] = []

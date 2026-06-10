@@ -50,6 +50,7 @@ from rdflib import Graph, URIRef
 from rdflib.compare import isomorphic
 
 from fdp.shared.errors import FDPError
+from fdp.shared.graphs import schema_namespace
 from fdp.shared.namespaces import DCT
 
 if TYPE_CHECKING:
@@ -176,7 +177,7 @@ class SchemaSyncService:
         query = (
             "SELECT ?g ?src WHERE {"
             f" GRAPH ?g {{ ?s <{DCT.source}> ?src }}"
-            f' FILTER(STRSTARTS(STR(?g), "{self._base}/schemas/"))'
+            f' FILTER(STRSTARTS(STR(?g), "{schema_namespace(self._base)}/"))'
             " FILTER(isIRI(?src)) }"
         )
         body = await self._adapter.query(query, accept=_SPARQL_JSON)

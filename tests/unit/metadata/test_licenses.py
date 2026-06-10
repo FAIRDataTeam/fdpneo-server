@@ -80,7 +80,7 @@ class _Store:
             return json.dumps({"results": {"bindings": []}}).encode()
         bindings = []
         for iri, g in self.graphs.items():
-            if not iri.startswith(f"{BASE}/licenses/"):
+            if not iri.startswith(f"{BASE}/fdp-api/licenses/"):
                 continue
             title = next(iter(g.objects(None, DCT.title)), None)
             row: dict[str, dict[str, str]] = {"g": {"value": iri}}
@@ -116,9 +116,9 @@ def _service(store: _Store) -> LicenseService:
 async def test_put_stores_license_document() -> None:
     store = _Store()
     info = await _service(store).put("cc-by-4.0", CC_BY, subject="admin")
-    assert info.iri == f"{BASE}/licenses/cc-by-4.0"
+    assert info.iri == f"{BASE}/fdp-api/licenses/cc-by-4.0"
     assert info.title.startswith("Creative Commons")
-    assert f"{BASE}/licenses/cc-by-4.0" in store.graphs
+    assert f"{BASE}/fdp-api/licenses/cc-by-4.0" in store.graphs
     assert store.events == ["RecordModified"]
 
 
@@ -168,7 +168,7 @@ async def test_delete_refused_when_referenced() -> None:
     store.referenced = True
     with pytest.raises(Conflict, match="referenced"):
         await svc.delete("cc-by-4.0")
-    assert f"{BASE}/licenses/cc-by-4.0" in store.graphs
+    assert f"{BASE}/fdp-api/licenses/cc-by-4.0" in store.graphs
 
 
 @pytest.mark.unit
@@ -177,7 +177,7 @@ async def test_delete_removes_document() -> None:
     svc = _service(store)
     await svc.put("cc-by-4.0", CC_BY, subject="admin")
     await svc.delete("cc-by-4.0")
-    assert f"{BASE}/licenses/cc-by-4.0" not in store.graphs
+    assert f"{BASE}/fdp-api/licenses/cc-by-4.0" not in store.graphs
     assert "RecordDeleted" in store.events
 
 
@@ -204,8 +204,8 @@ async def test_published_only_excludes_draft_licenses() -> None:
     await svc.put("cc-by-4.0", CC_BY, subject="admin")
     await svc.put("wip", TITLE_ONLY, subject="admin")
     store.states = {
-        f"{BASE}/licenses/cc-by-4.0": "PUBLISHED",
-        f"{BASE}/licenses/wip": "DRAFT",
+        f"{BASE}/fdp-api/licenses/cc-by-4.0": "PUBLISHED",
+        f"{BASE}/fdp-api/licenses/wip": "DRAFT",
     }
     assert [lic.id for lic in await svc.list_licenses(published_only=True)] == ["cc-by-4.0"]
     assert {lic.id for lic in await svc.list_licenses()} == {"cc-by-4.0", "wip"}
@@ -221,7 +221,7 @@ class _FakeService:
     list_published_only: bool | None = None
 
     def iri(self, license_id: str) -> str:
-        return f"{BASE}/licenses/{license_id}"
+        return f"{BASE}/fdp-api/licenses/{license_id}"
 
     async def put(self, license_id: str, turtle: str, *, subject: str | None):
         del subject
@@ -312,7 +312,7 @@ def test_put_as_admin_publishes() -> None:
         headers={"Content-Type": "text/turtle"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["iri"] == f"{BASE}/licenses/cc-by-4.0"
+    assert resp.json()["iri"] == f"{BASE}/fdp-api/licenses/cc-by-4.0"
 
 
 @pytest.mark.unit

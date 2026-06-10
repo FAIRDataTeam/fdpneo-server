@@ -18,7 +18,6 @@ from fdp.metadata.profiles.registry import (
     ResourceDefinitionCache,
 )
 
-
 # --- fixtures -------------------------------------------------------------
 
 
@@ -86,20 +85,22 @@ def test_root_emits_crud_at_slash_with_no_post() -> None:
 def test_root_emits_spec_expanded_and_page_paths() -> None:
     spec = _empty_spec()
     inject_resource_definition_paths(spec, _cache(_REPO_RD))
-    assert "/spec" in spec["paths"]
-    assert "/expanded" in spec["paths"]
-    assert "/page/{childPrefix}" in spec["paths"]
+    assert "/fdp-api/spec" in spec["paths"]
+    assert "/fdp-api/expanded" in spec["paths"]
+    assert "/fdp-api/page/{childPrefix}" in spec["paths"]
 
 
 @pytest.mark.unit
 def test_root_without_children_omits_page_path() -> None:
     childless = ResourceDefinition(
-        url_prefix="", name="Repository",
-        schema_iri="http://x", children=(),
+        url_prefix="",
+        name="Repository",
+        schema_iri="http://x",
+        children=(),
     )
     spec = _empty_spec()
     inject_resource_definition_paths(spec, _cache(childless))
-    assert "/page/{childPrefix}" not in spec["paths"]
+    assert "/fdp-api/page/{childPrefix}" not in spec["paths"]
 
 
 # --- non-root resource definition -----------------------------------------
@@ -131,16 +132,16 @@ def test_non_root_emits_spec_expanded_page_paths_with_id() -> None:
     spec = _empty_spec()
     inject_resource_definition_paths(spec, _cache(_REPO_RD, _CATALOG_RD))
     paths = spec["paths"]
-    assert "/catalog/{id}/spec" in paths
-    assert "/catalog/{id}/expanded" in paths
-    assert "/catalog/{id}/page/{childPrefix}" in paths
+    assert "/fdp-api/catalog/{id}/spec" in paths
+    assert "/fdp-api/catalog/{id}/expanded" in paths
+    assert "/fdp-api/catalog/{id}/page/{childPrefix}" in paths
 
 
 @pytest.mark.unit
 def test_leaf_type_without_children_has_no_page_path() -> None:
     spec = _empty_spec()
     inject_resource_definition_paths(spec, _cache(_REPO_RD, _DATASET_RD))
-    assert "/dataset/{id}/page/{childPrefix}" not in spec["paths"]
+    assert "/fdp-api/dataset/{id}/page/{childPrefix}" not in spec["paths"]
 
 
 # --- tags ------------------------------------------------------------------

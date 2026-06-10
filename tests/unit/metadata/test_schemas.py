@@ -35,7 +35,7 @@ ONTOLOGY_SHAPE = """\
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix dct: <http://purl.org/dc/terms/> .
-<http://localhost:8000/schemas/ontology>
+<http://localhost:8000/fdp-api/schemas/ontology>
     a sh:NodeShape ;
     sh:targetClass owl:Ontology ;
     sh:property [ sh:path dct:title ; sh:minCount 1 ; sh:datatype <http://www.w3.org/2001/XMLSchema#string> ] .
@@ -79,7 +79,7 @@ class _Store:
         # list query
         bindings = []
         for iri, g in self.graphs.items():
-            if iri.startswith(f"{BASE}/schemas/") and (None, RDF.type, SH.NodeShape) in g:
+            if iri.startswith(f"{BASE}/fdp-api/schemas/") and (None, RDF.type, SH.NodeShape) in g:
                 row: dict[str, dict[str, str]] = {"g": {"value": iri}}
                 tc = next(iter(g.objects(None, SH.targetClass)), None)
                 if tc is not None:
@@ -112,9 +112,9 @@ def _service(store: _Store) -> SchemaService:
 async def test_put_stores_shape_and_reports_target_class() -> None:
     store = _Store()
     info = await _service(store).put("ontology", ONTOLOGY_SHAPE, subject="admin")
-    assert info.iri == f"{BASE}/schemas/ontology"
+    assert info.iri == f"{BASE}/fdp-api/schemas/ontology"
     assert info.target_class == "http://www.w3.org/2002/07/owl#Ontology"
-    assert f"{BASE}/schemas/ontology" in store.graphs
+    assert f"{BASE}/fdp-api/schemas/ontology" in store.graphs
 
 
 @pytest.mark.unit
@@ -174,7 +174,7 @@ async def test_delete_refused_when_referenced_by_resource_definition() -> None:
     store.referenced = True
     with pytest.raises(Conflict, match="referenced"):
         await svc.delete("ontology")
-    assert f"{BASE}/schemas/ontology" in store.graphs  # not deleted
+    assert f"{BASE}/fdp-api/schemas/ontology" in store.graphs  # not deleted
 
 
 @pytest.mark.unit
@@ -183,7 +183,7 @@ async def test_delete_removes_shape() -> None:
     svc = _service(store)
     await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
     await svc.delete("ontology")
-    assert f"{BASE}/schemas/ontology" not in store.graphs
+    assert f"{BASE}/fdp-api/schemas/ontology" not in store.graphs
 
 
 @pytest.mark.unit
@@ -205,7 +205,7 @@ class _FakeService:
     deletes: list[str] = field(default_factory=list)
 
     def iri(self, schema_id: str) -> str:
-        return f"{BASE}/schemas/{schema_id}"
+        return f"{BASE}/fdp-api/schemas/{schema_id}"
 
     async def put(self, schema_id: str, turtle: str, *, subject: str | None):
         del subject
@@ -281,7 +281,7 @@ def test_put_as_admin_publishes() -> None:
         headers={"Content-Type": "text/turtle"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["iri"] == f"{BASE}/schemas/ontology"
+    assert resp.json()["iri"] == f"{BASE}/fdp-api/schemas/ontology"
     assert svc.puts and svc.puts[0][0] == "ontology"
 
 

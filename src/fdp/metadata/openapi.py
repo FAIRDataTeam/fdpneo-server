@@ -40,6 +40,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from fdp.shared.reserved import RESERVED_API_PATH
+
 if TYPE_CHECKING:
     from fdp.metadata.profiles.registry import (
         ResourceDefinition,
@@ -235,9 +237,7 @@ def _page_operation(rd: ResourceDefinition) -> dict[str, Any]:
                 "type. ``childPrefix`` is the URL prefix of the target type."
             ),
             "tags": [_tag_name(rd)],
-            "parameters": (
-                ([_id_param()] if not rd.is_root else []) + [_child_prefix_param()]
-            ),
+            "parameters": (([_id_param()] if not rd.is_root else []) + [_child_prefix_param()]),
             "responses": _rdf_responses(),
         }
     }
@@ -245,23 +245,28 @@ def _page_operation(rd: ResourceDefinition) -> dict[str, Any]:
 
 def _emit_paths_for(rd: ResourceDefinition, paths: dict[str, Any]) -> None:
     """Add the per-RD path set to ``paths``."""
+    # Record CRUD lives at the root resource tree (backward compatible: ``/``,
+    # ``/catalog``, ``/catalog/{id}``). The LDP read-extension *views* (spec,
+    # expanded, page) live under the reserved API segment, matching the routes
+    # ``main.py`` mounts via ``build_extensions_router`` under ``RESERVED_API_PATH``.
     ext = _rd_extension(rd)
+    api = RESERVED_API_PATH
     type_spec_path: str | None = None
     if rd.is_root:
         crud_path = "/"
-        spec_path = "/spec"
-        expanded_path = "/expanded"
-        page_path = "/page/{childPrefix}"
+        spec_path = f"{api}/spec"
+        expanded_path = f"{api}/expanded"
+        page_path = f"{api}/page/{{childPrefix}}"
         crud_item = {**_crud_operations(rd, with_id_param=False), **ext}
         paths[crud_path] = crud_item
     else:
         prefix = "/" + rd.url_prefix
         collection_path = prefix
         crud_path = f"{prefix}/{{id}}"
-        type_spec_path = f"{prefix}/spec"
-        spec_path = f"{prefix}/{{id}}/spec"
-        expanded_path = f"{prefix}/{{id}}/expanded"
-        page_path = f"{prefix}/{{id}}/page/{{childPrefix}}"
+        type_spec_path = f"{api}{prefix}/spec"
+        spec_path = f"{api}{prefix}/{{id}}/spec"
+        expanded_path = f"{api}{prefix}/{{id}}/expanded"
+        page_path = f"{api}{prefix}/{{id}}/page/{{childPrefix}}"
         paths[collection_path] = {**_post_operation(rd), **ext}
         paths[crud_path] = {**_crud_operations(rd, with_id_param=True), **ext}
 
@@ -298,18 +303,14 @@ def inject_resource_definition_paths(
 
     # 1. Drop any FDP-generated paths from a prior call so re-injection
     #    after a profile change yields the new surface.
-    fdp_paths = [
-        p for p, item in paths.items() if isinstance(item, dict) and _RD_EXTENSION in item
-    ]
+    fdp_paths = [p for p, item in paths.items() if isinstance(item, dict) and _RD_EXTENSION in item]
     for p in fdp_paths:
         paths.pop(p, None)
 
     # 2. Drop FDP-generated tags too — they belong to types that may no
     #    longer exist.
     spec["tags"] = [
-        t for t in tags if not (
-            isinstance(t, dict) and t.get("name", "").startswith(_TAG_PREFIX)
-        )
+        t for t in tags if not (isinstance(t, dict) and t.get("name", "").startswith(_TAG_PREFIX))
     ]
     tags = spec["tags"]
 

@@ -49,7 +49,7 @@ from fdp.metadata.states import MetadataState
 from fdp.policy.parser import parse_offer
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound, SchemaViolation
-from fdp.shared.graphs import meta_graph_uri, policy_graph_uri
+from fdp.shared.graphs import meta_graph_uri, policy_graph_uri, policy_namespace
 from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, ODRL, OWL
 
 if TYPE_CHECKING:
@@ -190,7 +190,7 @@ class PolicyService:
             " OPTIONAL {"
             f" GRAPH ?m {{ ?g <{FDP_METADATA_STATE}> ?state }}"
             ' FILTER(?m = IRI(CONCAT(STR(?g), "/meta"))) }'
-            f' FILTER(STRSTARTS(STR(?g), "{self._base}/policies/")) }}'
+            f' FILTER(STRSTARTS(STR(?g), "{policy_namespace(self._base)}/")) }}'
         )
         rows = await self._select(query)
         items: list[PolicyInfo] = []

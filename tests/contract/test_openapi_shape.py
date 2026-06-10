@@ -33,6 +33,7 @@ from fdp.metadata.profiles.registry import (
     ResourceDefinition,
     ResourceDefinitionCache,
 )
+from fdp.shared.reserved import RESERVED_API_PATH
 
 
 def _spec_without_cache() -> dict[str, Any]:
@@ -90,8 +91,8 @@ def test_openapi_document_advertises_supported_version() -> None:
 @pytest.mark.unit
 def test_healthz_is_documented_with_get() -> None:
     spec = _spec_without_cache()
-    assert "/healthz" in spec["paths"]
-    assert "get" in spec["paths"]["/healthz"]
+    assert "/fdp-api/healthz" in spec["paths"]
+    assert "get" in spec["paths"]["/fdp-api/healthz"]
 
 
 @pytest.mark.unit
@@ -99,10 +100,10 @@ def test_metrics_dashboard_paths_are_documented() -> None:
     """Every dashboard endpoint the client renders against."""
     spec = _spec_without_cache()
     expected = {
-        "/metrics/summary",
-        "/metrics/timeseries/daily",
-        "/metrics/top-resources",
-        "/metrics/geography",
+        "/fdp-api/metrics/summary",
+        "/fdp-api/metrics/timeseries/daily",
+        "/fdp-api/metrics/top-resources",
+        "/fdp-api/metrics/geography",
     }
     missing = expected - set(spec["paths"].keys())
     assert not missing, f"dashboard routes missing: {sorted(missing)}"
@@ -112,7 +113,7 @@ def test_metrics_dashboard_paths_are_documented() -> None:
 def test_data_provider_paths_are_documented() -> None:
     spec = _spec_without_cache()
     paths = spec["paths"]
-    distribution_paths = {p for p in paths if p.startswith("/data/")}
+    distribution_paths = {p for p in paths if p.startswith("/fdp-api/data/")}
     # GET /data/{distribution_id} and GET/POST /data/{distribution_id}/sparql
     assert any(p.endswith("/{distribution_id}") for p in distribution_paths), (
         f"data download path missing; saw {distribution_paths}"
@@ -125,8 +126,8 @@ def test_data_provider_paths_are_documented() -> None:
 @pytest.mark.unit
 def test_sparql_endpoint_supports_get_and_post() -> None:
     spec = _spec_without_cache()
-    assert "/sparql" in spec["paths"], list(spec["paths"].keys())[:20]
-    methods = spec["paths"]["/sparql"]
+    assert "/fdp-api/sparql" in spec["paths"], list(spec["paths"].keys())[:20]
+    methods = spec["paths"]["/fdp-api/sparql"]
     assert "get" in methods
     assert "post" in methods
 
@@ -169,14 +170,14 @@ def test_dynamic_paths_appear_only_after_cache_install() -> None:
 def test_dynamic_per_type_paths_are_documented_after_cache_install() -> None:
     spec = _spec_with_cache(_dcat_cache())
     expected_paths = {
-        "/",                          # Repository CRUD (root)
-        "/spec",                      # Repository SHACL shape
-        "/expanded",                  # Repository with parents
-        "/page/{childPrefix}",        # Repository children listing
-        "/catalog",                   # Catalog collection (POST)
-        "/catalog/{id}",              # Catalog CRUD
-        "/catalog/{id}/spec",         # Catalog SHACL shape
-        "/catalog/{id}/expanded",     # Catalog with parents
+        "/",  # Repository CRUD (root)
+        "/fdp-api/spec",  # Repository SHACL shape
+        "/fdp-api/expanded",  # Repository with parents
+        "/fdp-api/page/{childPrefix}",  # Repository children listing
+        "/catalog",  # Catalog collection (POST)
+        "/catalog/{id}",  # Catalog CRUD
+        "/fdp-api/catalog/{id}/spec",  # Catalog SHACL shape
+        "/fdp-api/catalog/{id}/expanded",  # Catalog with parents
     }
     missing = expected_paths - set(spec["paths"].keys())
     assert not missing, f"typed paths missing after cache install: {sorted(missing)}"
@@ -214,7 +215,7 @@ def test_dynamic_paths_carry_fdp_extension() -> None:
     """The extension drives idempotent re-injection on profile re-apply."""
     spec = _spec_with_cache(_dcat_cache())
     for path, item in spec["paths"].items():
-        if path in {"/", "/spec", "/expanded", "/page/{childPrefix}"}:
+        if path in {"/", "/fdp-api/spec", "/fdp-api/expanded", "/fdp-api/page/{childPrefix}"}:
             assert item.get("x-fdp-resource-definition") == "(root)"
         elif path.startswith("/catalog"):
             assert item.get("x-fdp-resource-definition") == "catalog"
@@ -225,26 +226,23 @@ def test_dynamic_paths_carry_fdp_extension() -> None:
 
 @pytest.mark.unit
 def test_no_undocumented_internal_routes_leak_into_spec() -> None:
-    """A guard against accidentally exposing internal/admin paths.
+    """Guard the reserved-segment invariant: nothing leaks at the root.
 
-    If you add a new client-facing route, update the allow-list in the
-    test body. Doing so is the prompt to coordinate an `fdp-client` PR.
+    Every fixed, FDP-specific endpoint must live under the reserved API
+    segment (``/fdp-api``) so the root namespace is free for user-defined
+    resource types. Without a resource-definition cache installed, the only
+    root-level path in the static surface is therefore the LDP catch-all
+    (``/{path}``); every other documented path must be under ``/fdp-api``.
+    A new fixed route mounted at the root would trip this — the prompt to
+    move it under the reserved segment and coordinate an `fdp-client` PR.
     """
     spec = _spec_without_cache()
-    allowed_static_paths = {
-        "/healthz",
-        "/metrics/summary",
-        "/metrics/timeseries/daily",
-        "/metrics/top-resources",
-        "/metrics/geography",
-        "/data/{distribution_id}",
-        "/data/{distribution_id}/sparql",
-        "/sparql",
-        "/{path}",
-    }
     surfaced = set(spec["paths"])
-    surprising = surfaced - allowed_static_paths
-    assert not surprising, (
-        f"new client-facing routes detected: {sorted(surprising)} — "
-        "add to the allow-list AND coordinate an fdp-client PR."
+    leaked_at_root = {
+        p for p in surfaced if p != "/{path}" and not p.startswith(f"{RESERVED_API_PATH}/")
+    }
+    assert not leaked_at_root, (
+        f"routes outside the reserved API segment: {sorted(leaked_at_root)} — "
+        "fixed endpoints must live under /fdp-api so they cannot clash with "
+        "user-defined resource types."
     )

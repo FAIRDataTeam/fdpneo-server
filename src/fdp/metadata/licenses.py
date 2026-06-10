@@ -42,7 +42,7 @@ from fdp.metadata.events import RecordDeleted, RecordModified
 from fdp.metadata.states import MetadataState
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
-from fdp.shared.graphs import license_graph_uri, meta_graph_uri
+from fdp.shared.graphs import license_graph_uri, license_namespace, meta_graph_uri
 from fdp.shared.namespaces import DCT, FDP_DEFAULT, FDP_METADATA_STATE, OWL
 
 if TYPE_CHECKING:
@@ -228,7 +228,7 @@ class LicenseService:
             " OPTIONAL {"
             f" GRAPH ?m {{ ?g <{FDP_METADATA_STATE}> ?s }}"
             ' FILTER(?m = IRI(CONCAT(STR(?g), "/meta"))) }'
-            f' FILTER(STRSTARTS(STR(?g), "{self._base}/licenses/")) }} GROUP BY ?g'
+            f' FILTER(STRSTARTS(STR(?g), "{license_namespace(self._base)}/")) }} GROUP BY ?g'
         )
         rows = await self._select(query)
         items: list[LicenseInfo] = []

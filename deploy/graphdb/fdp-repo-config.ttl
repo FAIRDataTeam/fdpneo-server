@@ -1,0 +1,43 @@
+# GraphDB repository configuration for the `fdp` repository (RDF4J/GraphDB 10).
+#
+# Created headlessly by the `graphdb-init` service in deploy/stack/compose.yaml
+# (POST /rest/repositories). Tuned for the FDP's strict named-graph semantics:
+#
+#   * ruleset "empty"          — NO inference. The FDP relies on exact
+#     one-graph-per-record semantics; inferred triples would pollute named
+#     graphs and break the startup named-graph-isolation self-test (audit R-03).
+#   * enable-context-index true — index named graphs (contexts), which the
+#     access layer's named-graph projection queries.
+#   * disable-sameAs true       — no owl:sameAs expansion.
+
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rep: <http://www.openrdf.org/config/repository#> .
+@prefix sr: <http://www.openrdf.org/config/repository/sail#> .
+@prefix sail: <http://www.openrdf.org/config/sail#> .
+@prefix graphdb: <http://www.ontotext.com/config/graphdb#> .
+
+[] a rep:Repository ;
+    rep:repositoryID "fdp" ;
+    rdfs:label "FAIR Data Point metadata repository" ;
+    rep:repositoryImpl [
+        rep:repositoryType "graphdb:SailRepository" ;
+        sr:sailImpl [
+            sail:sailType "graphdb:Sail" ;
+            graphdb:read-only "false" ;
+            graphdb:ruleset "empty" ;
+            graphdb:base-URL "http://example.org/owlim#" ;
+            graphdb:defaultNS "" ;
+            graphdb:entity-index-size "10000000" ;
+            graphdb:entity-id-size "32" ;
+            graphdb:storage-folder "storage" ;
+            graphdb:enable-context-index "true" ;
+            graphdb:enablePredicateList "true" ;
+            graphdb:in-memory-literal-properties "true" ;
+            graphdb:enable-literal-index "true" ;
+            graphdb:check-for-inconsistencies "false" ;
+            graphdb:disable-sameAs "true" ;
+            graphdb:query-timeout "0" ;
+            graphdb:query-limit-results "0" ;
+            graphdb:throw-QueryEvaluationException-on-timeout "false" ;
+        ]
+    ] .

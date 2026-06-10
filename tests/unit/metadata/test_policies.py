@@ -85,7 +85,7 @@ class _Store:
             return json.dumps({"results": {"bindings": []}}).encode()
         bindings = []
         for iri, g in self.graphs.items():
-            if iri.startswith(f"{BASE}/policies/") and (None, RDF.type, ODRL.Offer) in g:
+            if iri.startswith(f"{BASE}/fdp-api/policies/") and (None, RDF.type, ODRL.Offer) in g:
                 row: dict[str, dict[str, str]] = {"g": {"value": iri}}
                 if iri in self.states:
                     row["state"] = {"value": self.states[iri]}
@@ -119,14 +119,14 @@ def _service(store: _Store) -> PolicyService:
 async def test_put_stores_offer_and_reports_rule_counts() -> None:
     store = _Store()
     info = await _service(store).put("public-read", VALID_OFFER, subject="admin")
-    assert info.iri == f"{BASE}/policies/public-read"
+    assert info.iri == f"{BASE}/fdp-api/policies/public-read"
     assert info.title == "Public read, steward modify"
     assert info.permissions == 1
     assert info.prohibitions == 1
-    assert f"{BASE}/policies/public-read" in store.graphs
+    assert f"{BASE}/fdp-api/policies/public-read" in store.graphs
     # The subject <> resolved to the stable IRI.
-    g = store.graphs[f"{BASE}/policies/public-read"]
-    assert (URIRef(f"{BASE}/policies/public-read"), RDF.type, ODRL.Offer) in g
+    g = store.graphs[f"{BASE}/fdp-api/policies/public-read"]
+    assert (URIRef(f"{BASE}/fdp-api/policies/public-read"), RDF.type, ODRL.Offer) in g
 
 
 @pytest.mark.unit
@@ -191,7 +191,7 @@ async def test_delete_refused_when_referenced() -> None:
     store.referenced = True
     with pytest.raises(Conflict, match="referenced"):
         await svc.delete("public-read")
-    assert f"{BASE}/policies/public-read" in store.graphs  # not deleted
+    assert f"{BASE}/fdp-api/policies/public-read" in store.graphs  # not deleted
 
 
 @pytest.mark.unit
@@ -201,7 +201,7 @@ async def test_delete_removes_and_clears_cache() -> None:
     await svc.put("public-read", VALID_OFFER, subject="admin")
     store.cleared = 0
     await svc.delete("public-read")
-    assert f"{BASE}/policies/public-read" not in store.graphs
+    assert f"{BASE}/fdp-api/policies/public-read" not in store.graphs
     assert store.cleared == 1
     assert "RecordDeleted" in store.events
 
@@ -225,9 +225,9 @@ async def test_published_only_excludes_drafts_and_archived() -> None:
     for pid in ("pub", "draft", "arch"):
         await svc.put(pid, VALID_OFFER, subject="admin")
     store.states = {
-        f"{BASE}/policies/pub": "PUBLISHED",
-        f"{BASE}/policies/draft": "DRAFT",
-        f"{BASE}/policies/arch": "ARCHIVED",
+        f"{BASE}/fdp-api/policies/pub": "PUBLISHED",
+        f"{BASE}/fdp-api/policies/draft": "DRAFT",
+        f"{BASE}/fdp-api/policies/arch": "ARCHIVED",
     }
 
     assert [p.id for p in await svc.list_policies(published_only=True)] == ["pub"]
@@ -251,7 +251,7 @@ class _FakeService:
     list_published_only: bool | None = None
 
     def iri(self, policy_id: str) -> str:
-        return f"{BASE}/policies/{policy_id}"
+        return f"{BASE}/fdp-api/policies/{policy_id}"
 
     async def put(self, policy_id: str, turtle: str, *, subject: str | None):
         del subject
@@ -347,7 +347,7 @@ def test_put_as_admin_publishes() -> None:
         headers={"Content-Type": "text/turtle"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["iri"] == f"{BASE}/policies/public-read"
+    assert resp.json()["iri"] == f"{BASE}/fdp-api/policies/public-read"
     assert svc.puts and svc.puts[0][0] == "public-read"
 
 

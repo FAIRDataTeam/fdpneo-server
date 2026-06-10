@@ -101,6 +101,7 @@ from fdp.shared.errors import (
 from fdp.shared.events import EventBus
 from fdp.shared.limits import BodySizeLimitMiddleware, RateLimitMiddleware
 from fdp.shared.logging import configure_logging
+from fdp.shared.reserved import RESERVED_API_PATH
 from fdp.shared.security_headers import SecurityHeadersMiddleware
 from fdp.storage.postgres.engine import build_engine, build_session_factory
 from fdp.storage.triplestore.adapter import TripleStoreAdapter
@@ -393,11 +394,15 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="FAIR Data Point",
         version=__version__,
-        description="FAIR-aligned metadata repository — see /docs for the API.",
+        description=f"FAIR-aligned metadata repository — see {RESERVED_API_PATH}/docs for the API.",
         lifespan=lifespan,
         debug=settings.environment == "development",
-        docs_url="/docs" if docs_on else None,
-        redoc_url="/redoc" if docs_on else None,
+        # All fixed FDP endpoints live under the reserved API segment so the
+        # root namespace is free for user-defined resource types.
+        openapi_url=f"{RESERVED_API_PATH}/openapi.json",
+        docs_url=f"{RESERVED_API_PATH}/docs" if docs_on else None,
+        redoc_url=f"{RESERVED_API_PATH}/redoc" if docs_on else None,
+        swagger_ui_oauth2_redirect_url=f"{RESERVED_API_PATH}/docs/oauth2-redirect",
     )
 
     register_exception_handlers(app)
@@ -470,35 +475,61 @@ def create_app() -> FastAPI:
     # the per-type /{prefix}/spec, /{prefix}/{id}/spec,
     # /{prefix}/{id}/expanded, /{prefix}/{id}/page/{childPrefix}
     # extension routes.
-    @app.get("/healthz", tags=["internal"])
+    @app.get(f"{RESERVED_API_PATH}/healthz", tags=["internal"])
     async def healthz() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
         """Liveness probe. Does not check downstream dependencies."""
         return {"status": "ok", "version": __version__}
 
-    app.include_router(build_info_router(settings=settings))
+    # Every fixed, FDP-specific router is mounted under the reserved API segment
+    # (``/fdp-api``) so the root namespace is exclusively the LDP resource tree —
+    # a user-defined resource type can claim any URL prefix except ``fdp-api``.
+    # The LDP catch-all (below) stays at root and serves the records themselves.
+    app.include_router(build_info_router(settings=settings), prefix=RESERVED_API_PATH)
     app.include_router(
         build_readiness_router(
             session_factory=app.state.session_factory,
             adapter=app.state.triplestore,
             http_client=app.state.http_client,
             issuer=str(settings.oidc.issuer),
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
     app.include_router(
         build_bootstrap_router(
             settings=settings,
             session_factory=app.state.session_factory,
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
-    app.include_router(build_labels_router(resolver=app.state.label_resolver))
-    app.include_router(build_dashboard_router(service=app.state.dashboard_service))
-    app.include_router(build_api_keys_router(service=app.state.api_key_service))
-    app.include_router(build_search_router(service=app.state.search_service))
-    app.include_router(build_saved_queries_router(service=app.state.saved_query_service))
-    app.include_router(build_settings_router(repository=app.state.settings_repository))
-    app.include_router(build_admin_router(service=app.state.reset_service))
-    app.include_router(build_autocomplete_router(service=app.state.autocomplete_service))
-    app.include_router(build_metrics_router(session_factory=app.state.session_factory))
+    app.include_router(
+        build_labels_router(resolver=app.state.label_resolver), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_dashboard_router(service=app.state.dashboard_service), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_api_keys_router(service=app.state.api_key_service), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_search_router(service=app.state.search_service), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_saved_queries_router(service=app.state.saved_query_service),
+        prefix=RESERVED_API_PATH,
+    )
+    app.include_router(
+        build_settings_router(repository=app.state.settings_repository), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_admin_router(service=app.state.reset_service), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_autocomplete_router(service=app.state.autocomplete_service),
+        prefix=RESERVED_API_PATH,
+    )
+    app.include_router(
+        build_metrics_router(session_factory=app.state.session_factory), prefix=RESERVED_API_PATH
+    )
     app.include_router(
         build_data_router(
             repository=app.state.metadata_repository,
@@ -508,7 +539,8 @@ def create_app() -> FastAPI:
             base_url=str(settings.base_url),
             http_client=app.state.http_client,
             state_reader=app.state.state_reader,
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
     app.include_router(
         build_sparql_router(
@@ -516,13 +548,15 @@ def create_app() -> FastAPI:
             adapter=app.state.triplestore,
             state_gate=app.state.state_gate,
             multigraph_safe_provider=lambda: app.state.sparql_multigraph_safe,
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
-    # LDP read-extensions (/spec, /expanded, /page) — registered AFTER
-    # the static routers above but BEFORE the LDP catch-all so they
-    # aren't shadowed by /{path:path}. The cache provider reads
-    # app.state.resource_definitions on every call, so a profile
-    # re-apply lights up the new types without a server restart.
+    # LDP read-extensions — both the root forms (/fdp-api/spec, /fdp-api/expanded,
+    # /fdp-api/page) and the per-resource forms (/fdp-api/{prefix}/{id}/spec, …).
+    # The records they describe stay at root; only the extension *views* live
+    # under the reserved segment. The cache provider reads
+    # app.state.resource_definitions on every call, so a profile re-apply lights
+    # up new types without a server restart.
     app.include_router(
         build_extensions_router(
             repo=app.state.metadata_repository,
@@ -530,40 +564,48 @@ def create_app() -> FastAPI:
             cache_provider=lambda: app.state.resource_definitions,
             base_url=str(settings.base_url),
             state_gate=app.state.state_gate,
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
-    # Publication-state transitions (Phase 12 / ADR-0010). Registered before the
-    # LDP catch-all so the POST /{record}/state suffix isn't swallowed.
+    # Publication-state transitions (Phase 12 / ADR-0010): POST /fdp-api/state and
+    # POST /fdp-api/{prefix}/{id}/state.
     app.include_router(
         build_state_router(
             service=app.state.state_service,
             base_url=str(settings.base_url),
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
-    # Resource-definition catalog + admin (ADR-0009). Reads serve the
-    # current cache; admin mutations drive the service, whose on_rebuilt
-    # republishes the cache. Registered before the LDP catch-all so
-    # /resource-definitions isn't swallowed by /{path:path}.
+    # Resource-definition catalog + admin (ADR-0009) at /fdp-api/resource-definitions.
+    # Reads serve the current cache; admin mutations drive the service, whose
+    # on_rebuilt republishes the cache.
     app.include_router(
         build_resource_definition_router(
             service=app.state.resource_definition_service,
             cache_provider=lambda: app.state.resource_definitions,
-        )
+        ),
+        prefix=RESERVED_API_PATH,
     )
-    # Schema admin (Phase 10.1) — runtime SHACL-shape management. Registered
-    # before the LDP catch-all so /schemas isn't swallowed by /{path:path};
-    # the shapes themselves are stored at {base}/schemas/{id}.
-    app.include_router(build_schema_router(service=app.state.schema_service))
-    # First-class ODRL policy + license admin (Phase 14 / ADR-0012). Registered
-    # before the LDP catch-all so /policies and /licenses aren't swallowed by
-    # /{path:path}; the documents themselves are stored at {base}/policies/{id}
-    # and {base}/licenses/{id} as public, dereferenceable reference records.
-    app.include_router(build_policy_router(service=app.state.policy_service))
-    app.include_router(build_license_router(service=app.state.license_service))
-    # User-management admin facade (ADR-0013). Admin-gated; 503 when the IdP-admin
-    # service account isn't configured. Registered before the LDP catch-all.
+    # Schema admin (Phase 10.1) — runtime SHACL-shape management at
+    # /fdp-api/schemas; the shapes themselves are stored at {base}/fdp-api/schemas/{id}.
     app.include_router(
-        build_users_router(directory=app.state.user_directory, event_bus=app.state.event_bus)
+        build_schema_router(service=app.state.schema_service), prefix=RESERVED_API_PATH
+    )
+    # First-class ODRL policy + license admin (Phase 14 / ADR-0012) at
+    # /fdp-api/policies and /fdp-api/licenses; the documents themselves are stored
+    # at {base}/fdp-api/policies/{id} and {base}/fdp-api/licenses/{id} as public,
+    # dereferenceable reference records.
+    app.include_router(
+        build_policy_router(service=app.state.policy_service), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_license_router(service=app.state.license_service), prefix=RESERVED_API_PATH
+    )
+    # User-management admin facade (ADR-0013) at /fdp-api/users. Admin-gated; 503
+    # when the IdP-admin service account isn't configured.
+    app.include_router(
+        build_users_router(directory=app.state.user_directory, event_bus=app.state.event_bus),
+        prefix=RESERVED_API_PATH,
     )
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter

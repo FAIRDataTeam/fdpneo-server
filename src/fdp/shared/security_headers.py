@@ -21,12 +21,14 @@ from typing import TYPE_CHECKING
 
 from starlette.datastructures import MutableHeaders
 
+from fdp.shared.reserved import RESERVED_API_PATH
+
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 _HSTS = "max-age=63072000; includeSubDomains"
 _CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-_DOCS_PREFIXES = ("/docs", "/redoc")
+_DOCS_PREFIXES = (f"{RESERVED_API_PATH}/docs", f"{RESERVED_API_PATH}/redoc")
 
 _STATIC_HEADERS: tuple[tuple[str, str], ...] = (
     ("X-Content-Type-Options", "nosniff"),

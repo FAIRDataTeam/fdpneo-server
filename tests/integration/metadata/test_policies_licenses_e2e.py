@@ -308,7 +308,7 @@ def test_policy_round_trip_author_validate_publish_enforce(app_env: None) -> Non
         assert (
             c.as_admin()
             .put(
-                "/policies/restricted",
+                "/fdp-api/policies/restricted",
                 content=_authored_offer(read_steward_only=True),
                 headers=_TTL,
             )
@@ -317,52 +317,64 @@ def test_policy_round_trip_author_validate_publish_enforce(app_env: None) -> Non
         )
         assert (
             c.as_admin()
-            .put("/policies/open", content=_authored_offer(read_steward_only=False), headers=_TTL)
+            .put(
+                "/fdp-api/policies/open",
+                content=_authored_offer(read_steward_only=False),
+                headers=_TTL,
+            )
             .status_code
             == 200
         )
         # A draft policy: authored but never published.
         assert (
             c.as_admin()
-            .put("/policies/wip", content=_authored_offer(read_steward_only=True), headers=_TTL)
+            .put(
+                "/fdp-api/policies/wip",
+                content=_authored_offer(read_steward_only=True),
+                headers=_TTL,
+            )
             .status_code
             == 200
         )
 
         # --- validate -------------------------------------------------------
         ok = c.as_admin().post(
-            "/policies/restricted/validate",
+            "/fdp-api/policies/restricted/validate",
             content=_authored_offer(read_steward_only=True),
             headers=_TTL,
         )
         assert ok.status_code == 200 and ok.json()["conforms"] is True
 
         # Out-of-profile bodies are rejected on write (422) and flagged by the dry run.
-        rejected = c.as_admin().put("/policies/bad", content=OUT_OF_PROFILE_OFFER, headers=_TTL)
+        rejected = c.as_admin().put(
+            "/fdp-api/policies/bad", content=OUT_OF_PROFILE_OFFER, headers=_TTL
+        )
         assert rejected.status_code == 422, rejected.text
         dry = c.as_admin().post(
-            "/policies/restricted/validate", content=OUT_OF_PROFILE_OFFER, headers=_TTL
+            "/fdp-api/policies/restricted/validate", content=OUT_OF_PROFILE_OFFER, headers=_TTL
         )
         assert dry.json()["conforms"] is False
 
         # --- publish + discover --------------------------------------------
-        _publish(c, "/policies/restricted")
-        _publish(c, "/policies/open")
+        _publish(c, "/fdp-api/policies/restricted")
+        _publish(c, "/fdp-api/policies/open")
 
-        anon_catalog = {p["id"] for p in c.as_anonymous().get("/policies").json()["policies"]}
+        anon_catalog = {
+            p["id"] for p in c.as_anonymous().get("/fdp-api/policies").json()["policies"]
+        }
         assert {"restricted", "open", "system-default"} <= anon_catalog
         assert "wip" not in anon_catalog, "draft policy leaked into anonymous discovery"
-        admin_catalog = {p["id"] for p in c.as_admin().get("/policies").json()["policies"]}
+        admin_catalog = {p["id"] for p in c.as_admin().get("/fdp-api/policies").json()["policies"]}
         assert "wip" in admin_catalog, "admin should see draft policies to manage them"
 
         # --- reference + enforce -------------------------------------------
         restricted_path = _create_published_catalog(
             c,
             "restricted-cat",
-            _catalog_ttl(title="Restricted", rights=f"{BASE_URL}/policies/restricted"),
+            _catalog_ttl(title="Restricted", rights=f"{BASE_URL}/fdp-api/policies/restricted"),
         )
         open_path = _create_published_catalog(
-            c, "open-cat", _catalog_ttl(title="Open", rights=f"{BASE_URL}/policies/open")
+            c, "open-cat", _catalog_ttl(title="Open", rights=f"{BASE_URL}/fdp-api/policies/open")
         )
 
         # The authored+published policy governs visibility:
@@ -374,9 +386,9 @@ def test_policy_round_trip_author_validate_publish_enforce(app_env: None) -> Non
         )
 
         # --- delete guard ---------------------------------------------------
-        assert c.as_admin().delete("/policies/restricted").status_code == 409
+        assert c.as_admin().delete("/fdp-api/policies/restricted").status_code == 409
         # The unreferenced draft can be deleted.
-        assert c.as_admin().delete("/policies/wip").status_code == 204
+        assert c.as_admin().delete("/fdp-api/policies/wip").status_code == 204
 
 
 def test_license_round_trip_and_delete_guard(app_env: None) -> None:
@@ -384,19 +396,25 @@ def test_license_round_trip_and_delete_guard(app_env: None) -> None:
     with c.http:
         # author + validate (SHACL) -----------------------------------------
         assert (
-            c.as_admin().put("/licenses/custom", content=LICENSE_TTL, headers=_TTL).status_code
+            c.as_admin()
+            .put("/fdp-api/licenses/custom", content=LICENSE_TTL, headers=_TTL)
+            .status_code
             == 200
         )
-        ok = c.as_admin().post("/licenses/custom/validate", content=LICENSE_TTL, headers=_TTL)
+        ok = c.as_admin().post(
+            "/fdp-api/licenses/custom/validate", content=LICENSE_TTL, headers=_TTL
+        )
         assert ok.status_code == 200 and ok.json()["conforms"] is True
         assert (
-            c.as_admin().put("/licenses/bad", content=BAD_LICENSE_TTL, headers=_TTL).status_code
+            c.as_admin()
+            .put("/fdp-api/licenses/bad", content=BAD_LICENSE_TTL, headers=_TTL)
+            .status_code
             == 422
         )
 
         # publish + discover (the seeded default set is present) -------------
-        _publish(c, "/licenses/custom")
-        anon = {lic["id"] for lic in c.as_anonymous().get("/licenses").json()["licenses"]}
+        _publish(c, "/fdp-api/licenses/custom")
+        anon = {lic["id"] for lic in c.as_anonymous().get("/fdp-api/licenses").json()["licenses"]}
         assert "custom" in anon
         assert {"cc0-1.0", "cc-by-4.0", "cc-by-sa-4.0"} <= anon, "seeded default licenses missing"
 
@@ -404,8 +422,8 @@ def test_license_round_trip_and_delete_guard(app_env: None) -> None:
         _create_published_catalog(
             c,
             "licensed-cat",
-            _catalog_ttl(title="Licensed", license_iri=f"{BASE_URL}/licenses/custom"),
+            _catalog_ttl(title="Licensed", license_iri=f"{BASE_URL}/fdp-api/licenses/custom"),
         )
-        assert c.as_admin().delete("/licenses/custom").status_code == 409
+        assert c.as_admin().delete("/fdp-api/licenses/custom").status_code == 409
         # A seeded-but-unreferenced license deletes cleanly.
-        assert c.as_admin().delete("/licenses/cc-by-sa-4.0").status_code == 204
+        assert c.as_admin().delete("/fdp-api/licenses/cc-by-sa-4.0").status_code == 204

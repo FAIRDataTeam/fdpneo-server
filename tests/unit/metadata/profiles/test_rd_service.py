@@ -52,7 +52,7 @@ DATASET = ResourceDefinitionRecord(
 
 
 def _rd_iri(slug: str) -> str:
-    return f"{BASE}/resource-definitions/{slug}"
+    return f"{BASE}/fdp-api/resource-definitions/{slug}"
 
 
 # --- resolve_cache (pure) --------------------------------------------------

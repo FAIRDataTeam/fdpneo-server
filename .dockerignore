@@ -1,0 +1,22 @@
+# Keep the build context small + deterministic. The image needs pyproject,
+# uv.lock, README.md, src/, alembic.ini, migrations/, profiles/, and
+# deploy/docker-entrypoint.sh — everything else is excluded.
+.venv
+.git
+.gitignore
+.github
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+tests
+docs
+deploy/stack
+deploy/caddy
+deploy/compose.yaml
+# Never bake secrets / local env into the image.
+.env
+.env.*

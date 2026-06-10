@@ -44,6 +44,7 @@ from fdp.metadata.profiles import (
 )
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
+from fdp.shared.reserved import RESERVED_API_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,32 +60,10 @@ log = structlog.get_logger(__name__)
 
 _ADMIN_ROLE: Final = "admin"
 
-# First path segments the LDP catch-all and other routers own; a resource
-# definition may not claim one (it would shadow a built-in surface). Mirrors
-# the reserved-path comment in main.py.
-RESERVED_PREFIXES: Final = frozenset(
-    {
-        "healthz",
-        "readyz",
-        "info",
-        "config",
-        "labels",
-        "me",
-        "metrics",
-        "data",
-        "sparql",
-        "settings",
-        "search",
-        "admin",
-        "forms",
-        "state",
-        "spec",
-        "expanded",
-        "page",
-        "resource-definitions",
-        "schemas",
-    }
-)
+# All fixed FDP endpoints live under the single reserved API segment
+# (``shared.reserved``), so that is the only first path segment a resource
+# definition may not claim — every other root word is free for user types.
+RESERVED_PREFIXES: Final = frozenset({RESERVED_API_PREFIX})
 
 
 # --- DTOs ------------------------------------------------------------------

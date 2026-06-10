@@ -27,7 +27,7 @@ def test_healthz_returns_ok() -> None:
     from fdp.main import create_app
 
     client = TestClient(create_app())
-    response = client.get("/healthz")
+    response = client.get("/fdp-api/healthz")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
@@ -64,7 +64,7 @@ def test_cors_headers_on_simple_request() -> None:
     from fdp.main import create_app
 
     client = TestClient(create_app())
-    response = client.get("/healthz", headers={"Origin": "http://localhost:5173"})
+    response = client.get("/fdp-api/healthz", headers={"Origin": "http://localhost:5173"})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
@@ -98,6 +98,6 @@ def test_cors_rejects_unconfigured_origin() -> None:
     from fdp.main import create_app
 
     client = TestClient(create_app())
-    response = client.get("/healthz", headers={"Origin": "http://evil.example"})
+    response = client.get("/fdp-api/healthz", headers={"Origin": "http://evil.example"})
     assert response.status_code == 200
     assert "access-control-allow-origin" not in response.headers

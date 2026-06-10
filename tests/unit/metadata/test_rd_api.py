@@ -186,12 +186,15 @@ def test_create_rejects_duplicate_slug() -> None:
 
 @pytest.mark.unit
 def test_create_rejects_reserved_prefix() -> None:
+    # ``fdp-api`` is the single reserved first path segment — every fixed FDP
+    # endpoint lives under it, so all other root words (sparql, schemas, …) are
+    # now free for user-defined types.
     svc = _FakeService(schemas={f"{DCAT}Catalog"})
     svc.records = {"repository": ROOT}
     client = _build(svc, ctx=_admin())
     resp = client.post(
         "/resource-definitions",
-        json={"urlPrefix": "sparql", "name": "Sparql", "schema": f"{DCAT}Catalog"},
+        json={"urlPrefix": "fdp-api", "name": "Fdp Api", "schema": f"{DCAT}Catalog"},
     )
     assert resp.status_code == 400
 

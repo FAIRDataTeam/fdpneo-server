@@ -7,7 +7,6 @@ standalone or after conversion to PNG for the .docx embedding step.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from textwrap import dedent
 

@@ -29,7 +29,6 @@ from fdp.metrics.reader import CountryCount, DailyPoint, ResourceCount, SummaryT
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, register_exception_handlers
 
-
 # --- _resolve_period -------------------------------------------------------
 
 
@@ -228,9 +227,7 @@ def test_summary_returns_totals_and_period() -> None:
 def test_daily_series_returns_ordered_points() -> None:
     app = _build_app(reader=_FakeReader())
     client = TestClient(app)
-    response = client.get(
-        "/metrics/timeseries/daily?since=2026-05-30&until=2026-05-31"
-    )
+    response = client.get("/metrics/timeseries/daily?since=2026-05-30&until=2026-05-31")
     assert response.status_code == 200
     points = response.json()["points"]
     assert [p["bucket"] for p in points] == ["2026-05-30", "2026-05-31"]
@@ -256,9 +253,7 @@ def test_top_resources_limit_validation() -> None:
     app = _build_app(reader=_FakeReader())
     client = TestClient(app)
     assert (
-        client.get(
-            "/metrics/top-resources?since=2026-05-01&until=2026-05-31&limit=0"
-        ).status_code
+        client.get("/metrics/top-resources?since=2026-05-01&until=2026-05-31&limit=0").status_code
         == 422
     )
     assert (

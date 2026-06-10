@@ -17,7 +17,7 @@ def _app() -> TestClient:
     async def thing() -> dict[str, str]:
         return {"ok": "yes"}
 
-    @app.get("/docs")  # stand-in for the Swagger UI path
+    @app.get("/fdp-api/docs")  # stand-in for the Swagger UI path
     async def docs() -> dict[str, str]:
         return {"ui": "swagger"}
 
@@ -37,7 +37,7 @@ def test_baseline_headers_present_on_api_response() -> None:
 
 @pytest.mark.unit
 def test_docs_ui_is_exempt_from_strict_csp() -> None:
-    h = _app().get("/docs").headers
+    h = _app().get("/fdp-api/docs").headers
     # The doc UIs need CDN assets, so they keep the other headers but not the
     # locked-down CSP that would break them.
     assert "Content-Security-Policy" not in h

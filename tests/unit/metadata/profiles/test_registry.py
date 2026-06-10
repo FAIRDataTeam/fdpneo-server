@@ -18,15 +18,12 @@ from fdp.metadata.profiles.registry import (
     build_cache_from_manifest,
 )
 
-
 BASE = "http://localhost:8000"
 
 
 def _settings() -> Settings:
     return Settings(
-        postgres_dsn=PostgresDsn(
-            "postgresql+asyncpg://fdp:fdp@localhost:5432/fdp_test"
-        ),
+        postgres_dsn=PostgresDsn("postgresql+asyncpg://fdp:fdp@localhost:5432/fdp_test"),
         triplestore=TripleStoreSettings(
             query_endpoint=HttpUrl("http://triplestore.local/query"),
             update_endpoint=HttpUrl("http://triplestore.local/update"),
@@ -50,17 +47,13 @@ def _three_type_cache() -> ResourceDefinitionCache:
             urlPrefix="",
             name="Repository",
             schema="fdp:Repository",
-            children=[
-                ChildLink(relationUri="dcat:catalog", target="catalog", title="Catalogs")
-            ],
+            children=[ChildLink(relationUri="dcat:catalog", target="catalog", title="Catalogs")],
         ),
         ResourceDefinitionEntry(
             urlPrefix="catalog",
             name="Catalog",
             schema="dcat:Catalog",
-            children=[
-                ChildLink(relationUri="dcat:dataset", target="dataset", title="Datasets")
-            ],
+            children=[ChildLink(relationUri="dcat:dataset", target="dataset", title="Datasets")],
         ),
         ResourceDefinitionEntry(
             urlPrefix="dataset",
@@ -176,10 +169,7 @@ def test_is_container_root_without_children_is_not_a_container() -> None:
 @pytest.mark.unit
 def test_member_shape_for_collection() -> None:
     cache = _three_type_cache()
-    assert (
-        cache.member_shape(f"{BASE}/catalog")
-        == "http://www.w3.org/ns/dcat#Catalog"
-    )
+    assert cache.member_shape(f"{BASE}/catalog") == "http://www.w3.org/ns/dcat#Catalog"
 
 
 @pytest.mark.unit
@@ -193,10 +183,7 @@ def test_member_shape_only_meaningful_at_one_segment() -> None:
 def test_shape_for_resource() -> None:
     cache = _three_type_cache()
     assert cache.shape_for(BASE) == "https://w3id.org/fdp/o#Repository"
-    assert (
-        cache.shape_for(f"{BASE}/catalog/c-1")
-        == "http://www.w3.org/ns/dcat#Catalog"
-    )
+    assert cache.shape_for(f"{BASE}/catalog/c-1") == "http://www.w3.org/ns/dcat#Catalog"
     assert cache.shape_for(f"{BASE}/ghost/anything") is None
 
 
@@ -260,13 +247,9 @@ def test_build_passes_through_absolute_iris_for_relations() -> None:
 
 @pytest.mark.unit
 def test_resource_definition_is_root_property() -> None:
-    rd = ResourceDefinition(
-        url_prefix="", name="R", schema_iri="http://x", children=()
-    )
+    rd = ResourceDefinition(url_prefix="", name="R", schema_iri="http://x", children=())
     assert rd.is_root is True
-    rd2 = ResourceDefinition(
-        url_prefix="x", name="X", schema_iri="http://y", children=()
-    )
+    rd2 = ResourceDefinition(url_prefix="x", name="X", schema_iri="http://y", children=())
     assert rd2.is_root is False
 
 

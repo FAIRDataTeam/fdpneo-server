@@ -56,12 +56,10 @@ def test_openapi_without_cache_emits_only_static_paths() -> None:
     spec = app.openapi()
     assert app.state.resource_definitions is None
     # FastAPI generates a path for /healthz from the decorator.
-    assert "/healthz" in spec["paths"]
+    assert "/fdp-api/healthz" in spec["paths"]
     # No FDP-injected paths yet.
     assert not any(
-        "x-fdp-resource-definition" in v
-        for v in spec["paths"].values()
-        if isinstance(v, dict)
+        "x-fdp-resource-definition" in v for v in spec["paths"].values() if isinstance(v, dict)
     )
 
 
@@ -73,12 +71,12 @@ def test_openapi_with_cache_injects_typed_paths_and_tags() -> None:
     app.openapi_schema = None  # force rebuild
     spec = app.openapi()
     # Static paths still present.
-    assert "/healthz" in spec["paths"]
+    assert "/fdp-api/healthz" in spec["paths"]
     # Typed paths now appear.
-    assert "/" in spec["paths"]                       # root Repository
-    assert "/catalog" in spec["paths"]                # collection POST
+    assert "/" in spec["paths"]  # root Repository
+    assert "/catalog" in spec["paths"]  # collection POST
     assert "/catalog/{id}" in spec["paths"]
-    assert "/catalog/{id}/spec" in spec["paths"]
+    assert "/fdp-api/catalog/{id}/spec" in spec["paths"]
     # Tag names include both per-type tags.
     tag_names = [t["name"] for t in spec.get("tags", [])]
     assert "Metadata: Repository" in tag_names

@@ -13,7 +13,6 @@ from tests.unit.metadata.profiles.conftest import (
     SCHEMA_TTL,
 )
 
-
 # --- shared fixtures -----------------------------------------------------
 
 
@@ -136,9 +135,7 @@ def test_validator_flags_duplicate_url_prefix(
     write_bundle: Callable[..., Path],
 ) -> None:
     manifest = _BASE_MANIFEST + (
-        "  - urlPrefix: dataset\n"
-        "    name: SecondDataset\n"
-        "    schema: dcat:Dataset\n"
+        "  - urlPrefix: dataset\n    name: SecondDataset\n    schema: dcat:Dataset\n"
     )
     profile = load_profile(_bundle_with_two_schemas(write_bundle, manifest))
     report = validate_profile(profile)

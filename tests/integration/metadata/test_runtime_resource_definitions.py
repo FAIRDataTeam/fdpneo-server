@@ -252,25 +252,25 @@ def test_runtime_definition_lights_up_endpoints_and_openapi(app_env: None) -> No
     c = _make_client()
     with c.http:
         # Seed types from the profile are present.
-        listed = c.as_anonymous().get("/resource-definitions").json()["definitions"]
+        listed = c.as_anonymous().get("/fdp-api/resource-definitions").json()["definitions"]
         assert {d["slug"] for d in listed} == {"repository", "catalog"}
 
         # Two-step: publish the Ontology shape, then register the type.
         _publish_ontology_shape(c)
-        created = c.as_admin().post("/resource-definitions", json=_ontology_definition())
+        created = c.as_admin().post("/fdp-api/resource-definitions", json=_ontology_definition())
         assert created.status_code == 201, created.text
         assert created.json()["slug"] == "ontology"
 
         # The new type is in the public catalog and the OpenAPI surface — no restart.
-        listed = c.as_anonymous().get("/resource-definitions").json()["definitions"]
+        listed = c.as_anonymous().get("/fdp-api/resource-definitions").json()["definitions"]
         assert any(d["slug"] == "ontology" for d in listed)
-        paths = c.as_anonymous().get("/openapi.json").json()["paths"]
+        paths = c.as_anonymous().get("/fdp-api/openapi.json").json()["paths"]
         assert "/ontology" in paths
         assert "/ontology/{id}" in paths
 
         # Catalog now also contains Ontology metadata (child link added by replace).
         replaced = c.as_admin().put(
-            "/resource-definitions/catalog",
+            "/fdp-api/resource-definitions/catalog",
             json={
                 "urlPrefix": "catalog",
                 "name": "Catalog",
@@ -293,7 +293,9 @@ def test_create_member_of_runtime_type(app_env: None) -> None:
     with c.http:
         _publish_ontology_shape(c)
         assert (
-            c.as_admin().post("/resource-definitions", json=_ontology_definition()).status_code
+            c.as_admin()
+            .post("/fdp-api/resource-definitions", json=_ontology_definition())
+            .status_code
             == 201
         )
 
@@ -319,7 +321,9 @@ def test_runtime_type_survives_restart(app_env: None) -> None:
     with first.http:
         _publish_ontology_shape(first)
         assert (
-            first.as_admin().post("/resource-definitions", json=_ontology_definition()).status_code
+            first.as_admin()
+            .post("/fdp-api/resource-definitions", json=_ontology_definition())
+            .status_code
             == 201
         )
 
@@ -327,9 +331,9 @@ def test_runtime_type_survives_restart(app_env: None) -> None:
     # applied → the cache is rebuilt from the RD records in the triple store.
     second = _make_client()
     with second.http:
-        listed = second.as_anonymous().get("/resource-definitions").json()["definitions"]
+        listed = second.as_anonymous().get("/fdp-api/resource-definitions").json()["definitions"]
         assert any(d["slug"] == "ontology" for d in listed), "runtime type did not survive restart"
-        assert "/ontology" in second.as_anonymous().get("/openapi.json").json()["paths"]
+        assert "/ontology" in second.as_anonymous().get("/fdp-api/openapi.json").json()["paths"]
 
 
 def test_rd_record_is_rest_readable_but_hidden_from_public_sparql(app_env: None) -> None:
@@ -345,19 +349,21 @@ def test_rd_record_is_rest_readable_but_hidden_from_public_sparql(app_env: None)
     with c.http:
         _publish_ontology_shape(c)
         assert (
-            c.as_admin().post("/resource-definitions", json=_ontology_definition()).status_code
+            c.as_admin()
+            .post("/fdp-api/resource-definitions", json=_ontology_definition())
+            .status_code
             == 201
         )
-        rd_graph = f"{BASE_URL}/resource-definitions/ontology"
+        rd_graph = f"{BASE_URL}/fdp-api/resource-definitions/ontology"
 
         # REST: the RD record is part of the public catalog.
-        assert c.as_anonymous().get("/resource-definitions/ontology").status_code == 200
+        assert c.as_anonymous().get("/fdp-api/resource-definitions/ontology").status_code == 200
 
         # SPARQL: naming the internal RD graph is forbidden for an anonymous
         # caller — it is excluded from the authorized read set, so the
         # rewriter rejects the query (§9.5) rather than projecting it.
         resp = c.as_anonymous().get(
-            "/sparql",
+            "/fdp-api/sparql",
             params={"query": f"ASK {{ GRAPH <{rd_graph}> {{ ?s ?p ?o }} }}"},
             headers={"Accept": "application/sparql-results+json"},
         )
@@ -369,7 +375,7 @@ def test_rd_record_is_rest_readable_but_hidden_from_public_sparql(app_env: None)
         # against a protocol-conformant store — Oxigraph (this test's backend)
         # does not union repeated `named-graph-uri`; see TASKS.md Phase 10.3.
         root_ask = c.as_anonymous().get(
-            "/sparql",
+            "/fdp-api/sparql",
             params={
                 "query": f"ASK {{ GRAPH <{BASE_URL}> {{ ?s <http://purl.org/dc/terms/title> ?t }} }}"
             },

@@ -47,7 +47,12 @@ from rdflib.namespace import RDF
 from fdp.identity.deps import require_auth
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
-from fdp.shared.graphs import meta_graph_uri, record_graph_uri
+from fdp.shared.graphs import (
+    meta_graph_uri,
+    record_graph_uri,
+    schema_graph_uri,
+    schema_namespace,
+)
 from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, LDP, OWL, SH
 
 if TYPE_CHECKING:
@@ -109,7 +114,7 @@ class SchemaService:
         self._base = base_url.rstrip("/")
 
     def iri(self, schema_id: str) -> str:
-        return f"{self._base}/schemas/{schema_id}"
+        return str(schema_graph_uri(self._base, schema_id))
 
     async def put(self, schema_id: str, turtle: str, *, subject: str | None) -> SchemaInfo:
         """Create or replace the shape ``schema_id`` and refresh the validator."""
@@ -177,7 +182,7 @@ class SchemaService:
         query = (
             "SELECT ?g (SAMPLE(?tc) AS ?target) WHERE { GRAPH ?g {"
             f" ?s a <{SH.NodeShape}> . OPTIONAL {{ ?s <{SH.targetClass}> ?tc }} }}"
-            f' FILTER(STRSTARTS(STR(?g), "{self._base}/schemas/")) }} GROUP BY ?g'
+            f' FILTER(STRSTARTS(STR(?g), "{schema_namespace(self._base)}/")) }} GROUP BY ?g'
         )
         rows = await self._select(query)
         items: list[SchemaInfo] = []

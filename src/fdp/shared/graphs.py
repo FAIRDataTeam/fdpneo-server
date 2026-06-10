@@ -29,24 +29,25 @@ from __future__ import annotations
 
 from rdflib import URIRef
 
+from fdp.shared.reserved import RESERVED_API_PREFIX
+
 _META_SUFFIX = "/meta"
 _AUDIT_SUFFIX = "/audit"
 _DATA_SUFFIX = "/data"
 
-# Reserved path segment for resource-definition records (ADR-0009). RD
-# records live at ``<base_url>/resource-definitions/<id>`` — a server-owned
-# namespace, never minted for user metadata. ``main.py`` reserves the same
-# prefix from the LDP catch-all.
-_RESOURCE_DEFINITIONS_SEGMENT = "resource-definitions"
-
-# Reserved path segments for first-class ODRL policy and license documents
-# (ADR-0012). Unlike resource-definition records, these are *public* reference
-# documents (anonymous-readable, like ``/schemas``) — they are NOT internal, so
-# ``is_internal_graph_uri`` does not exclude them. Only their ``/meta`` and
+# Server-owned record namespaces all live under the single reserved API segment
+# (see ``shared.reserved``) so the root namespace stays free for user-defined
+# resource types. ``main.py`` mounts the matching routers under the same prefix.
+#
+# Resource-definition records (ADR-0009) are server-owned *internal* graphs.
+# Policy and license documents (ADR-0012) are *public* reference documents
+# (anonymous-readable, like ``/schemas``) — NOT internal, so
+# ``is_internal_graph_uri`` does not exclude them; only their ``/meta`` and
 # ``/audit`` siblings are internal, which the suffix predicates already cover.
-# ``main.py`` reserves both prefixes ahead of the LDP catch-all.
-_POLICIES_SEGMENT = "policies"
-_LICENSES_SEGMENT = "licenses"
+_RESOURCE_DEFINITIONS_SEGMENT = f"{RESERVED_API_PREFIX}/resource-definitions"
+_POLICIES_SEGMENT = f"{RESERVED_API_PREFIX}/policies"
+_LICENSES_SEGMENT = f"{RESERVED_API_PREFIX}/licenses"
+_SCHEMAS_SEGMENT = f"{RESERVED_API_PREFIX}/schemas"
 
 
 def _as_uri(record_uri: str | URIRef) -> URIRef:
@@ -120,6 +121,31 @@ def license_graph_uri(base_url: str | URIRef, license_id: str) -> URIRef:
     return URIRef(f"{base}/{_LICENSES_SEGMENT}/{license_id}")
 
 
+def schema_graph_uri(base_url: str | URIRef, schema_id: str) -> URIRef:
+    """The stable, dereferenceable graph URI for managed SHACL shape ``schema_id``.
+
+    Lives under the reserved ``<base_url>/fdp-api/schemas/`` namespace, served
+    publicly (anonymous-readable) through the LDP/metadata layer.
+    """
+    base = str(base_url).rstrip("/")
+    return URIRef(f"{base}/{_SCHEMAS_SEGMENT}/{schema_id}")
+
+
+def policy_namespace(base_url: str | URIRef) -> str:
+    """The ``<base>/fdp-api/policies`` prefix every managed-policy IRI starts with."""
+    return f"{str(base_url).rstrip('/')}/{_POLICIES_SEGMENT}"
+
+
+def license_namespace(base_url: str | URIRef) -> str:
+    """The ``<base>/fdp-api/licenses`` prefix every managed-license IRI starts with."""
+    return f"{str(base_url).rstrip('/')}/{_LICENSES_SEGMENT}"
+
+
+def schema_namespace(base_url: str | URIRef) -> str:
+    """The ``<base>/fdp-api/schemas`` prefix every managed-schema IRI starts with."""
+    return f"{str(base_url).rstrip('/')}/{_SCHEMAS_SEGMENT}"
+
+
 def is_policy_graph_uri(uri: str | URIRef) -> bool:
     """True iff ``uri`` is (or is a sibling of) a managed policy document."""
     return f"/{_POLICIES_SEGMENT}/" in str(uri)
@@ -132,6 +158,11 @@ def is_license_graph_uri(uri: str | URIRef) -> bool:
 
 def is_meta_graph_uri(uri: str | URIRef) -> bool:
     return str(uri).endswith(_META_SUFFIX)
+
+
+def is_schema_graph_uri(uri: str | URIRef) -> bool:
+    """True iff ``uri`` is (or is a sibling of) a managed SHACL shape."""
+    return f"/{_SCHEMAS_SEGMENT}/" in str(uri)
 
 
 def is_audit_graph_uri(uri: str | URIRef) -> bool:
@@ -187,10 +218,15 @@ __all__ = [
     "is_meta_graph_uri",
     "is_policy_graph_uri",
     "is_resource_definition_graph_uri",
+    "is_schema_graph_uri",
     "license_graph_uri",
+    "license_namespace",
     "meta_graph_uri",
     "policy_graph_uri",
+    "policy_namespace",
     "record_graph_uri",
     "record_uri_from_sibling",
     "resource_definition_graph_uri",
+    "schema_graph_uri",
+    "schema_namespace",
 ]

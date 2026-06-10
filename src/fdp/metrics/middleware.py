@@ -45,6 +45,7 @@ import structlog
 
 from fdp.metrics.events import MetricEventType, RequestObserved
 from fdp.shared.context import get_current
+from fdp.shared.reserved import RESERVED_API_PATH
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,7 +57,12 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 
-_SKIP_PREFIXES: Final = ("/healthz", "/metrics", "/openapi.json", "/docs", "/redoc")
+_SKIP_PREFIXES: Final = tuple(
+    f"{RESERVED_API_PATH}{suffix}"
+    for suffix in ("/healthz", "/metrics", "/openapi.json", "/docs", "/redoc")
+)
+_SPARQL_PATH: Final = f"{RESERVED_API_PATH}/sparql"
+_DATA_PREFIX: Final = f"{RESERVED_API_PATH}/data/"
 
 
 class RequestObservationMiddleware:
@@ -70,6 +76,8 @@ class RequestObservationMiddleware:
     ) -> None:
         self._app = app
         self._bus_provider = bus_provider
+        # Strong refs to in-flight fire-and-forget publish tasks (GC guard).
+        self._pending: set[asyncio.Task[None]] = set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -99,8 +107,12 @@ class RequestObservationMiddleware:
             bus = self._bus_provider()
             if bus is not None and event is not None:
                 # Fire-and-forget: never block the response on metrics
-                # delivery, never fail the response if delivery raises.
-                asyncio.create_task(_publish_safe(bus, event))
+                # delivery, never fail the response if delivery raises. We keep
+                # a strong reference until the task finishes so it can't be
+                # garbage-collected mid-flight (otherwise RUF006).
+                task = asyncio.create_task(_publish_safe(bus, event))
+                self._pending.add(task)
+                task.add_done_callback(self._pending.discard)
 
 
 # --- routing helpers -------------------------------------------------------
@@ -109,17 +121,14 @@ class RequestObservationMiddleware:
 def _should_skip(method: str, path: str) -> bool:
     if method == "OPTIONS":
         return True
-    for prefix in _SKIP_PREFIXES:
-        if path == prefix or path.startswith(prefix + "/"):
-            return True
-    return False
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in _SKIP_PREFIXES)
 
 
 def _event_type_for(method: str, path: str) -> MetricEventType | None:
     """Classify the request. ``None`` means "don't record"."""
-    if path == "/sparql":
+    if path == _SPARQL_PATH:
         return MetricEventType.SPARQL_QUERY
-    if path.startswith("/data/"):
+    if path.startswith(_DATA_PREFIX):
         # /data/{id}/sparql is the per-distribution SPARQL endpoint; the
         # plain /data/{id} is a file download.
         if path.endswith("/sparql"):
@@ -175,7 +184,7 @@ def _resource_iri(scope: Scope, event_type: MetricEventType, path: str) -> str |
     query targets the dataset projection, not a specific record. For
     everything else the IRI is the absolute URL.
     """
-    if event_type is MetricEventType.SPARQL_QUERY and path == "/sparql":
+    if event_type is MetricEventType.SPARQL_QUERY and path == _SPARQL_PATH:
         return None
     scheme: str = scope.get("scheme", "http")
     host = _header(scope, b"host")

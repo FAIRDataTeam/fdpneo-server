@@ -43,7 +43,7 @@ SHAPE_V1 = """\
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix dct: <http://purl.org/dc/terms/> .
-<http://localhost:8000/schemas/ontology>
+<http://localhost:8000/fdp-api/schemas/ontology>
     a sh:NodeShape ;
     sh:targetClass owl:Ontology ;
     sh:property [ sh:path dct:title ; sh:minCount 1 ;
@@ -55,7 +55,7 @@ SHAPE_V2 = """\
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix dct: <http://purl.org/dc/terms/> .
-<http://localhost:8000/schemas/ontology>
+<http://localhost:8000/fdp-api/schemas/ontology>
     a sh:NodeShape ;
     sh:targetClass owl:Ontology ;
     sh:property [ sh:path dct:title ; sh:minCount 1 ;
@@ -99,7 +99,7 @@ class _Store:
         if "terms/source" in sparql:  # discovery query
             bindings = []
             for iri, g in self.graphs.items():
-                if not iri.startswith(f"{BASE}/schemas/"):
+                if not iri.startswith(f"{BASE}/fdp-api/schemas/"):
                     continue
                 src = next(iter(g.objects(None, DCT.source)), None)
                 if src is not None:
@@ -137,7 +137,7 @@ async def _seed_with_source(store: _Store) -> SchemaService:
     service = _schema_service(store)
     g = Graph()
     g.parse(data=SHAPE_V1, format="turtle")
-    g.add((URIRef(f"{BASE}/schemas/ontology"), DCT.source, URIRef(REMOTE)))
+    g.add((URIRef(f"{BASE}/fdp-api/schemas/ontology"), DCT.source, URIRef(REMOTE)))
     await service.put("ontology", g.serialize(format="turtle"), subject="admin")
     return service
 
@@ -165,7 +165,9 @@ async def test_discover_finds_sourced_schemas() -> None:
         syncer = _syncer(store, service, client, _settings())
         remotes = await syncer.discover()
     assert remotes == [
-        RemoteSchema(schema_id="ontology", iri=f"{BASE}/schemas/ontology", source_url=REMOTE)
+        RemoteSchema(
+            schema_id="ontology", iri=f"{BASE}/fdp-api/schemas/ontology", source_url=REMOTE
+        )
     ]
 
 
@@ -189,7 +191,7 @@ async def test_sync_skips_host_not_on_allow_list() -> None:
     async with httpx.AsyncClient() as client:
         syncer = _syncer(store, service, client, _settings(allowed_hosts=[]))
         outcome = await syncer.sync_one(
-            RemoteSchema("ontology", f"{BASE}/schemas/ontology", REMOTE)
+            RemoteSchema("ontology", f"{BASE}/fdp-api/schemas/ontology", REMOTE)
         )
     assert outcome.status is SyncStatus.SKIPPED
 
@@ -216,7 +218,7 @@ async def test_sync_unchanged_when_remote_isomorphic() -> None:
     async with httpx.AsyncClient() as client:
         syncer = _syncer(store, service, client, _settings())
         outcome = await syncer.sync_one(
-            RemoteSchema("ontology", f"{BASE}/schemas/ontology", REMOTE)
+            RemoteSchema("ontology", f"{BASE}/fdp-api/schemas/ontology", REMOTE)
         )
     assert outcome.status is SyncStatus.UNCHANGED
 
@@ -232,14 +234,14 @@ async def test_sync_updates_and_restamps_source_on_change() -> None:
     async with httpx.AsyncClient() as client:
         syncer = _syncer(store, service, client, _settings())
         outcome = await syncer.sync_one(
-            RemoteSchema("ontology", f"{BASE}/schemas/ontology", REMOTE)
+            RemoteSchema("ontology", f"{BASE}/fdp-api/schemas/ontology", REMOTE)
         )
     assert outcome.status is SyncStatus.UPDATED
     # The republished shape carries the second property and a re-stamped source.
-    stored = store.graphs[f"{BASE}/schemas/ontology"]
+    stored = store.graphs[f"{BASE}/fdp-api/schemas/ontology"]
     paths = {str(o) for o in stored.objects(None, SH.path)}
     assert str(DCT.description) in paths
-    assert (URIRef(f"{BASE}/schemas/ontology"), DCT.source, URIRef(REMOTE)) in stored
+    assert (URIRef(f"{BASE}/fdp-api/schemas/ontology"), DCT.source, URIRef(REMOTE)) in stored
 
 
 # --- failures --------------------------------------------------------------
@@ -254,7 +256,7 @@ async def test_sync_failed_on_http_error() -> None:
     async with httpx.AsyncClient() as client:
         syncer = _syncer(store, service, client, _settings())
         outcome = await syncer.sync_one(
-            RemoteSchema("ontology", f"{BASE}/schemas/ontology", REMOTE)
+            RemoteSchema("ontology", f"{BASE}/fdp-api/schemas/ontology", REMOTE)
         )
     assert outcome.status is SyncStatus.FAILED
 
@@ -272,7 +274,7 @@ async def test_sync_failed_on_unparseable_body() -> None:
     async with httpx.AsyncClient() as client:
         syncer = _syncer(store, service, client, _settings())
         outcome = await syncer.sync_one(
-            RemoteSchema("ontology", f"{BASE}/schemas/ontology", REMOTE)
+            RemoteSchema("ontology", f"{BASE}/fdp-api/schemas/ontology", REMOTE)
         )
     assert outcome.status is SyncStatus.FAILED
 
