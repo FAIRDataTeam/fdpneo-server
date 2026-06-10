@@ -16,8 +16,8 @@ jobs:
     name: ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       # --extra dev: ruff/pytest/pyright live in [project.optional-dependencies]
@@ -30,8 +30,8 @@ jobs:
     name: pyright
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
@@ -41,8 +41,8 @@ jobs:
     name: pytest (unit + contract)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
@@ -61,7 +61,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
         if: github.event_name == 'push'
