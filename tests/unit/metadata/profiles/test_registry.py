@@ -183,6 +183,25 @@ def test_member_shape_only_meaningful_at_one_segment() -> None:
 
 
 @pytest.mark.unit
+def test_containment_relation_matches_child_type_to_parent_link() -> None:
+    cache = _three_type_cache()
+    # root → catalog member: the root's child link to "catalog" names dcat:catalog.
+    assert (
+        cache.containment_relation(BASE, f"{BASE}/catalog/c-1")
+        == "http://www.w3.org/ns/dcat#catalog"
+    )
+    # catalog → dataset member.
+    assert (
+        cache.containment_relation(f"{BASE}/catalog/c-1", f"{BASE}/dataset/d-1")
+        == "http://www.w3.org/ns/dcat#dataset"
+    )
+    # No declared link from root → dataset (skips a generation) → None.
+    assert cache.containment_relation(BASE, f"{BASE}/dataset/d-1") is None
+    # Unknown type → None.
+    assert cache.containment_relation(BASE, f"{BASE}/ghost/x") is None
+
+
+@pytest.mark.unit
 def test_shape_for_resource() -> None:
     cache = _three_type_cache()
     assert cache.shape_for(BASE) == f"{BASE}/fdp-api/schemas/repository"

@@ -167,6 +167,26 @@ class ResourceDefinitionCache:
         rd = self._by_prefix.get(prefix)
         return rd.schema_iri if rd is not None else None
 
+    def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:
+        """The typed forward predicate a ``parent`` uses to point at ``child``.
+
+        Resolves both IRIs to their resource definitions (by first path segment),
+        then matches the child's type to one of the parent's declared child
+        links: the link whose ``target_prefix`` equals the child's ``url_prefix``
+        names the predicate (e.g. root → catalog ⇒ ``dcat:catalog``). Returns
+        ``None`` when either side isn't a known type or the parent declares no
+        link to the child's type — in which case only ``ldp:contains`` is
+        maintained. Pure; used by the containment manager (forward membership).
+        """
+        parent = self.for_url(parent_iri)
+        child = self.for_url(child_iri)
+        if parent is None or child is None:
+            return None
+        for link in parent.children:
+            if link.target_prefix == child.url_prefix:
+                return link.relation_uri
+        return None
+
     # --- internals --------------------------------------------------------
 
     def _segments(self, url: str) -> list[str] | None:

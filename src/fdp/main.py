@@ -37,6 +37,7 @@ from fdp.identity.users import build_users_router
 from fdp.metadata.admin import ResetService, build_admin_router
 from fdp.metadata.audit import AuditLog
 from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
+from fdp.metadata.containment import ContainmentManager
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
@@ -627,14 +628,21 @@ def create_app() -> FastAPI:
     # POST validates the new member against its container's member shape,
     # PUT/PATCH validate the resource against its own type shape, and the
     # repository validates the meta graph against META_SHAPE_IRI.
+    container_registry = _DynamicContainerRegistry(app)
     app.include_router(
         build_ldp_router(
             repo=app.state.metadata_repository,
             pdp=app.state.pdp,
             validator=app.state.shacl_validator,
-            containers=_DynamicContainerRegistry(app),
+            containers=container_registry,
             event_bus=app.state.event_bus,
             state_gate=app.state.state_gate,
+            # Maintain the parent's forward containment links (ldp:contains +
+            # the typed DCAT relation) from each child's dct:isPartOf; the same
+            # RD cache that classifies containers names the predicate.
+            containment=ContainmentManager(
+                repo=app.state.metadata_repository, resolver=container_registry
+            ),
             prefix="",
         )
     )
@@ -698,6 +706,10 @@ class _DynamicContainerRegistry:
     def shape_for(self, resource_iri: str) -> str | None:
         cache = self._cache()
         return None if cache is None else cache.shape_for(resource_iri)
+
+    def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:
+        cache = self._cache()
+        return None if cache is None else cache.containment_relation(parent_iri, child_iri)
 
     def _cache(self) -> ResourceDefinitionCache | None:
         return getattr(self._app.state, "resource_definitions", None)

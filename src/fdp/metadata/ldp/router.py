@@ -71,6 +71,7 @@ from fdp.shared.errors import (
 )
 
 if TYPE_CHECKING:
+    from fdp.metadata.containment import ContainmentManager
     from fdp.metadata.lifecycle import StateGate
     from fdp.metadata.repository import MetadataRepository
     from fdp.metadata.shacl import ShaclValidator
@@ -110,6 +111,8 @@ class ContainerRegistry(Protocol):
 
     def shape_for(self, resource_iri: str) -> str | None: ...
 
+    def containment_relation(self, parent_iri: str, child_iri: str) -> str | None: ...
+
 
 class DefaultContainerRegistry:
     """Skeleton default — nothing is a container, no shape is bound."""
@@ -123,6 +126,9 @@ class DefaultContainerRegistry:
     def shape_for(self, resource_iri: str) -> str | None:  # noqa: ARG002
         return None
 
+    def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:  # noqa: ARG002
+        return None
+
 
 def build_ldp_router(
     *,
@@ -132,6 +138,7 @@ def build_ldp_router(
     containers: ContainerRegistry | None = None,
     event_bus: EventBus | None = None,
     state_gate: StateGate | None = None,
+    containment: ContainmentManager | None = None,
     prefix: str = "/ldp",
 ) -> APIRouter:
     """Build the LDP router wired with ``repo`` + ``pdp`` + optional helpers.
@@ -194,6 +201,45 @@ def build_ldp_router(
         report = await validator.validate_against(graph, shape_iri)
         report.raise_if_failed()
 
+    async def _maintain_membership(
+        *,
+        child_iri: str,
+        ctx: RequestContext,
+        new_graph: Graph,
+        old_graph: Graph,
+        prior_exists: bool,
+        is_create: bool,
+    ) -> list[RecordModified]:
+        """Write the parent's forward links, compensating the child write on failure.
+
+        The child graph is already persisted; maintaining the parent's
+        ``ldp:contains`` + typed relation is a second graph write the SPARQL 1.1
+        Protocol can't bind into one transaction (ADR-0005). If it fails we undo
+        the child write — restore its prior content, or delete it on a fresh
+        create — so the two directions never disagree, and re-raise.
+        """
+        if containment is None:
+            return []
+        try:
+            if is_create:
+                return await containment.reconcile_create(
+                    child_iri, new_graph, subject=ctx.subject, timestamp=ctx.request_timestamp
+                )
+            return await containment.reconcile_update(
+                child_iri,
+                old_graph,
+                new_graph,
+                subject=ctx.subject,
+                timestamp=ctx.request_timestamp,
+            )
+        except Exception:
+            if prior_exists:
+                await repo.put_graph(child_iri, old_graph, subject=ctx.subject)
+            else:
+                await repo.delete_graph(child_iri)
+            log.error("containment_reconcile_failed_compensated", child=child_iri)
+            raise
+
     @router.get("/{path:path}", name="ldp_get")
     async def http_get(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -251,6 +297,16 @@ def build_ldp_router(
         # leaf member IRI (leaving the write unvalidated).
         await _validate_against_resource_shape(new_graph, iri)
         etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
+        # Maintain the parent's forward containment links from the child's
+        # dct:isPartOf (compensates the child write on failure).
+        parent_events = await _maintain_membership(
+            child_iri=iri,
+            ctx=ctx,
+            new_graph=new_graph,
+            old_graph=existing,
+            prior_exists=resource_exists,
+            is_create=not resource_exists,
+        )
         status_code = 200 if resource_exists else 201
         headers = _response_headers(etag, registry.is_container(iri))
         if not resource_exists:
@@ -272,6 +328,8 @@ def build_ldp_router(
                     timestamp=ctx.request_timestamp,
                 )
             )
+        for event in parent_events:
+            await _publish(event)
         return Response(status_code=status_code, headers=headers)
 
     @router.post("/{path:path}", name="ldp_post")
@@ -290,6 +348,14 @@ def build_ldp_router(
         member_graph = _parse_body(request, await request.body(), base=member_iri)
         await _validate_member(member_graph, container_iri)
         etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
+        parent_events = await _maintain_membership(
+            child_iri=member_iri,
+            ctx=ctx,
+            new_graph=member_graph,
+            old_graph=Graph(),
+            prior_exists=False,
+            is_create=True,
+        )
         await _publish(
             RecordCreated(
                 record_iri=member_iri,
@@ -298,6 +364,8 @@ def build_ldp_router(
                 timestamp=ctx.request_timestamp,
             )
         )
+        for event in parent_events:
+            await _publish(event)
         headers = _response_headers(etag, is_container=False)
         headers["Location"] = member_iri
         return Response(status_code=201, headers=headers)
@@ -349,6 +417,18 @@ def build_ldp_router(
             raise NotFound(f"resource not found: {iri}")
         _enforce_if_match(request, existing, required=True)
         await repo.delete_graph(iri)
+        # Strip the parent's forward links to this child; restore the child on
+        # failure so the two directions never disagree (ADR-0005 compensation).
+        parent_events: list[RecordModified] = []
+        if containment is not None:
+            try:
+                parent_events = await containment.reconcile_delete(
+                    iri, existing, subject=ctx.subject, timestamp=ctx.request_timestamp
+                )
+            except Exception:
+                await repo.put_graph(iri, existing, subject=ctx.subject)
+                log.error("containment_reconcile_failed_compensated", child=iri)
+                raise
         await _publish(
             RecordDeleted(
                 record_iri=iri,
@@ -356,6 +436,8 @@ def build_ldp_router(
                 timestamp=ctx.request_timestamp,
             )
         )
+        for event in parent_events:
+            await _publish(event)
         return Response(status_code=204)
 
     @router.options("/{path:path}", name="ldp_options")
