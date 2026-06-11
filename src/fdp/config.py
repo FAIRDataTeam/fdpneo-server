@@ -154,6 +154,17 @@ class MetricsSettings(BaseSettings):
     aggregate_to_hourly_after_seconds: int = 300
     discard_hourly_after_days: int = 2
 
+    rollup_in_process: bool = False
+    """Run the raw→hourly→daily rollups on an in-process background loop.
+
+    Off by default: production schedules ``fdp metrics rollup`` externally
+    (cron / k8s CronJob). Enable for single-process deployments (and the dev
+    stack) that have no external scheduler, so the dashboard populates without
+    anyone running the CLI by hand."""
+
+    rollup_interval_seconds: int = 60
+    """How often the in-process rollup loop runs, when ``rollup_in_process``."""
+
 
 class ProfileSettings(BaseSettings):
     """Configuration for the deployment-profile bootstrap (architecture §12)."""

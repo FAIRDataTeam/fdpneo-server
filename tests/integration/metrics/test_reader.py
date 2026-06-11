@@ -7,14 +7,14 @@ method with the dimension filters the dashboard endpoints expose.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fdp.metrics.events import MetricEventType
+from fdp.metrics.events import MetricEventType, MetricSample
 from fdp.metrics.reader import MetricsReader
-from fdp.metrics.repository import DailyAggregate, MetricsRepository
+from fdp.metrics.repository import DailyAggregate, HourlyAggregate, MetricsRepository
 
 
 def _agg(
@@ -233,3 +233,87 @@ async def test_geography_aggregates_per_country(
     assert by_country["DE"].request_count == 8
     # Order is descending by request count.
     assert rows[0].country_code == "US"
+
+
+# --- union across tiers (the dashboard-empty bug) -------------------------
+
+
+def _hourly(*, bucket: datetime, request_count: int, unique_visitors: int) -> HourlyAggregate:
+    return HourlyAggregate(
+        bucket=bucket,
+        event_type=MetricEventType.VIEW.value,
+        resource_iri="https://example.org/r1",
+        country_code="US",
+        region="CA",
+        city="SF",
+        request_count=request_count,
+        unique_visitors=unique_visitors,
+        latency_ms_sum=100,
+        status_2xx_count=request_count,
+        status_3xx_count=0,
+        status_4xx_count=0,
+        status_5xx_count=0,
+    )
+
+
+def _raw(*, bucket: datetime, visitor_hash: str | None) -> MetricSample:
+    return MetricSample(
+        timestamp_bucket=bucket,
+        event_type=MetricEventType.VIEW,
+        resource_iri="https://example.org/r1",
+        country_code="US",
+        region="CA",
+        city="SF",
+        visitor_hash=visitor_hash,
+        status_code=200,
+        latency_ms=100,
+    )
+
+
+@pytest.fixture
+async def seeded_all_tiers(repo: MetricsRepository, session: AsyncSession) -> None:
+    """One day in each tier: daily 6/08, hourly 6/10, raw 6/11.
+
+    Mirrors a normally-used deployment: old activity has aged into daily, the
+    last day or two sits in hourly, and the last few minutes are still raw.
+    """
+    await repo.upsert_daily(_agg(bucket=date(2026, 6, 8), request_count=5, unique_visitors=2))
+    await repo.upsert_hourly(
+        _hourly(bucket=datetime(2026, 6, 10, 14, tzinfo=UTC), request_count=10, unique_visitors=3)
+    )
+    # Three raw events today, two distinct visitors.
+    for vh in ("v1", "v1", "v2"):
+        await repo.insert_raw(_raw(bucket=datetime(2026, 6, 11, 9, tzinfo=UTC), visitor_hash=vh))
+    await session.commit()
+
+
+@pytest.mark.integration
+async def test_summary_unions_daily_hourly_and_raw(
+    seeded_all_tiers: None, reader: MetricsReader
+) -> None:
+    del seeded_all_tiers
+    totals = await reader.summary(since=date(2026, 6, 8), until=date(2026, 6, 11))
+    assert totals.request_count == 5 + 10 + 3  # all three tiers contribute
+    assert totals.unique_visitors == 2 + 3 + 2  # raw → COUNT(DISTINCT) = 2
+
+
+@pytest.mark.integration
+async def test_daily_series_spans_all_tiers(
+    seeded_all_tiers: None, reader: MetricsReader
+) -> None:
+    del seeded_all_tiers
+    points = await reader.daily_series(since=date(2026, 6, 8), until=date(2026, 6, 11))
+    by_day = {p.bucket: p.request_count for p in points}
+    assert by_day == {date(2026, 6, 8): 5, date(2026, 6, 10): 10, date(2026, 6, 11): 3}
+
+
+@pytest.mark.integration
+async def test_recent_only_window_reads_hourly_and_raw(
+    seeded_all_tiers: None, reader: MetricsReader
+) -> None:
+    del seeded_all_tiers
+    # A "this week" window that excludes the aged daily row still shows activity
+    # — the exact failure the dashboard hit (daily-only read returned zero).
+    totals = await reader.summary(since=date(2026, 6, 10), until=date(2026, 6, 11))
+    assert totals.request_count == 13
+    assert totals.unique_visitors == 5

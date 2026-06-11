@@ -87,6 +87,7 @@ from fdp.metrics.geo import open_geo_lookup
 from fdp.metrics.middleware import RequestObservationMiddleware
 from fdp.metrics.pipeline import MetricsPipeline
 from fdp.metrics.salt import SaltRotator
+from fdp.metrics.scheduler import MetricsRollupScheduler
 from fdp.operational import build_info_router, build_readiness_router
 from fdp.policy.model import Action
 from fdp.policy.parser import parse_offer
@@ -286,6 +287,13 @@ def _build_shared_state(app: FastAPI) -> None:
         enabled=settings.metrics.enabled,
         counting_enabled=settings.metrics.unique_visitor_counting,
     )
+    # Optional in-process rollup driver (off by default; prod uses an external
+    # `fdp metrics rollup` cron). Without a scheduler raw never aggregates and
+    # the dashboard stays empty — see MetricsSettings.rollup_in_process.
+    app.state.metrics_rollup_scheduler = MetricsRollupScheduler(
+        session_factory=app.state.session_factory,
+        settings=settings.metrics,
+    )
     app.state.audit_log = AuditLog(session_factory=app.state.session_factory)
 
     # Runtime settings repository — Postgres-backed; read on demand so admin
@@ -362,6 +370,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("fdp_starting", version=__version__)
 
     app.state.metrics_pipeline.start(app.state.event_bus)
+    app.state.metrics_rollup_scheduler.start()
     app.state.audit_log.start(app.state.event_bus)
     app.state.search_indexer.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
@@ -374,6 +383,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("fdp_stopping")
         app.state.search_indexer.stop()
         app.state.audit_log.stop()
+        await app.state.metrics_rollup_scheduler.stop()
         app.state.metrics_pipeline.stop()
         app.state.geo.close()
         await app.state.triplestore.close()
