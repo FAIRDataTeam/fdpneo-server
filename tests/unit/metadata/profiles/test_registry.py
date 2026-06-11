@@ -170,7 +170,9 @@ def test_is_container_root_without_children_is_not_a_container() -> None:
 @pytest.mark.unit
 def test_member_shape_for_collection() -> None:
     cache = _three_type_cache()
-    assert cache.member_shape(f"{BASE}/catalog") == "http://www.w3.org/ns/dcat#Catalog"
+    # constrainedBy points at the schema's *storage* IRI (task 10.5), not the
+    # vocabulary/class IRI — so a profile schema is an ordinary editable schema.
+    assert cache.member_shape(f"{BASE}/catalog") == f"{BASE}/fdp-api/schemas/catalog"
 
 
 @pytest.mark.unit
@@ -181,10 +183,29 @@ def test_member_shape_only_meaningful_at_one_segment() -> None:
 
 
 @pytest.mark.unit
+def test_containment_relation_matches_child_type_to_parent_link() -> None:
+    cache = _three_type_cache()
+    # root → catalog member: the root's child link to "catalog" names dcat:catalog.
+    assert (
+        cache.containment_relation(BASE, f"{BASE}/catalog/c-1")
+        == "http://www.w3.org/ns/dcat#catalog"
+    )
+    # catalog → dataset member.
+    assert (
+        cache.containment_relation(f"{BASE}/catalog/c-1", f"{BASE}/dataset/d-1")
+        == "http://www.w3.org/ns/dcat#dataset"
+    )
+    # No declared link from root → dataset (skips a generation) → None.
+    assert cache.containment_relation(BASE, f"{BASE}/dataset/d-1") is None
+    # Unknown type → None.
+    assert cache.containment_relation(BASE, f"{BASE}/ghost/x") is None
+
+
+@pytest.mark.unit
 def test_shape_for_resource() -> None:
     cache = _three_type_cache()
-    assert cache.shape_for(BASE) == "https://w3id.org/fdp/o#Repository"
-    assert cache.shape_for(f"{BASE}/catalog/c-1") == "http://www.w3.org/ns/dcat#Catalog"
+    assert cache.shape_for(BASE) == f"{BASE}/fdp-api/schemas/repository"
+    assert cache.shape_for(f"{BASE}/catalog/c-1") == f"{BASE}/fdp-api/schemas/catalog"
     assert cache.shape_for(f"{BASE}/ghost/anything") is None
 
 
@@ -192,14 +213,16 @@ def test_shape_for_resource() -> None:
 
 
 @pytest.mark.unit
-def test_build_expands_schema_curies() -> None:
+def test_build_resolves_schema_to_storage_iri() -> None:
     cache = _three_type_cache()
     root = cache.root()
     assert root is not None
-    assert root.schema_iri == "https://w3id.org/fdp/o#Repository"
+    # A schema CURIE resolves to its storage IRI under the schemas namespace
+    # (task 10.5), kebab-cased from the local name.
+    assert root.schema_iri == f"{BASE}/fdp-api/schemas/repository"
     catalog = cache.by_prefix("catalog")
     assert catalog is not None
-    assert catalog.schema_iri == "http://www.w3.org/ns/dcat#Catalog"
+    assert catalog.schema_iri == f"{BASE}/fdp-api/schemas/catalog"
 
 
 @pytest.mark.unit
@@ -212,7 +235,8 @@ def test_build_resolves_child_targets_to_expanded_iris_and_names() -> None:
     assert link.relation_uri == "http://www.w3.org/ns/dcat#catalog"
     assert link.target_prefix == "catalog"
     assert link.target_name == "Catalog"
-    assert link.target_schema_iri == "http://www.w3.org/ns/dcat#Catalog"
+    # The child target's schema resolves to the target type's storage IRI.
+    assert link.target_schema_iri == f"{BASE}/fdp-api/schemas/catalog"
     assert link.title == "Catalogs"
 
 

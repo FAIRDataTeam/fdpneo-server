@@ -19,6 +19,7 @@ from rdflib import Graph
 from rdflib.namespace import RDF
 
 from fdp.metadata.schemas import (
+    SchemaProtected,
     SchemaService,
     ValidationResultView,
     build_schema_router,
@@ -95,13 +96,14 @@ class _Store:
         return g.serialize(format="turtle")
 
 
-def _service(store: _Store) -> SchemaService:
+def _service(store: _Store, *, root_schema_iri: str | None = None) -> SchemaService:
     validator = ShaclValidator(store)  # type: ignore[arg-type]
     return SchemaService(
         repository=store,  # type: ignore[arg-type]
         adapter=store,  # type: ignore[arg-type]
         validator=validator,
         base_url=BASE,
+        root_schema_iri_provider=(None if root_schema_iri is None else lambda: root_schema_iri),
     )
 
 
@@ -194,6 +196,43 @@ async def test_list_returns_published_shapes() -> None:
     listed = await svc.list_schemas()
     assert [s.id for s in listed] == ["ontology"]
     assert listed[0].target_class == "http://www.w3.org/2002/07/owl#Ontology"
+    assert listed[0].deletable is True  # not the root schema
+
+
+# --- FDP root schema protection (task 10.5) --------------------------------
+
+
+@pytest.mark.unit
+async def test_root_schema_delete_refused() -> None:
+    store = _Store()
+    root_iri = f"{BASE}/fdp-api/schemas/ontology"
+    svc = _service(store, root_schema_iri=root_iri)
+    await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    with pytest.raises(SchemaProtected, match="root schema"):
+        await svc.delete("ontology")
+    assert root_iri in store.graphs  # not deleted
+
+
+@pytest.mark.unit
+async def test_root_schema_edit_allowed() -> None:
+    store = _Store()
+    root_iri = f"{BASE}/fdp-api/schemas/ontology"
+    svc = _service(store, root_schema_iri=root_iri)
+    # Editing the root schema in place is allowed; only DELETE is refused.
+    info = await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    assert info.deletable is False
+
+
+@pytest.mark.unit
+async def test_list_flags_root_schema_not_deletable() -> None:
+    store = _Store()
+    root_iri = f"{BASE}/fdp-api/schemas/ontology"
+    svc = _service(store, root_schema_iri=root_iri)
+    await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    await svc.put("dataset", ONTOLOGY_SHAPE.replace("ontology", "dataset"), subject="admin")
+    by_id = {s.id: s for s in await svc.list_schemas()}
+    assert by_id["ontology"].deletable is False
+    assert by_id["dataset"].deletable is True
 
 
 # --- router tests ----------------------------------------------------------

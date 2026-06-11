@@ -30,6 +30,7 @@ import structlog
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
+from fdp.metadata.profiles.iri import schema_slug
 from fdp.policy.parser import parse_offer
 from fdp.shared.errors import SchemaViolation
 from fdp.shared.namespaces import ODRL
@@ -92,6 +93,7 @@ def validate_profile(profile: DeploymentProfile) -> ValidationReport:
 
 def _check_unique_ids(profile: DeploymentProfile, report: ValidationReport) -> None:
     seen_schemas: set[str] = set()
+    slug_origin: dict[str, str] = {}
     for i, schema in enumerate(profile.schemas):
         if schema.entry.id in seen_schemas:
             report.add(
@@ -100,6 +102,20 @@ def _check_unique_ids(profile: DeploymentProfile, report: ValidationReport) -> N
                 message=f"duplicate schema id: {schema.entry.id}",
             )
         seen_schemas.add(schema.entry.id)
+        # Two distinct ids that kebab-case to the same storage slug would
+        # collide at {base}/fdp-api/schemas/{slug} — the applier would
+        # overwrite one with the other. Catch it structurally, before write.
+        slug = schema_slug(schema.entry.id)
+        if slug in slug_origin and slug_origin[slug] != schema.entry.id:
+            report.add(
+                where=f"schemas[{i}]",
+                code="duplicate_schema_slug",
+                message=(
+                    f"schema id {schema.entry.id!r} and {slug_origin[slug]!r} both map to "
+                    f"storage slug {slug!r}; give one a distinct local name"
+                ),
+            )
+        slug_origin.setdefault(slug, schema.entry.id)
 
     seen_offers: set[str] = set()
     default_count = 0

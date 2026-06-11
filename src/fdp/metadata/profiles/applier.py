@@ -185,9 +185,14 @@ async def apply_profile(
             report.meta_shape_iri = META_SHAPE_IRI
             written.append(META_SHAPE_IRI)
 
-        # 1. SHACL schemas — stored at their CURIE-expanded IRI.
+        # 1. SHACL schemas — stored under the reserved schemas namespace
+        #    ({base}/fdp-api/schemas/{slug}), the same place a runtime
+        #    PUT /schemas/{id} writes, so a profile schema is thereafter an
+        #    ordinary editable/listable user schema (task 10.5). The shape's
+        #    node IRI + sh:targetClass inside the graph stay the class IRI, so
+        #    SHACL matching is unaffected; only the storage/fetch key moves.
         for loaded in profile.schemas:
-            iri = expander.schema_iri(loaded.entry.id)
+            iri = expander.schema_storage_iri(loaded.entry.id)
             await repository.put_graph(iri, loaded.graph, subject=None, initial_state=SEED_STATE)
             report.schemas_written.append(iri)
             written.append(iri)
