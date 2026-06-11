@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Final, cast
 
 import pyshacl  # type: ignore[import-untyped]
@@ -68,6 +69,19 @@ _TURTLE: Final = "text/turtle"
 _SPARQL_JSON: Final = "application/sparql-results+json"
 
 
+class SchemaProtected(Forbidden):
+    """Raised when a write is refused because the shape is the FDP root schema.
+
+    The root resource definition's schema (``fdp:Repository`` in the default
+    profile) is editable but **not deletable** — the deployment's root resource
+    type must always have a shape to validate against (task 10.5).
+    """
+
+    code = "fdp.schema_protected"
+    http_status = 403
+    docs_url = "https://specs.fairdatapoint.org/errors#fdp.schema_protected"
+
+
 # --- response models -------------------------------------------------------
 
 
@@ -78,6 +92,8 @@ class SchemaInfo(BaseModel):
     iri: str
     target_class: str | None = None
     version: int | None = None
+    deletable: bool = True
+    """``False`` for the FDP root schema, which may be edited but not deleted."""
 
 
 class SchemaListView(BaseModel):
@@ -107,14 +123,26 @@ class SchemaService:
         adapter: TripleStoreAdapter,
         validator: ShaclValidator,
         base_url: str,
+        root_schema_iri_provider: Callable[[], str | None] | None = None,
     ) -> None:
         self._repo = repository
         self._adapter = adapter
         self._validator = validator
         self._base = base_url.rstrip("/")
+        # Lazily resolves the FDP root schema IRI (the root resource
+        # definition's schema) so DELETE can refuse it. A provider — not a
+        # captured value — because the root RD is published after this service
+        # is constructed and can change on a profile re-apply / RD mutation.
+        self._root_schema_iri_provider = root_schema_iri_provider
 
     def iri(self, schema_id: str) -> str:
         return str(schema_graph_uri(self._base, schema_id))
+
+    def _is_protected(self, iri: str) -> bool:
+        """True iff ``iri`` is the FDP root schema (editable, not deletable)."""
+        if self._root_schema_iri_provider is None:
+            return False
+        return iri == self._root_schema_iri_provider()
 
     async def put(self, schema_id: str, turtle: str, *, subject: str | None) -> SchemaInfo:
         """Create or replace the shape ``schema_id`` and refresh the validator."""
@@ -143,6 +171,11 @@ class SchemaService:
     async def delete(self, schema_id: str) -> None:
         _check_slug(schema_id)
         iri = self.iri(schema_id)
+        if self._is_protected(iri):
+            raise SchemaProtected(
+                "the FDP root schema cannot be deleted; it may be edited in place",
+                details={"schema": iri},
+            )
         if await self._is_referenced(iri):
             raise Conflict(
                 "schema is referenced by a resource definition; delete or repoint that type first",
@@ -195,6 +228,7 @@ class SchemaService:
                     id=iri.rsplit("/", 1)[-1],
                     iri=iri,
                     target_class=row.get("target", {}).get("value"),
+                    deletable=not self._is_protected(iri),
                 )
             )
         items.sort(key=lambda s: s.id)
@@ -209,6 +243,7 @@ class SchemaService:
             iri=iri,
             target_class=str(target) if target is not None else None,
             version=await self._version(iri),
+            deletable=not self._is_protected(iri),
         )
 
     async def _version(self, iri: str) -> int | None:
@@ -359,6 +394,7 @@ def build_schema_router(*, service: SchemaService, prefix: str = "/schemas") -> 
 __all__ = [
     "SchemaInfo",
     "SchemaListView",
+    "SchemaProtected",
     "SchemaService",
     "ValidationResultView",
     "build_schema_router",
