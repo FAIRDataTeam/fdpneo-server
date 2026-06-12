@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from fdp.metadata.profiles.backfill import MembershipBackfillReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
     from fdp.metadata.profiles.migrate import MigrationReport
+    from fdp.metadata.profiles.migrate_modular import ModularMigrationReport
     from fdp.metadata.schema_sync import SyncReport
     from fdp.metrics.aggregation import RollupResult
 
@@ -173,6 +174,71 @@ def profile_export(path: Path = typer.Argument(..., file_okay=False)) -> None:
     """
     console.print(f"[yellow]profile export is deferred to v1.x[/] (would have written to {path})")
     raise typer.Exit(code=1)
+
+
+@profile_app.command("migrate-modular")
+def profile_migrate_modular(
+    path: Path = typer.Argument(..., exists=True, file_okay=False),
+) -> None:
+    """Reconcile a deployment to the modular DCAT-3/FDP-O profile (task 15.2).
+
+    Non-destructive, one-shot, idempotent. For deployments bootstrapped before the
+    modular schema set landed: rewrites the schemas + resource definitions to the
+    new bundle and re-types the root record (``fdp:Repository`` →
+    ``fdp-o:FAIRDataPoint``) **in place**, preserving authored root metadata and
+    member records. Pass the modular profile bundle. Prefer this over a
+    ``force-apply`` re-bootstrap in production (which re-seeds the root). A no-op on
+    an already-migrated deployment.
+    """
+    from fdp.metadata.profiles import load_profile
+    from fdp.shared.errors import FDPError
+
+    try:
+        profile = load_profile(path)
+    except FDPError as err:
+        console.print(f"[red]profile load failed:[/] {err.message}")
+        raise typer.Exit(code=1) from err
+
+    try:
+        report = asyncio.run(_run_modular_migration(profile))
+    except Exception as err:
+        console.print(f"[red]modular migration failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if not report.changed:
+        console.print("[green]nothing to migrate[/] — deployment already on the modular profile")
+        return
+    parts = [
+        f"{len(report.schemas_written)} schema(s)",
+        f"{len(report.resource_definitions_written)} resource definition(s) written",
+    ]
+    if report.resource_definitions_removed:
+        parts.append(f"{len(report.resource_definitions_removed)} orphan RD(s) removed")
+    if report.root_retyped:
+        parts.append("root re-typed")
+    console.print(f"[green]migrated[/] {', '.join(parts)}")
+
+
+async def _run_modular_migration(profile: DeploymentProfile) -> ModularMigrationReport:
+    """Build the runtime collaborators and run one modular-migration pass."""
+    from fdp.config import get_settings
+    from fdp.metadata.profiles.migrate_modular import migrate_to_modular_profile
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.shacl import ShaclValidator
+    from fdp.metadata.shape_provider import MetadataShapeProvider
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        repository = MetadataRepository(adapter)
+        validator = ShaclValidator(MetadataShapeProvider(repository))
+        return await migrate_to_modular_profile(
+            profile,
+            repository=repository,
+            adapter=adapter,
+            settings=settings,
+            validator=validator,
+        )
 
 
 @db_app.command("migrate")

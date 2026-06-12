@@ -1251,7 +1251,7 @@ Two release-gating items: prove (and complete) the LDP server, and rebuild the
 default profile's schemas from the full DCAT 3 + FDP-O vocabularies as composed,
 modular SHACL shapes.
 
-### 15.1 [~] LDP conformance: true Direct Containers + a conformance suite
+### 15.1 [x] LDP conformance: true Direct Containers + a conformance suite
 
 > **Started — root is a real Direct Container.** `applier.direct_container_config`
 > derives the membership triad from a container's RD child relations
@@ -1312,9 +1312,22 @@ modular SHACL shapes.
 > Oxigraph → downgrade the seeded root to its pre-15.1 shape → backfill restores
 > the Direct Container config in place → second pass is a no-op).
 >
-> **Remaining:** the full MUST/SHOULD/MAY conformance matrix under `docs/` +
-> ADR-0008 rewrite to match shipped reality. (Deliberate deviations stand: custom
-> `X-FDP-Page-*` paging, SPARQL-Update PATCH only.)
+> **Conformance matrix + ADR-0008 rewrite — DONE (2026-06-12), closing 15.1.**
+> [`docs/conformance/ldp-conformance.md`](docs/conformance/ldp-conformance.md)
+> records the conformance position requirement-by-requirement (LDPR §4 + LDPC §5
+> tables, MUST/SHOULD/MAY × Conformant/Partial/Deviation/Gap), naming the
+> `test_ldp.py` function that exercises each load-bearing row, the conformance
+> classes claimed (LDPR, LDP-RS, LDP-DC — not Basic/Indirect/Non-RDF), the
+> deliberate deviations (LD-PATCH, `X-FDP-Page-*` paging, no LDP-NR) with their
+> ADRs, and the open SHOULD/MAY gaps (`Allow` on 4xx, `Prefer` minimisation,
+> external `ldp-testsuite` run). [ADR-0008](docs/adr/0008-full-ldp-with-patch.md)'s
+> implementation-status section was rewritten to match shipped reality (runtime
+> stamping + backfill done) and points at the matrix.
+>
+> Open SHOULD/MAY items are tracked as **gaps in the matrix**, not as 15.1
+> blockers: `Allow`/`Accept-Post` echoed on 4xx error envelopes, `Prefer`-driven
+> container minimisation, and a W3C `ldp-testsuite` CI run. (Deliberate deviations
+> stand: custom `X-FDP-Page-*` paging, SPARQL-Update PATCH only.)
 
 **Decision:** implement real LDP **Direct Containers** (not "Basic + typed
 relations"). ADR-0008 claims full LDP-DC but the implementation is a Basic
@@ -1364,7 +1377,7 @@ References: ADR-0008, architecture §6 + conformance, W3C LDP
 (https://www.w3.org/TR/ldp/), `metadata/ldp/router.py`, `metadata/containment.py`,
 `metadata/profiles/applier.py`.
 
-### 15.2 [~] DCAT v3 + FDP-O modular profile schemas (composed) + shape-closure validator
+### 15.2 [x] DCAT v3 + FDP-O modular profile schemas (composed) + shape-closure validator
 
 > **(a) shape-graph closure validator — DONE.** `ShaclValidator._load` now
 > assembles the closure: from the requested shape it transitively resolves and
@@ -1399,11 +1412,33 @@ References: ADR-0008, architecture §6 + conformance, W3C LDP
 > `/spec`, composition enforced on write — a Catalog without inherited
 > `dct:title` 422s — root seeded as fdp-o:FAIRDataPoint).
 >
-> **Remaining:** applying to an *existing* deployment is a `force-apply`
-> re-bootstrap (dev) or a re-type/RD migration (prod), same shape as the
-> schema-namespace migration — not yet built. Property coverage is the lenient
-> v0.2 subset, not the exhaustive DCAT 3 list. (15.1 Direct Containers is the
-> other v0.2 item.)
+> **Existing-deployment migration — DONE (2026-06-12).**
+> `metadata/profiles/migrate_modular.py` (`migrate_to_modular_profile`) + the
+> `fdp profile migrate-modular <bundle>` CLI reconcile a pre-15.2 deployment to
+> the modular profile **non-destructively**, the prod alternative to a
+> `force-apply` re-bootstrap (which re-seeds — and so clobbers — the root):
+> rewrite the schemas (placeholders expanded, skip-if-identical via RDF
+> isomorphism + validator cache invalidation), rebuild the RD records (skip via
+> *parsed-record* value equality — RD graphs carry `xsd:string` literals that
+> some stores canonicalize on round-trip, so a graph compare false-positives),
+> drop orphaned RD records (the root rename Repository→FAIRDataPoint changes the
+> record slug; leaving the old one would put two empty-prefix roots in the
+> startup cache rebuild), and **re-type the root record in place** —
+> `fdp:Repository`→`fdp-o:FAIRDataPoint`, membership reset to
+> `fdp-o:servesMetadata` — preserving authored title/rights and every member
+> record. Idempotent (validates the bundle first; a second pass is a no-op).
+> Member records keep their unchanged DCAT types and re-validate lazily on next
+> write. Tests: unit `tests/unit/metadata/profiles/test_migrate_modular.py`
+> (re-type + config write + idempotency + no-root safety) and integration
+> `tests/integration/metadata/test_modular_migration.py` (apply a legacy
+> `fdp:Repository` profile over Oxigraph → author a Catalog → migrate to the
+> **shipped** `profiles/default` → root re-typed, orphan root RD removed, single
+> correct rebuilt cache, authored Catalog survives, composed schema landed,
+> second pass no-op).
+>
+> **Remaining:** property coverage is the lenient v0.2 subset (`dct:title`
+> mandatory, the rest optional), not the exhaustive DCAT 3 list — tightening is a
+> deliberately-deferred post-v0.2 community decision, not a build gap.
 
 **Decision:** rebuild the default profile schemas as a modular set composed along
 the **faithful DCAT 3 subclass chain, extended with FDP-O**
