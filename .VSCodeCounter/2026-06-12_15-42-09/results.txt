@@ -1,0 +1,152 @@
+Date : 2026-06-12 15:42:09
+Directory : /Volumes/ROG ESD/Git/fdp-neo/server/src
+Total : 111 files,  13397 codes, 5456 comments, 3407 blanks, all 22260 lines
+
+Languages
++----------+------------+------------+------------+------------+------------+
+| language | files      | code       | comment    | blank      | total      |
++----------+------------+------------+------------+------------+------------+
+| Python   |        111 |     13,397 |      5,456 |      3,407 |     22,260 |
++----------+------------+------------+------------+------------+------------+
+
+Directories
++--------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                           | files      | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                              |        111 |     13,397 |      5,456 |      3,407 |     22,260 |
+| fdp                                                                            |        111 |     13,397 |      5,456 |      3,407 |     22,260 |
+| fdp (Files)                                                                    |          5 |      1,353 |        621 |        300 |      2,274 |
+| fdp/access                                                                     |          5 |        443 |        286 |        106 |        835 |
+| fdp/data                                                                       |          3 |        302 |        160 |         63 |        525 |
+| fdp/identity                                                                   |          9 |      1,231 |        283 |        334 |      1,848 |
+| fdp/metadata                                                                   |         48 |      6,794 |      2,576 |      1,645 |     11,015 |
+| fdp/metadata (Files)                                                           |         26 |      3,987 |      1,627 |        974 |      6,588 |
+| fdp/metadata/ldp                                                               |          3 |        573 |        153 |         92 |        818 |
+| fdp/metadata/profiles                                                          |         11 |      1,497 |        666 |        372 |      2,535 |
+| fdp/metadata/search                                                            |          8 |        737 |        130 |        207 |      1,074 |
+| fdp/metrics                                                                    |         13 |      1,417 |        516 |        336 |      2,269 |
+| fdp/policy                                                                     |          8 |        701 |        310 |        212 |      1,223 |
+| fdp/shared                                                                     |         12 |        846 |        473 |        318 |      1,637 |
+| fdp/storage                                                                    |          8 |        310 |        231 |         93 |        634 |
+| fdp/storage (Files)                                                            |          1 |          0 |         36 |          1 |         37 |
+| fdp/storage/postgres                                                           |          4 |         54 |         71 |         38 |        163 |
+| fdp/storage/triplestore                                                        |          3 |        256 |        124 |         54 |        434 |
++--------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++--------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| filename                                                                       | language | code       | comment    | blank      | total      |
++--------------------------------------------------------------------------------+----------+------------+------------+------------+------------+
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/__init__.py                        | Python   |          2 |         10 |          3 |         15 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/access/__init__.py                 | Python   |          0 |         32 |          1 |         33 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/access/parser.py                   | Python   |        183 |         98 |         48 |        329 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/access/results.py                  | Python   |         60 |         27 |         13 |        100 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/access/rewriter.py                 | Python   |         49 |         73 |         19 |        141 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/access/router.py                   | Python   |        151 |         56 |         25 |        232 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/cli.py                             | Python   |        393 |         78 |         79 |        550 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/config.py                          | Python   |        200 |        189 |         85 |        474 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/data/__init__.py                   | Python   |          0 |         27 |          1 |         28 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/data/distributions.py              | Python   |         48 |         37 |         21 |        106 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/data/router.py                     | Python   |        254 |         96 |         41 |        391 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/__init__.py               | Python   |         11 |         18 |          4 |         33 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/api_keys.py               | Python   |        302 |         48 |         81 |        431 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/bootstrap.py              | Python   |         70 |         35 |         26 |        131 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/deps.py                   | Python   |         14 |         13 |         10 |         37 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/jwks.py                   | Python   |        100 |         23 |         33 |        156 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/keycloak_admin.py         | Python   |        267 |         35 |         57 |        359 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/middleware.py             | Python   |        189 |         47 |         43 |        279 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/principal.py              | Python   |         73 |         21 |         25 |        119 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/identity/users.py                  | Python   |        205 |         43 |         55 |        303 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/main.py                            | Python   |        604 |        282 |         80 |        966 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/__init__.py               | Python   |          0 |         32 |          1 |         33 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/admin.py                  | Python   |        129 |         69 |         39 |        237 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/audit.py                  | Python   |        136 |         39 |         31 |        206 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/autocomplete.py           | Python   |        152 |         61 |         41 |        254 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/containment.py            | Python   |        115 |         39 |         26 |        180 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/dashboard.py              | Python   |        231 |        107 |         47 |        385 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/etag.py                   | Python   |          9 |         20 |          8 |         37 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/events.py                 | Python   |         34 |         44 |         18 |         96 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/extensions.py             | Python   |        273 |         78 |         37 |        388 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/graphs.py                 | Python   |         27 |          9 |          4 |         40 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/instances.py              | Python   |        170 |         52 |         50 |        272 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/labels.py                 | Python   |        197 |        141 |         60 |        398 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/ldp/__init__.py           | Python   |         10 |         11 |          3 |         24 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/ldp/negotiation.py        | Python   |        129 |         46 |         31 |        206 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/ldp/router.py             | Python   |        434 |         96 |         58 |        588 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/licenses.py               | Python   |        285 |         69 |         59 |        413 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/lifecycle.py              | Python   |        235 |         69 |         55 |        359 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/meta.py                   | Python   |        169 |         53 |         37 |        259 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/openapi.py                | Python   |        195 |         76 |         51 |        322 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/patch.py                  | Python   |         24 |         51 |         13 |         88 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/policies.py               | Python   |        268 |         79 |         60 |        407 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/__init__.py      | Python   |         91 |         17 |          4 |        112 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/applier.py       | Python   |        301 |        144 |         55 |        500 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/iri.py           | Python   |         62 |         68 |         27 |        157 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/licenses.py      | Python   |         37 |         14 |         13 |         64 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/manifest.py      | Python   |        167 |         57 |         64 |        288 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/migrate.py       | Python   |         77 |         35 |         27 |        139 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/rd_records.py    | Python   |        176 |         77 |         38 |        291 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/rd_service.py    | Python   |        112 |         60 |         36 |        208 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/registry.py      | Python   |        165 |        121 |         46 |        332 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/state.py         | Python   |         58 |         26 |         20 |        104 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/profiles/validator.py     | Python   |        251 |         47 |         42 |        340 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/rd_api.py                 | Python   |        189 |         66 |         52 |        307 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/repository.py             | Python   |         93 |         65 |         23 |        181 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/schema_sync.py            | Python   |        204 |         67 |         52 |        323 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/schemas.py                | Python   |        289 |         81 |         56 |        426 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/__init__.py        | Python   |          1 |          7 |          2 |         10 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/extract.py         | Python   |        103 |         25 |         31 |        159 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/indexer.py         | Python   |         81 |         31 |         22 |        134 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/model.py           | Python   |         34 |          8 |         15 |         57 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/repository.py      | Python   |        179 |         16 |         36 |        231 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/router.py          | Python   |         21 |          7 |         12 |         40 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/saved.py           | Python   |        190 |         15 |         53 |        258 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/search/service.py         | Python   |        128 |         21 |         36 |        185 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/settings.py               | Python   |        339 |        129 |         80 |        548 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/shacl.py                  | Python   |        171 |         67 |         42 |        280 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/shape_provider.py         | Python   |         27 |         33 |         15 |         75 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metadata/states.py                 | Python   |         26 |         31 |         17 |         74 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/__init__.py                | Python   |          0 |         32 |          1 |         33 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/aggregation.py             | Python   |         97 |         44 |         20 |        161 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/anonymize.py               | Python   |         37 |         24 |          9 |         70 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/api.py                     | Python   |        228 |         38 |         45 |        311 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/events.py                  | Python   |         39 |         43 |         23 |        105 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/geo.py                     | Python   |         63 |         28 |         31 |        122 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/jobs.py                    | Python   |         49 |         33 |         28 |        110 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/middleware.py              | Python   |        142 |         54 |         41 |        237 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/pipeline.py                | Python   |         61 |         36 |         17 |        114 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/reader.py                  | Python   |        224 |         53 |         36 |        313 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/repository.py              | Python   |        401 |         79 |         55 |        535 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/salt.py                    | Python   |         17 |         23 |         11 |         51 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/metrics/scheduler.py               | Python   |         59 |         29 |         19 |        107 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/operational.py                     | Python   |        154 |         62 |         53 |        269 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/__init__.py                 | Python   |          0 |         33 |          1 |         34 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/cache.py                    | Python   |        127 |         38 |         29 |        194 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/evaluator.py                | Python   |        106 |         21 |         22 |        149 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/model.py                    | Python   |         91 |         67 |         67 |        225 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/parser.py                   | Python   |        180 |         27 |         32 |        239 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/pdp.py                      | Python   |         66 |         53 |         21 |        140 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/resolver.py                 | Python   |         78 |         57 |         26 |        161 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/policy/runtime.py                  | Python   |         53 |         14 |         14 |         81 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/__init__.py                 | Python   |          0 |         10 |          1 |         11 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/context.py                  | Python   |         55 |         34 |         20 |        109 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/errors.py                   | Python   |        184 |         62 |         80 |        326 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/events.py                   | Python   |         77 |         46 |         29 |        152 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/graphs.py                   | Python   |         92 |         89 |         52 |        233 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/limits.py                   | Python   |        122 |         22 |         32 |        176 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/logging.py                  | Python   |         91 |         48 |         27 |        166 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/namespaces.py               | Python   |         81 |         50 |         27 |        158 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/reserved.py                 | Python   |          4 |         17 |          5 |         26 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/security_headers.py         | Python   |         34 |         17 |         17 |         68 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/sparql_safety.py            | Python   |         42 |         36 |         14 |         92 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/shared/ssrf.py                     | Python   |         64 |         42 |         14 |        120 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/__init__.py                | Python   |          0 |         36 |          1 |         37 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/postgres/__init__.py       | Python   |          4 |         11 |          4 |         19 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/postgres/engine.py         | Python   |         17 |         27 |         12 |         56 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/postgres/models.py         | Python   |         18 |         25 |         12 |         55 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/postgres/types.py          | Python   |         15 |          8 |         10 |         33 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/triplestore/__init__.py    | Python   |          3 |          6 |          4 |         13 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/triplestore/adapter.py     | Python   |        200 |         94 |         37 |        331 |
+| /Volumes/ROG ESD/Git/fdp-neo/server/src/fdp/storage/triplestore/conformance.py | Python   |         53 |         24 |         13 |         90 |
+| Total                                                                          |          |     13,397 |      5,456 |      3,407 |     22,260 |
++--------------------------------------------------------------------------------+----------+------------+------------+------------+------------+

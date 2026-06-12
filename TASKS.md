@@ -1277,15 +1277,26 @@ modular SHACL shapes.
 > interaction model (Resource/RDFSource/Container/DirectContainer) +
 > `constrainedBy`, `Allow`/`Accept-Post`/`Accept-Patch`, ETag, content
 > negotiation incl. 406, 415 on bad Content-Type, and Direct-Container
-> membership — **5 pass**. Two write/If-Match checks are `xfail` (the first write
-> per session 500s on **Oxigraph**, a known dev-only SPARQL-protocol
-> non-conformance, ADR-0005; catalog writes + concurrency verified live on
-> GraphDB) — the suite surfaces the deviation rather than hiding it.
+> membership — **all 7 pass on Oxigraph**, including the PUT create / If-Match
+> concurrency / DELETE round-trip and the 405-on-POST-to-leaf check.
 >
-> **Remaining:** root-cause the Oxigraph first-write quirk (or run the suite
-> against GraphDB in CI and drop the xfails); a backfill for deployments applied
-> before 15.1; the full MUST/SHOULD/MAY matrix + ADR-0008 rewrite. (Deliberate
-> deviations stand: custom `X-FDP-Page-*` paging, SPARQL-Update PATCH only.)
+> **Resolved (2026-06-12): the "Oxigraph first-write 500" was a test-fixture bug,
+> not an Oxigraph non-conformance.** The two write checks were `xfail`ed on the
+> theory that Oxigraph's SPARQL protocol mishandled writes. Root-causing it showed
+> the opposite: the conformance fixture authored as `RequestContext(subject="u#a")`
+> — a *relative* IRI — which flows through to `dct:creator <u#a>` in the meta
+> graph. Oxigraph's strict (spec-correct) N-Triples parser rejects the
+> scheme-less IRI with `400 No scheme found in an absolute IRI`; GraphDB merely
+> tolerates it. Production is unaffected: `identity/middleware.py` always mints
+> the subject as the absolute `{issuer}#{sub}`. Fix: the fixture now uses an
+> absolute subject and both `xfail`s are removed, so the suite fully asserts LDP
+> writes on Oxigraph. (Note: this is *unrelated* to the genuine Oxigraph
+> repeated-`named-graph-uri` multi-graph *read* under-projection documented in
+> 10.3 — that finding stands; it concerns `/sparql` projection, not writes.)
+>
+> **Remaining:** a backfill for deployments applied before 15.1; the full
+> MUST/SHOULD/MAY matrix + ADR-0008 rewrite. (Deliberate deviations stand: custom
+> `X-FDP-Page-*` paging, SPARQL-Update PATCH only.)
 
 **Decision:** implement real LDP **Direct Containers** (not "Basic + typed
 relations"). ADR-0008 claims full LDP-DC but the implementation is a Basic

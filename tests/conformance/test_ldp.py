@@ -93,8 +93,18 @@ def client(
     command.upgrade(config, "head")
 
     app = create_app()
-    # Author as a steward; reads below use anonymous where LDP allows.
-    ctx = {"v": RequestContext(subject="u#a", roles=frozenset({"admin", "steward"}), trace_id="c")}
+    # Author as a steward; reads below use anonymous where LDP allows. The
+    # subject must be an *absolute* IRI — the identity middleware mints it as
+    # ``{issuer}#{sub}`` (see identity/middleware.py), and it ends up as the
+    # ``dct:creator`` object in the meta graph. A relative IRI here produces
+    # invalid N-Triples that strict, spec-conformant parsers (Oxigraph) reject.
+    ctx = {
+        "v": RequestContext(
+            subject="http://idp.local/realms/fdp#a",
+            roles=frozenset({"admin", "steward"}),
+            trace_id="c",
+        )
+    }
     app.dependency_overrides[current_context] = lambda: ctx["v"]
     try:
         with TestClient(app, base_url=BASE_URL) as c:
@@ -153,12 +163,6 @@ def _catalog(iri: str, title: str = "C") -> str:
     )
 
 
-@pytest.mark.xfail(
-    reason="First write to Oxigraph in a session 500s (Oxigraph SPARQL-protocol "
-    "non-conformance; it is dev-only per ADR-0005). Catalog writes + If-Match "
-    "concurrency work on the GraphDB dev/prod stack — verified live.",
-    strict=False,
-)
 def test_put_create_then_if_match_concurrency_then_delete(client: TestClient) -> None:
     iri = f"{BASE_URL}/catalog/x1"
     ttl = {"Content-Type": "text/turtle"}
@@ -191,11 +195,6 @@ def test_put_rejects_unsupported_media_type(client: TestClient) -> None:
 # --- LDP Direct Container membership (LDP §5) ------------------------------
 
 
-@pytest.mark.xfail(
-    reason="Depends on a prior write succeeding on Oxigraph (see above); the "
-    "405-on-POST-to-leaf check itself is unaffected on a conformant store.",
-    strict=False,
-)
 def test_post_to_leaf_is_method_not_allowed(client: TestClient) -> None:
     # Create a distribution (a leaf, non-container) then POST to it → 405.
     iri = f"{BASE_URL}/distribution/d1"
