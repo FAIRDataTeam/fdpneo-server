@@ -27,11 +27,14 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast, runtime_checkable
 
 import pyshacl  # type: ignore[import-untyped]
+import structlog
 from rdflib import Graph, URIRef
 from rdflib.term import Node
 
 from fdp.shared.errors import SchemaViolation
 from fdp.shared.namespaces import SH
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -105,11 +108,23 @@ class InMemoryShapeProvider:
 
 
 class ShaclValidator:
-    """Validate data graphs against SHACL shapes with a parsed-shape cache."""
+    """Validate data graphs against SHACL shapes with a parsed-shape cache.
+
+    Shapes may be **modular**: a shape can compose others by IRI via ``sh:node``,
+    ``sh:and``/``sh:or``/``sh:xone`` lists, ``sh:qualifiedValueShape`` or
+    ``sh:not``. pySHACL needs every referenced shape present in the one
+    ``shacl_graph`` it is handed, so :meth:`_load` assembles the **closure** —
+    the requested shape plus every shape it transitively references, resolved
+    through the :class:`ShapeProvider` and merged into a single graph. The
+    closure is cached under the requested (root) IRI; :attr:`_members` records
+    which shape IRIs each closure pulled in so :meth:`invalidate` can cascade
+    (editing a base shape drops every composed shape that imports it).
+    """
 
     def __init__(self, provider: ShapeProvider) -> None:
         self._provider = provider
         self._cache: dict[str, Graph] = {}
+        self._members: dict[str, set[str]] = {}
 
     async def bootstrap(self, shape_iris: Iterable[str]) -> None:
         """Pre-compile the given shape IRIs into the cache."""
@@ -144,18 +159,69 @@ class ShaclValidator:
         return frozenset(self._cache)
 
     def invalidate(self, shape_iri: str) -> None:
-        """Drop ``shape_iri`` from the cache. Next use will refetch."""
-        self._cache.pop(shape_iri, None)
+        """Drop every cached closure that includes ``shape_iri``; next use refetches.
+
+        Cascades: a composed shape's closure is dropped when *any* shape it
+        imports — including itself — is invalidated, so editing a base shape
+        (``ResourceShape``) rebuilds every type shape that references it.
+        """
+        for root in [r for r, members in self._members.items() if shape_iri in members]:
+            self._cache.pop(root, None)
+            self._members.pop(root, None)
 
     async def _load(self, shape_iri: str) -> Graph:
+        """Return the cached/assembled shape-graph closure rooted at ``shape_iri``."""
         cached = self._cache.get(shape_iri)
         if cached is not None:
             return cached
-        ttl = await self._provider.fetch(shape_iri)
-        graph = Graph()
-        graph.parse(data=ttl, format="turtle")
-        self._cache[shape_iri] = graph
-        return graph
+        closure = Graph()
+        members: set[str] = set()
+        pending = [shape_iri]
+        while pending:
+            iri = pending.pop()
+            if iri in members:
+                continue
+            try:
+                ttl = await self._provider.fetch(iri)
+            except UnknownShapeError:
+                if iri == shape_iri:
+                    raise  # the requested shape itself must resolve
+                # A referenced shape we can't resolve: mark visited (so a later
+                # publish of it invalidates this closure) and skip — the rest of
+                # the composition still validates.
+                members.add(iri)
+                log.warning("shacl_referenced_shape_unresolved", root=shape_iri, missing=iri)
+                continue
+            members.add(iri)
+            fragment = Graph()
+            fragment.parse(data=ttl, format="turtle")
+            for triple in fragment:
+                closure.add(triple)
+            pending.extend(ref for ref in _referenced_shape_iris(fragment) if ref not in members)
+        self._cache[shape_iri] = closure
+        self._members[shape_iri] = members
+        return closure
+
+
+def _referenced_shape_iris(graph: Graph) -> set[str]:
+    """IRIs of shapes ``graph`` composes — to pull into the validation closure.
+
+    Follows the SHACL constraint components that take a shape as their value:
+    ``sh:node``, ``sh:qualifiedValueShape`` and ``sh:not`` (a single shape), and
+    ``sh:and``/``sh:or``/``sh:xone`` (an RDF list of shapes). Only IRI references
+    are returned — blank-node shapes are already inline in ``graph``.
+    """
+    refs: set[str] = set()
+    for pred in (SH.node, SH.qualifiedValueShape, SH["not"]):
+        refs.update(str(o) for o in graph.objects(None, pred) if isinstance(o, URIRef))
+    for pred in (SH["and"], SH["or"], SH.xone):
+        for list_node in graph.objects(None, pred):
+            try:
+                members = list(graph.items(list_node))
+            except (ValueError, TypeError):  # malformed list — ignore
+                continue
+            refs.update(str(m) for m in members if isinstance(m, URIRef))
+    return refs
 
 
 def _extract_violations(report: Graph) -> tuple[Violation, ...]:

@@ -1245,6 +1245,175 @@ views (client repo, not this one).
 
 ---
 
+## Phase 15 — v0.2 release: LDP conformance + DCAT v3 modular schemas
+
+Two release-gating items: prove (and complete) the LDP server, and rebuild the
+default profile's schemas from the full DCAT 3 + FDP-O vocabularies as composed,
+modular SHACL shapes.
+
+### 15.1 [ ] LDP conformance: true Direct Containers + a conformance suite
+
+**Decision:** implement real LDP **Direct Containers** (not "Basic + typed
+relations"). ADR-0008 claims full LDP-DC but the implementation is a Basic
+Container that grew typed DCAT relations via the containment work
+(`ldp:contains` + e.g. `dcat:catalog`); the `Link: rel=type` header even
+advertises `ldp:DirectContainer` while the seed graph is `ldp:BasicContainer`.
+v0.2 closes that gap.
+
+Scope:
+
+- **Direct-Container membership on every FDP container.** A container's graph
+  declares, per child type, the LDP membership triad:
+  `ldp:membershipResource <container>`, `ldp:hasMemberRelation <relation>` (the
+  RD child link's `relationUri`, e.g. `dcat:catalog`), and
+  `ldp:insertedContentRelation ldp:MemberSubject`. A container with several
+  child types (Catalog → dataset + data-service) needs one membership config per
+  relation — confirm LDP allows multiple `hasMemberRelation` on one container, or
+  model the membership config as repeated blank-node descriptions. The
+  `ContainmentManager` writes the membership triple alongside `ldp:contains` on
+  create, and strips it on delete/re-parent (extend the existing reconcile).
+- **Accurate LDP headers.** `Link: rel=type` must reflect reality —
+  `ldp:DirectContainer` (+ `ldp:Container`, `ldp:RDFSource`, `ldp:Resource`) for
+  collection endpoints, `ldp:RDFSource`/`ldp:Resource` for leaf records; advertise
+  the type's SHACL shape via `Link: rel="http://www.w3.org/ns/ldp#constrainedBy"`;
+  keep `Accept-Post`/`Accept-Patch`/`Allow`/`ETag`.
+- **Seed + RD coherence.** Stop seeding `ldp:BasicContainer`; seed/derive
+  `ldp:DirectContainer` with its membership config from the RD child links
+  (root + each typed collection). Reconcile already-applied deployments (a
+  membership-backfill, same shape as the schema-namespace migration).
+- **Conformance suite** `tests/conformance/test_ldp.py` (testcontainers, real
+  store): encode the LDP MUST/SHOULD as HTTP-level checks — methods + status
+  codes; `Link` type set; content negotiation (Turtle/JSON-LD/RDF-XML/N-Triples);
+  `POST` → 201 + `Location` + `Slug`, and the new member appears via
+  `hasMemberRelation` on the container; `PUT` create/replace + `If-Match`
+  (412/428); `PATCH` `application/sparql-update` post-state SHACL; `DELETE`;
+  `OPTIONS` `Allow`; container membership/containment triples; 4xx paths. Writes
+  run under a steward/admin context (or a test offer permitting them).
+- **Deviations, documented not hidden.** The FDP keeps its custom `X-FDP-Page-*`
+  paging (not LDP Paging / `Prefer`) and SPARQL-Update PATCH only (no LD-PATCH,
+  ADR-0008). Capture an LDP conformance matrix (MUST/SHOULD/MAY × conformant /
+  deviation / gap) under `docs/`, and **amend ADR-0008** to match the shipped
+  reality.
+- Optional external check: run the W3C `ldp-testsuite` against a dev instance and
+  record the report.
+
+References: ADR-0008, architecture §6 + conformance, W3C LDP
+(https://www.w3.org/TR/ldp/), `metadata/ldp/router.py`, `metadata/containment.py`,
+`metadata/profiles/applier.py`.
+
+### 15.2 [~] DCAT v3 + FDP-O modular profile schemas (composed) + shape-closure validator
+
+> **(a) shape-graph closure validator — DONE.** `ShaclValidator._load` now
+> assembles the closure: from the requested shape it transitively resolves and
+> merges every referenced shape (`sh:node`, `sh:and`/`sh:or`/`sh:xone` lists,
+> `sh:qualifiedValueShape`, `sh:not`) via the `ShapeProvider`, so composed shapes
+> validate. The merged closure is cached under the root IRI; `invalidate(iri)`
+> **cascades** (editing a base shape drops every composed closure that imports
+> it); an unresolvable referenced shape is tolerated (logged, skipped) while the
+> root still validates. `_referenced_shape_iris` is the single place the
+> composition predicates are followed. Backward-compatible — a non-composed
+> shape's closure is just itself. Tests: 5 new cases in
+> `tests/unit/metadata/test_shacl.py` (inherited-constraint enforcement,
+> A→B→Resource transitivity via sh:node+sh:and, fetch-once-and-cache, cascade
+> invalidation, unresolvable-ref tolerance). **Remaining: (b)** the modular DCAT
+> v3 + FDP-O schema set, the applier `sh:node` reference rewrite, the `/spec`
+> merged-closure response, and the profile/RD rewiring.
+
+**Decision:** rebuild the default profile schemas as a modular set composed along
+the **faithful DCAT 3 subclass chain, extended with FDP-O**
+(https://raw.githubusercontent.com/FAIRDataTeam/FDP-O/master/fdp-ontology.owl):
+
+```
+dcat:Resource
+├── dcat:Dataset            (⊑ Resource)
+│   ├── dcat:Catalog        (⊑ Dataset)
+│   └── fdp-o:Metadata      (⊑ Dataset)
+├── dcat:DataService        (⊑ Resource)
+│   └── fdp-o:MetadataService (⊑ DataService)   --fdp-o:servesMetadata--> fdp-o:Metadata
+│       └── fdp-o:FAIRDataPoint (⊑ MetadataService)
+└── dcat:Distribution       (standalone)
+```
+
+**(a) Enabler — validator shape-graph closure.** Today `ShaclValidator._load`
+fetches a *single* shape graph by IRI, so a shape that references another via
+`sh:node <IRI>` won't resolve — composition is impossible. Change the loader to
+assemble the **closure**: from the requested shape, transitively resolve every
+referenced shape IRI (`sh:node`, `sh:property`→`sh:node`, `sh:and`/`sh:or`/
+`sh:xone` lists, `sh:qualifiedValueShape`) through the `ShapeProvider` and merge
+into one graph before pySHACL (`advanced=False` is fine — these are SHACL Core).
+Cache the merged closure keyed by the root IRI; the 10.1/10.2 invalidate hooks
+must **cascade** (editing a base shape invalidates every composed shape that
+imports it). The `/spec` read endpoint (`GET /{type}/spec`) must return the
+**merged** closure so the client's DASH form renderer sees inherited properties
+(ties into the reference-widget work).
+
+**Reference convention.** Composed shapes reference base shapes by their
+*storage* IRI (`{base}/fdp-api/schemas/{slug}`), which the profile TTL can't
+hardcode. The applier rewrites `sh:node`/list references from a manifest
+placeholder (e.g. a `fdp-schema:` CURIE) to the storage IRI at apply time —
+exactly the rewrite pattern 10.5 introduced for RD `constrainedBy`.
+
+**(b) The modular schema set** (one schema record each, `/fdp-api/schemas/`):
+
+- `ResourceShape` (`dcat:Resource`) — DCAT 3 common props: `dct:title` [1..1],
+  `dct:description`, `dct:publisher`, `dct:creator`, `dct:contactPoint`,
+  `dct:issued`, `dct:modified`, `dcat:keyword`, `dcat:theme`, `dct:language`,
+  `dct:license`, `dct:accessRights`, `dct:conformsTo`, `dct:identifier`,
+  `dcat:landingPage`, `dct:rights`, `prov:qualifiedAttribution`, …
+- `DatasetShape` (`dcat:Dataset`) = `sh:node ResourceShape` + `dcat:distribution`,
+  `dct:spatial`, `dct:temporal`, `dcat:temporalResolution`,
+  `dcat:spatialResolutionInMeters`, `dct:accrualPeriodicity`, `dcat:inSeries`, …
+- `CatalogShape` (`dcat:Catalog`) = `sh:node DatasetShape` + `dcat:dataset`,
+  `dcat:service`, `dcat:catalog`, `dcat:record`, `dcat:themeTaxonomy`,
+  `foaf:homepage`, `dct:hasPart`.
+- `DataServiceShape` (`dcat:DataService`) = `sh:node ResourceShape` +
+  `dcat:endpointURL`, `dcat:endpointDescription`, `dcat:servesDataset`,
+  `dcat:accessService`.
+- `DistributionShape` (`dcat:Distribution`, standalone) — `dcat:accessURL` [1..],
+  `dcat:downloadURL`, `dcat:mediaType`, `dct:format`, `dcat:byteSize`,
+  `dcat:compressFormat`, `dcat:packageFormat`, `dct:license`, `dcat:accessService`,
+  `spdx:checksum`.
+- `MetadataShape` (`fdp-o:Metadata`) = `sh:node DatasetShape` + FDP-O specifics.
+- `MetadataServiceShape` (`fdp-o:MetadataService`) = `sh:node DataServiceShape` +
+  `fdp-o:servesMetadata` (declare as `rdfs:subPropertyOf dcat:servesDataset`).
+- `FAIRDataPointShape` (`fdp-o:FAIRDataPoint`) = `sh:node MetadataServiceShape` +
+  FDP root props (`dct:title`, `dct:hasVersion`, `foaf:homepage`,
+  `dct:conformsTo` the FDP spec, `dct:rights` for the system-default Offer).
+
+Pull exact property lists from the DCAT 3 Rec (https://www.w3.org/TR/vocab-dcat-3/)
+and the FDP-O OWL. **Strictness (v0.2):** keep it lenient — `dct:title` mandatory,
+everything else optional with `sh:datatype`/`sh:nodeKind` constraints — so existing
+records still validate; tightening is a post-v0.2 community decision.
+
+**Profile + wiring changes.**
+
+- Rewrite `profiles/default/schemas/*.ttl` into the modular set above
+  (+ the FDP-O modules); declare them all in `profile.yaml` `schemas:` (leaves
+  first, per the ordering note). Add `fdp-o`/`spdx` prefixes to the namespace
+  registry.
+- `resourceDefinitions`: root becomes `fdp-o:FAIRDataPoint`; child links use the
+  typed relations (`fdp-o:servesMetadata` / `dcat:catalog` / `dcat:dataset` /
+  `dcat:service` / `dcat:distribution`) reflecting the new hierarchy; RD
+  `constrainedBy` points at the composed type shapes.
+- Re-typing the root from `fdp:Repository` → `fdp-o:FAIRDataPoint` needs a
+  reconcile for already-applied deployments (root seed + RD edits), same shape as
+  the schema-namespace migration.
+- Keep the meta-metadata schema separate (server-managed).
+
+**Tests.** unit — closure assembly + cascade invalidation; a record validates
+against base+delta and fails when an *inherited* required prop is missing; the
+applier's `sh:node` reference rewrite. profile-validation — the new bundle passes
+`validate_profile`. integration — author a FAIRDataPoint → Catalog → Dataset →
+Distribution that satisfy their composed shapes over GraphDB/Oxigraph; `/spec`
+returns the merged closure.
+
+References: DCAT 3 (https://www.w3.org/TR/vocab-dcat-3/), FDP-O (linked OWL),
+10.5 (schema namespace + reference rewrite), `metadata/shacl.py`,
+`metadata/shape_provider.py`, `metadata/profiles/applier.py`,
+`metadata/extensions.py` (`/spec`), `shared/namespaces.py`.
+
+---
+
 ## Reference-impl features deliberately NOT being ported
 
 | Reference feature | Why we skip it | Reference |
@@ -1286,3 +1455,8 @@ implementer:
 6. **Phase 10 and 12** — deeper changes, want an ADR per phase before
    starting.
 7. **Phase 13** — small, can be slotted anywhere.
+
+Personal TODO for v0.2
+- Validate LDP interfaces: check whether the server correctly implemnt a LDP server
+- Re-write the default profile schemas with complete DCAT v3. Modularize, i.e., create the Resources, Catalog, Dataset, DataService and Distribution from DCAT and the Repository and FAIRDataPoint from the FDP Ontology. Then make the resources, FDP, Catalog, Dataset, Data Service and Distribution by composing DCAT's Resource schema with the related schemas.
+
