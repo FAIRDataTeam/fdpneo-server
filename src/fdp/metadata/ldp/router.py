@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Annotated, Protocol
 
 import structlog
 from fastapi import APIRouter, Depends, Request, Response
-from rdflib import Graph
+from rdflib import Graph, URIRef
 
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
@@ -55,6 +55,7 @@ from fdp.metadata.ldp.negotiation import (
     serialize,
 )
 from fdp.metadata.patch import simulate_update
+from fdp.metadata.profiles.applier import direct_container_config
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
@@ -115,6 +116,8 @@ class ContainerRegistry(Protocol):
 
     def containment_relation(self, parent_iri: str, child_iri: str) -> str | None: ...
 
+    def member_relations(self, resource_iri: str) -> list[str]: ...
+
 
 class DefaultContainerRegistry:
     """Skeleton default — nothing is a container, no shape is bound."""
@@ -130,6 +133,9 @@ class DefaultContainerRegistry:
 
     def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:  # noqa: ARG002
         return None
+
+    def member_relations(self, resource_iri: str) -> list[str]:  # noqa: ARG002
+        return []
 
 
 def build_ldp_router(
@@ -242,6 +248,19 @@ def build_ldp_router(
             log.error("containment_reconcile_failed_compensated", child=child_iri)
             raise
 
+    def _stamp_container_config(graph: Graph, iri: str) -> None:
+        """Add the LDP Direct Container membership config if ``iri`` is a container.
+
+        A record whose type declares child links (Catalog, Dataset, the root) is
+        a Direct Container; the server stamps its membership configuration
+        (derived from the RD child relations) onto the stored graph so it is a
+        genuine ``ldp:DirectContainer`` (task 15.1), exactly like the root seed.
+        Leaf records (Distribution) get nothing.
+        """
+        relations = registry.member_relations(iri)
+        for triple in direct_container_config(URIRef(iri), relations) if relations else []:
+            graph.add(triple)
+
     @router.get("/{path:path}", name="ldp_get")
     async def http_get(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -302,6 +321,8 @@ def build_ldp_router(
         # member shape, which only applies to POST and resolves to None for a
         # leaf member IRI (leaving the write unvalidated).
         await _validate_against_resource_shape(new_graph, iri)
+        # Stamp this record's own Direct Container config if it's a container type.
+        _stamp_container_config(new_graph, iri)
         etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
         # Maintain the parent's forward containment links from the child's
         # dct:isPartOf (compensates the child write on failure).
@@ -353,6 +374,7 @@ def build_ldp_router(
         member_iri = _mint_member_iri(container_iri, request.headers.get("slug"))
         member_graph = _parse_body(request, await request.body(), base=member_iri)
         await _validate_member(member_graph, container_iri)
+        _stamp_container_config(member_graph, member_iri)
         etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
         parent_events = await _maintain_membership(
             child_iri=member_iri,

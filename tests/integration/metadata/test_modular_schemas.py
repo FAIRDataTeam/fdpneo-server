@@ -180,6 +180,21 @@ def test_composition_enforced_on_write(app_env: None) -> None:
         )
         assert ok.status_code == 201, ok.text
 
+        # The created catalog is itself a Direct Container (task 15.1): the
+        # server stamped its membership config from the Catalog RD child links.
+        from fdp.shared.namespaces import DCAT as _DCAT, LDP as _LDP
+
+        g = Graph()
+        g.parse(
+            data=c.as_admin().get("/catalog/c1", headers={"Accept": "text/turtle"}).text,
+            format="turtle",
+        )
+        cat_ref = URIRef(cat)
+        assert (cat_ref, RDF.type, _LDP.DirectContainer) in g
+        assert (cat_ref, _LDP.membershipResource, cat_ref) in g
+        assert (cat_ref, _LDP.hasMemberRelation, _DCAT.dataset) in g
+        assert (cat_ref, _LDP.hasMemberRelation, _DCAT.service) in g
+
 
 def test_root_is_a_fairdatapoint_direct_container(app_env: None) -> None:
     from fdp.shared.namespaces import LDP

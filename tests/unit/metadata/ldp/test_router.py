@@ -147,11 +147,13 @@ class FixedContainerRegistry:
         member_shapes: dict[str, str] | None = None,
         resource_shapes: dict[str, str] | None = None,
         relations: dict[tuple[str, str], str] | None = None,
+        member_relations: dict[str, list[str]] | None = None,
     ) -> None:
         self._containers = set(container_iris)
         self._members = dict(member_shapes or {})
         self._resources = dict(resource_shapes or {})
         self._relations = dict(relations or {})
+        self._member_relations = dict(member_relations or {})
 
     def is_container(self, resource_iri: str) -> bool:
         return resource_iri in self._containers
@@ -164,6 +166,9 @@ class FixedContainerRegistry:
 
     def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:
         return self._relations.get((parent_iri, child_iri))
+
+    def member_relations(self, resource_iri: str) -> list[str]:
+        return self._member_relations.get(resource_iri, [])
 
 
 # --- Fixtures ---------------------------------------------------------------

@@ -738,6 +738,10 @@ class _DynamicContainerRegistry:
         cache = self._cache()
         return None if cache is None else cache.containment_relation(parent_iri, child_iri)
 
+    def member_relations(self, resource_iri: str) -> list[str]:
+        cache = self._cache()
+        return [] if cache is None else cache.member_relations(resource_iri)
+
     def _cache(self) -> ResourceDefinitionCache | None:
         return getattr(self._app.state, "resource_definitions", None)
 

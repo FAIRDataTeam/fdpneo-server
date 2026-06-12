@@ -202,6 +202,16 @@ def test_containment_relation_matches_child_type_to_parent_link() -> None:
 
 
 @pytest.mark.unit
+def test_member_relations_lists_child_link_relations() -> None:
+    cache = _three_type_cache()
+    assert cache.member_relations(BASE) == ["http://www.w3.org/ns/dcat#catalog"]
+    assert cache.member_relations(f"{BASE}/catalog/c-1") == ["http://www.w3.org/ns/dcat#dataset"]
+    # Dataset has no children here (leaf), and an unknown URL → empty.
+    assert cache.member_relations(f"{BASE}/dataset/d-1") == []
+    assert cache.member_relations(f"{BASE}/ghost/x") == []
+
+
+@pytest.mark.unit
 def test_shape_for_resource() -> None:
     cache = _three_type_cache()
     assert cache.shape_for(BASE) == f"{BASE}/fdp-api/schemas/repository"

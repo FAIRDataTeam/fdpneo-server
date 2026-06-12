@@ -167,6 +167,19 @@ class ResourceDefinitionCache:
         rd = self._by_prefix.get(prefix)
         return rd.schema_iri if rd is not None else None
 
+    def member_relations(self, resource_iri: str) -> list[str]:
+        """The typed member relations of the container at ``resource_iri``.
+
+        A record is an LDP Direct Container iff its resource definition declares
+        child links; this returns those links' ``relationUri`` values (a Catalog →
+        ``[dcat:dataset, dcat:service]``, the root → ``[servesMetadata]``) which
+        become the container's ``ldp:hasMemberRelation`` set. Empty for a leaf
+        type (Distribution) or an unknown URL. Resolves by URL like
+        :meth:`for_url`, so it works for both the root and member records.
+        """
+        rd = self.for_url(resource_iri)
+        return [child.relation_uri for child in rd.children] if rd is not None else []
+
     def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:
         """The typed forward predicate a ``parent`` uses to point at ``child``.
 
