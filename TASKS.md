@@ -1294,8 +1294,26 @@ modular SHACL shapes.
 > repeated-`named-graph-uri` multi-graph *read* under-projection documented in
 > 10.3 — that finding stands; it concerns `/sparql` projection, not writes.)
 >
-> **Remaining:** a backfill for deployments applied before 15.1; the full
-> MUST/SHOULD/MAY matrix + ADR-0008 rewrite. (Deliberate deviations stand: custom
+> **Pre-15.1 membership backfill — DONE (2026-06-12).** Deployments bootstrapped
+> before containers became genuine `ldp:DirectContainer`s still hold them as
+> `ldp:BasicContainer` with no membership triad. `metadata/profiles/backfill.py`
+> (`backfill_direct_container_membership`) + the `fdp ldp backfill-membership` CLI
+> reconcile them non-destructively: walk every non-internal record graph, resolve
+> each to its RD (via `build_cache_from_repository`), and for any container (a
+> type whose RD declares child links) add the membership config and strip the
+> stale `ldp:BasicContainer` type. The rewrite goes through `adapter.replace_graph`
+> (not `repository.put_graph`) on purpose — stamping LDP affordance triples is a
+> structural fix, not a content edit, so it must not bump `owl:versionInfo` /
+> `dct:modified`. Idempotent (an already-conformant container is skipped); leaves
+> leaf records and internal siblings untouched. Tests: unit
+> `tests/unit/metadata/profiles/test_backfill.py` (stamp + strip + leaf/sibling
+> untouched, idempotency) and integration
+> `tests/integration/metadata/test_membership_backfill.py` (apply profile over
+> Oxigraph → downgrade the seeded root to its pre-15.1 shape → backfill restores
+> the Direct Container config in place → second pass is a no-op).
+>
+> **Remaining:** the full MUST/SHOULD/MAY conformance matrix under `docs/` +
+> ADR-0008 rewrite to match shipped reality. (Deliberate deviations stand: custom
 > `X-FDP-Page-*` paging, SPARQL-Update PATCH only.)
 
 **Decision:** implement real LDP **Direct Containers** (not "Basic + typed

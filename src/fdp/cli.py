@@ -31,6 +31,7 @@ from rich.console import Console
 
 if TYPE_CHECKING:
     from fdp.metadata.profiles.applier import ApplyReport
+    from fdp.metadata.profiles.backfill import MembershipBackfillReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
     from fdp.metadata.profiles.migrate import MigrationReport
     from fdp.metadata.schema_sync import SyncReport
@@ -48,12 +49,14 @@ db_app = typer.Typer(help="Database commands.", no_args_is_help=True)
 metrics_app = typer.Typer(help="Metrics-pipeline commands.", no_args_is_help=True)
 schema_app = typer.Typer(help="Schema commands.", no_args_is_help=True)
 search_app = typer.Typer(help="Search commands.", no_args_is_help=True)
+ldp_app = typer.Typer(help="LDP-conformance commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
 app.add_typer(metrics_app, name="metrics")
 app.add_typer(schema_app, name="schema")
 app.add_typer(search_app, name="search")
+app.add_typer(ldp_app, name="ldp")
 
 console = Console()
 
@@ -416,6 +419,54 @@ async def _run_schema_migration(profile: DeploymentProfile) -> MigrationReport:
             adapter=adapter,
             settings=settings,
             validator=validator,
+        )
+
+
+@ldp_app.command("backfill-membership")
+def ldp_backfill_membership() -> None:
+    """Stamp LDP Direct Container membership on pre-15.1 containers.
+
+    Non-destructive, one-shot, idempotent. For deployments bootstrapped before
+    containers became genuine ``ldp:DirectContainer``s (task 15.1): walks every
+    record, and for each container (a type whose resource definition declares
+    child links) adds the membership triad and strips any stale
+    ``ldp:BasicContainer`` type. Derives everything from the store; no profile
+    bundle needed. A no-op on an already-conformant deployment.
+    """
+    try:
+        report = asyncio.run(_run_membership_backfill())
+    except Exception as err:
+        console.print(f"[red]membership backfill failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if not report.changed:
+        console.print(
+            "[green]nothing to backfill[/] — "
+            f"{len(report.already_conformant)} container(s) already conformant"
+        )
+        return
+    console.print(
+        f"[green]stamped[/] Direct Container membership on {len(report.stamped)} container(s) "
+        f"({len(report.already_conformant)} already conformant)"
+    )
+    for iri in report.stamped:
+        console.print(f"  {iri}")
+
+
+async def _run_membership_backfill() -> MembershipBackfillReport:
+    """Build the runtime collaborators and run one backfill pass."""
+    from fdp.config import get_settings
+    from fdp.metadata.profiles.backfill import backfill_direct_container_membership
+    from fdp.metadata.profiles.rd_service import build_cache_from_repository
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        repository = MetadataRepository(adapter)
+        cache = await build_cache_from_repository(adapter, base_url=str(settings.base_url))
+        return await backfill_direct_container_membership(
+            repository=repository, adapter=adapter, cache=cache
         )
 
 
