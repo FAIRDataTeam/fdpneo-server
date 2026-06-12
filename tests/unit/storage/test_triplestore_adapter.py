@@ -93,6 +93,14 @@ async def test_update_posts_application_sparql_update(
 
 @pytest.mark.unit
 @respx.mock
+async def test_clear_all_issues_drop_all(async_client: httpx.AsyncClient) -> None:
+    route = respx.post(UPDATE_URL).respond(204)
+    await _adapter(_settings(), async_client).clear_all()
+    assert route.calls.last.request.content == b"DROP ALL"
+
+
+@pytest.mark.unit
+@respx.mock
 async def test_query_raises_on_http_error(async_client: httpx.AsyncClient) -> None:
     respx.post(QUERY_URL).respond(500, text="boom")
     with pytest.raises(httpx.HTTPStatusError):

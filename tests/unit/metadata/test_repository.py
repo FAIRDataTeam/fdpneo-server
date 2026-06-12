@@ -70,6 +70,9 @@ class FakeAdapter:
     async def drop_graph(self, graph_uri: str) -> None:
         self.graphs.pop(graph_uri, None)
 
+    async def clear_all(self) -> None:
+        self.graphs.clear()
+
 
 def _extract_graph_uri(sparql: str) -> str | None:
     marker = "GRAPH <"
@@ -93,6 +96,15 @@ async def test_get_graph_empty_when_record_absent() -> None:
     repo, _ = _repo()
     graph = await repo.get_graph(RECORD)
     assert len(graph) == 0
+
+
+@pytest.mark.unit
+async def test_clear_all_wipes_every_graph() -> None:
+    repo, adapter = _repo()
+    await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
+    assert adapter.graphs  # something was written
+    await repo.clear_all()
+    assert adapter.graphs == {}
 
 
 @pytest.mark.unit

@@ -11,15 +11,13 @@ One destructive, admin-only endpoint:
   OpenAPI, SHACL warm-up, anonymous-authz warm-up) are republished, so the
   reset takes effect without a restart.
 
-**Scope.** "Factory defaults" here means *profile-managed* state: anything
-the profile bundle writes (and the runtime-settings overrides layered on
-top) is reset. It deliberately matches the existing ``fdp profile apply
---force`` semantics (CLI), which overwrites the profile's graphs in place
-rather than wiping the whole triple store — there is no drop-all-graphs
-capability in the SPARQL 1.1 Protocol adapter (ADR-0005), and a blanket wipe
-of operator-created records is a heavier, separate concern. Runtime
-resource-definition edits (ADR-0009) are reverted because the seed records
-are rewritten from the manifest.
+**Scope.** "Factory defaults" here means the deployment is reset to exactly
+what the profile bundle ships. It matches ``fdp profile apply --force`` (CLI):
+both now **wipe the triple store** with a portable SPARQL 1.1 ``DROP ALL``
+(``TripleStoreAdapter.clear_all``) before re-applying, so graphs from a
+previous profile — or operator-created records — do not linger and collide
+with the re-applied bundle. Runtime resource-definition and schema edits
+(ADR-0009 / 10.x) are therefore reverted along with everything else.
 
 **Authorization.** Like the runtime-settings and resource-definition admin
 surfaces, this is *deployment configuration*, not a metadata record, so it
@@ -150,6 +148,10 @@ class ResetService:
         profile = load_profile(bundle)
 
         settings_cleared = await self._settings_repository.clear_all(subject=subject)
+
+        # Wipe the triple store so graphs from a previous profile don't linger
+        # and collide with the re-applied one (a portable SPARQL 1.1 DROP ALL).
+        await self._repository.clear_all()
 
         async with self._session_factory() as session:
             state = ProfileStateRepository(session)

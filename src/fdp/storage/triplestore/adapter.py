@@ -253,6 +253,17 @@ class TripleStoreAdapter:
             return
         await self.update(f"DROP SILENT GRAPH <{graph_uri}>")
 
+    async def clear_all(self) -> None:
+        """Remove every triple from every graph (default + all named graphs).
+
+        ``DROP ALL`` is standard SPARQL 1.1 Update — portable across GraphDB,
+        Fuseki and Oxigraph — so unlike a vendor repository drop/recreate it
+        needs no management API. Used by force-apply / factory reset to start
+        from a genuinely clean store (otherwise graphs from a previous profile
+        with different slugs linger and collide with the new one).
+        """
+        await self.update("DROP ALL")
+
     # --- Helpers -----------------------------------------------------------
 
     def _require_graph_store_endpoint(self) -> str:

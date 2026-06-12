@@ -145,6 +145,10 @@ class MetadataRepository:
         await self._adapter.drop_graph(str(meta_graph_uri(record_uri)))
         await self._adapter.drop_graph(str(audit_graph_uri(record_uri)))
 
+    async def clear_all(self) -> None:
+        """Wipe every graph in the store (force-apply / factory reset)."""
+        await self._adapter.clear_all()
+
     # --- meta-metadata ------------------------------------------------------
 
     async def _refresh_meta(

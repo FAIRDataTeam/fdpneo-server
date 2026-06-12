@@ -508,6 +508,10 @@ async def _run_apply(profile: DeploymentProfile, *, force: bool) -> ApplyReport:
             async with session_factory() as session:
                 state = ProfileStateRepository(session)
                 if force:
+                    # Genuinely wipe the triple store (not just the marker) so a
+                    # previous profile's graphs don't linger and collide with the
+                    # new one — what the confirmation prompt promises.
+                    await adapter.clear_all()
                     await state.clear()
                     await session.commit()
                 return await apply_profile(
