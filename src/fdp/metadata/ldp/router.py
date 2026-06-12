@@ -83,7 +83,9 @@ log = structlog.get_logger(__name__)
 
 LDP_RESOURCE = "http://www.w3.org/ns/ldp#Resource"
 LDP_RDF_SOURCE = "http://www.w3.org/ns/ldp#RDFSource"
+LDP_CONTAINER = "http://www.w3.org/ns/ldp#Container"
 LDP_DIRECT_CONTAINER = "http://www.w3.org/ns/ldp#DirectContainer"
+LDP_CONSTRAINED_BY = "http://www.w3.org/ns/ldp#constrainedBy"
 
 _ALLOWED_METHODS_RESOURCE = "GET, HEAD, OPTIONS, PUT, PATCH, DELETE"
 _ALLOWED_METHODS_CONTAINER = "GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE"
@@ -256,7 +258,9 @@ def build_ldp_router(
             await state_gate.ensure_visible(ctx, iri)
         body = serialize(graph, media)
         etag = compute_etag(graph)
-        headers = _response_headers(etag, registry.is_container(iri))
+        headers = _response_headers(
+            etag, registry.is_container(iri), constrained_by=registry.shape_for(iri)
+        )
         headers["Content-Type"] = media
         return Response(content=body, status_code=200, headers=headers)
 
@@ -275,7 +279,9 @@ def build_ldp_router(
         if state_gate is not None:
             await state_gate.ensure_visible(ctx, iri)
         etag = compute_etag(graph)
-        headers = _response_headers(etag, registry.is_container(iri))
+        headers = _response_headers(
+            etag, registry.is_container(iri), constrained_by=registry.shape_for(iri)
+        )
         headers["Content-Type"] = media
         return Response(status_code=200, headers=headers)
 
@@ -520,18 +526,27 @@ def _mint_member_iri(container_iri: str, slug: str | None) -> str:
     return f"{base}/{uuid.uuid4()}"
 
 
-def _response_headers(etag: str | None, is_container: bool) -> dict[str, str]:
+def _response_headers(
+    etag: str | None, is_container: bool, *, constrained_by: str | None = None
+) -> dict[str, str]:
     link_parts = [f'<{LDP_RESOURCE}>; rel="type"', f'<{LDP_RDF_SOURCE}>; rel="type"']
     allow = _ALLOWED_METHODS_RESOURCE
     if is_container:
+        # A Direct Container is also an ldp:Container — advertise both (LDP §5).
+        link_parts.append(f'<{LDP_CONTAINER}>; rel="type"')
         link_parts.append(f'<{LDP_DIRECT_CONTAINER}>; rel="type"')
         allow = _ALLOWED_METHODS_CONTAINER
+    if constrained_by is not None:
+        # The SHACL shape governing this resource (LDP §4.2.1).
+        link_parts.append(f'<{constrained_by}>; rel="{LDP_CONSTRAINED_BY}"')
     headers: dict[str, str] = {
         "Link": ", ".join(link_parts),
         "Allow": allow,
-        "Accept-Post": _ACCEPT_POST,
         "Accept-Patch": _ACCEPT_PATCH,
     }
+    # Accept-Post only advertises on containers — POST creates a member there.
+    if is_container:
+        headers["Accept-Post"] = _ACCEPT_POST
     if etag is not None:
         headers["ETag"] = f'"{etag}"'
     return headers

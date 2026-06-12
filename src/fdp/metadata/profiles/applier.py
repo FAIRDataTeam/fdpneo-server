@@ -295,6 +295,7 @@ async def apply_profile(
                 graph = _repository_graph(
                     iri=repo_iri,
                     type_iri=root_class_iri,
+                    member_relations=[c.relation_uri for c in root_rd.children],
                     title=profile.name,
                     rights_iri=system_default_iri,
                 )
@@ -448,25 +449,51 @@ def _repository_graph(
     *,
     iri: str,
     type_iri: str,
+    member_relations: list[str],
     title: str,
     rights_iri: str | None,
 ) -> Graph:
     """Build the seed graph for the root record (the FAIR Data Point).
 
     The root is the single mandatory FDP resource (architecture §10). Sat at the
-    API root, typed as both the root RD's schema *class* (``type_iri`` — so the
-    shape's ``sh:targetClass`` matches) and ``ldp:BasicContainer``, with a
-    human-readable title and an optional link to the system-default Offer for
-    inheritance.
+    API root, typed as the root RD's schema *class* (``type_iri`` — so the
+    shape's ``sh:targetClass`` matches) and as a genuine LDP **Direct Container**
+    (ADR-0008, task 15.1): it carries the membership configuration
+    (``ldp:membershipResource`` = itself, one ``ldp:hasMemberRelation`` per RD
+    child relation, ``ldp:insertedContentRelation ldp:MemberSubject``) so a
+    standards consumer reads the container's membership pattern directly.
     """
     subject = URIRef(iri)
     graph = Graph()
     graph.add((subject, RDF.type, URIRef(type_iri)))
-    graph.add((subject, RDF.type, LDP.BasicContainer))
     graph.add((subject, DCT.title, Literal(title)))
     if rights_iri is not None:
         graph.add((subject, DCT.rights, URIRef(rights_iri)))
+    for triple in direct_container_config(subject, member_relations):
+        graph.add(triple)
     return graph
 
 
-__all__ = ["ApplyError", "ApplyReport", "apply_profile"]
+def direct_container_config(
+    subject: URIRef, member_relations: list[str]
+) -> list[tuple[URIRef, URIRef, URIRef]]:
+    """LDP Direct Container membership triples for a container ``subject``.
+
+    Declares the container an ``ldp:DirectContainer`` whose members are reached
+    from the container itself (``ldp:membershipResource``) via each typed
+    relation (``ldp:hasMemberRelation`` — one per RD child link, e.g.
+    ``fdp-o:servesMetadata`` / ``dcat:dataset``), with the posted resource as the
+    member (``ldp:insertedContentRelation ldp:MemberSubject``). Shared by the
+    root seed and runtime container records so every FDP container is a genuine
+    Direct Container.
+    """
+    triples: list[tuple[URIRef, URIRef, URIRef]] = [
+        (subject, RDF.type, LDP.DirectContainer),
+        (subject, LDP.membershipResource, subject),
+        (subject, LDP.insertedContentRelation, LDP.MemberSubject),
+    ]
+    triples += [(subject, LDP.hasMemberRelation, URIRef(rel)) for rel in member_relations]
+    return triples
+
+
+__all__ = ["ApplyError", "ApplyReport", "apply_profile", "direct_container_config"]

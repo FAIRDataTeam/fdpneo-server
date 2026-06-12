@@ -1251,7 +1251,22 @@ Two release-gating items: prove (and complete) the LDP server, and rebuild the
 default profile's schemas from the full DCAT 3 + FDP-O vocabularies as composed,
 modular SHACL shapes.
 
-### 15.1 [ ] LDP conformance: true Direct Containers + a conformance suite
+### 15.1 [~] LDP conformance: true Direct Containers + a conformance suite
+
+> **Started — root is a real Direct Container.** `applier.direct_container_config`
+> derives the membership triad from a container's RD child relations
+> (`ldp:DirectContainer` + `ldp:membershipResource` = self + one
+> `ldp:hasMemberRelation` per child link + `ldp:insertedContentRelation
+> ldp:MemberSubject`); the root seed now emits it (no more `ldp:BasicContainer`).
+> The LDP `Link: rel=type` header is fixed (containers advertise `ldp:Container`
+> **and** `ldp:DirectContainer`; `Accept-Post` only on containers) and GET/HEAD
+> now advertise the shape via `Link: rel="…ldp#constrainedBy"`. Tests:
+> `test_applier.test_direct_container_config…`, integration asserts the live root
+> is a Direct Container with the membership config + Link headers. **Remaining:**
+> stamp the membership config on *runtime* container records (catalog/dataset) at
+> create via the `ContainmentManager` (needs `member_relations` on the RD cache);
+> a backfill for already-applied deployments; the `tests/conformance/` suite +
+> MUST/SHOULD/MAY matrix; and amending ADR-0008 fully.
 
 **Decision:** implement real LDP **Direct Containers** (not "Basic + typed
 relations"). ADR-0008 claims full LDP-DC but the implementation is a Basic

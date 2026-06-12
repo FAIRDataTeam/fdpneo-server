@@ -342,3 +342,24 @@ async def test_apply_refuses_invalid_profile_without_writing(
             settings=_settings(),
         )
     assert repo.put_calls == []
+
+
+# --- Direct Container membership config (task 15.1) ------------------------
+
+
+@pytest.mark.unit
+def test_direct_container_config_emits_membership_triad() -> None:
+    from rdflib import RDF, URIRef
+
+    from fdp.metadata.profiles.applier import direct_container_config
+    from fdp.shared.namespaces import LDP
+
+    subject = URIRef("http://localhost:8000")
+    catalog = "http://www.w3.org/ns/dcat#catalog"
+    triples = direct_container_config(subject, [catalog])
+    assert (subject, RDF.type, LDP.DirectContainer) in triples
+    assert (subject, LDP.membershipResource, subject) in triples
+    assert (subject, LDP.insertedContentRelation, LDP.MemberSubject) in triples
+    assert (subject, LDP.hasMemberRelation, URIRef(catalog)) in triples
+    # Basic Container is gone — the root is a Direct Container now.
+    assert (subject, RDF.type, LDP.BasicContainer) not in triples

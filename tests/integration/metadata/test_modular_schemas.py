@@ -181,11 +181,29 @@ def test_composition_enforced_on_write(app_env: None) -> None:
         assert ok.status_code == 201, ok.text
 
 
-def test_root_is_seeded_as_fairdatapoint(app_env: None) -> None:
+def test_root_is_a_fairdatapoint_direct_container(app_env: None) -> None:
+    from fdp.shared.namespaces import LDP
+
     c = _make_client()
+    root = URIRef(BASE_URL)
     with c.http:
         resp = c.as_anonymous().get("/", headers={"Accept": "text/turtle"})
         assert resp.status_code == 200, resp.text
         g = Graph()
         g.parse(data=resp.text, format="turtle")
-        assert (URIRef(BASE_URL), RDF.type, FDP_FAIRDATAPOINT) in g
+        assert (root, RDF.type, FDP_FAIRDATAPOINT) in g
+        # A genuine LDP Direct Container (task 15.1), not a Basic Container.
+        assert (root, RDF.type, LDP.DirectContainer) in g
+        assert (root, RDF.type, LDP.BasicContainer) not in g
+        assert (root, LDP.membershipResource, root) in g
+        assert (root, LDP.insertedContentRelation, LDP.MemberSubject) in g
+        # The membership relation is the root RD's child link (servesMetadata).
+        assert (
+            root,
+            LDP.hasMemberRelation,
+            URIRef("https://w3id.org/fdp/o#servesMetadata"),
+        ) in g
+        # The container advertises its type + shape via Link headers.
+        link = c.as_anonymous().get("/", headers={"Accept": "text/turtle"}).headers["Link"]
+        assert "ldp#DirectContainer" in link
+        assert "ldp#constrainedBy" in link

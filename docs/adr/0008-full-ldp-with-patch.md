@@ -43,3 +43,11 @@ LD-PATCH (`application/ldpatch`) is **not** supported in v1. SPARQL Update PATCH
 - The metadata module must simulate the update before committing, to run SHACL against the post-update state. This is the cost of correctness; the alternative (commit then validate then roll back) is worse for concurrency.
 
 **Property-level access control is not in scope.** If a user has `odrl:modify` on a record, they can `PATCH` any property in it. Going finer-grained is a v2 concern (see main architecture, Section 10.4).
+
+## Implementation status (v0.2, TASKS 15.1)
+
+The "Direct Containers" decision is being made real incrementally. As of v0.2:
+
+- The **root (FAIRDataPoint)** is seeded as a genuine `ldp:DirectContainer` with its membership configuration (`ldp:membershipResource`, one `ldp:hasMemberRelation` per resource-definition child link, `ldp:insertedContentRelation ldp:MemberSubject`) — derived by `applier.direct_container_config`. It is no longer an `ldp:BasicContainer`.
+- The `Link: rel="type"` header advertises `ldp:Container` + `ldp:DirectContainer` for container endpoints (was inconsistent), `Accept-Post` is container-only, and reads advertise the SHACL shape via `Link: rel="…ldp#constrainedBy"`.
+- **Still outstanding:** stamping the membership config on *runtime* container records (catalogs/datasets) at create time, a backfill for already-applied deployments, and an automated LDP conformance suite + MUST/SHOULD/MAY matrix. The deliberate deviations remain: custom `X-FDP-Page-*` paging (not LDP Paging) and SPARQL-Update PATCH only (no LD-PATCH).
