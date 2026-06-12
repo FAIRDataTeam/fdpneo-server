@@ -41,6 +41,7 @@ from fdp.metadata.containment import ContainmentManager
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
+from fdp.metadata.instances import InstanceLookupService, build_instances_router
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
 from fdp.metadata.licenses import (
@@ -613,6 +614,20 @@ def create_app() -> FastAPI:
     # /fdp-api/schemas; the shapes themselves are stored at {base}/fdp-api/schemas/{id}.
     app.include_router(
         build_schema_router(service=app.state.schema_service), prefix=RESERVED_API_PATH
+    )
+    # Dynamic class-instance / subclass lookup at /fdp-api/instances and
+    # /fdp-api/subclasses — backs the client's DASH reference editors. Reads are
+    # visibility-gated (ODRL read + publication state), like every other read.
+    app.include_router(
+        build_instances_router(
+            service=InstanceLookupService(
+                adapter=app.state.triplestore,
+                pdp=app.state.pdp,
+                base_url=str(settings.base_url),
+                state_gate=app.state.state_gate,
+            )
+        ),
+        prefix=RESERVED_API_PATH,
     )
     # First-class ODRL policy + license admin (Phase 14 / ADR-0012) at
     # /fdp-api/policies and /fdp-api/licenses; the documents themselves are stored
