@@ -47,6 +47,7 @@ from rdflib.namespace import DCTERMS
 
 from fdp.identity.deps import current_context
 from fdp.metadata.ldp.negotiation import SUPPORTED_TYPES, select_media_type, serialize
+from fdp.metadata.shacl import UnknownShapeError
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
     from fdp.metadata.lifecycle import StateGate
     from fdp.metadata.profiles.registry import ResourceDefinitionCache
     from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.shacl import ShaclValidator
     from fdp.policy.pdp import PDP
 
 log = structlog.get_logger(__name__)
@@ -84,6 +86,7 @@ def build_extensions_router(
     cache_provider: Callable[[], ResourceDefinitionCache | None],
     base_url: str,
     state_gate: StateGate | None = None,
+    validator: ShaclValidator | None = None,
 ) -> APIRouter:
     """Construct the read-extensions router.
 
@@ -101,7 +104,17 @@ def build_extensions_router(
 
     async def _serve_shape(schema_iri: str, request: Request) -> Response:
         media = _negotiate(request)
-        graph = await repo.get_graph(schema_iri)
+        # Return the merged shape-graph *closure* (the type shape + every shape
+        # it composes via sh:node) when a validator is wired, so the client's
+        # form renderer sees inherited properties in one response (task 15.2).
+        # Fall back to the single stored graph otherwise.
+        if validator is not None:
+            try:
+                graph = await validator.shape_closure(schema_iri)
+            except UnknownShapeError as err:
+                raise NotFound(f"SHACL shape not found: {schema_iri}") from err
+        else:
+            graph = await repo.get_graph(schema_iri)
         if len(graph) == 0:
             raise NotFound(f"SHACL shape not found: {schema_iri}")
         body = serialize(graph, media)

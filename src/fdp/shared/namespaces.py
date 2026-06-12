@@ -33,7 +33,10 @@ LDP = Namespace("http://www.w3.org/ns/ldp#")
 ODRL = Namespace("http://www.w3.org/ns/odrl/2/")
 OWL = Namespace("http://www.w3.org/2002/07/owl#")
 PROV = Namespace("http://www.w3.org/ns/prov#")
+RDFS = Namespace("http://www.w3.org/2000/01/rdf-schema#")
 SH = Namespace("http://www.w3.org/ns/shacl#")
+SKOS = Namespace("http://www.w3.org/2004/02/skos/core#")
+SPDX = Namespace("http://spdx.org/rdf/terms#")
 XSD = Namespace("http://www.w3.org/2001/XMLSchema#")
 
 FDP_DEFAULT = Namespace("https://w3id.org/fdp/o#")
@@ -86,11 +89,20 @@ PREFIXES: Mapping[str, Namespace] = MappingProxyType(
         "dcat": DCAT,
         "dct": DCT,
         "foaf": FOAF,
+        # The FDP ontology terms (fdp-o:Metadata, fdp-o:MetadataService,
+        # fdp-o:FAIRDataPoint, fdp-o:servesMetadata …) are FIXED — they live at
+        # the published ontology IRI, not the deployment-rebranded `fdp:`
+        # namespace — so this prefix maps to FDP_DEFAULT, unlike the `fdp:`
+        # special-case in IRIExpander.
+        "fdp-o": FDP_DEFAULT,
         "ldp": LDP,
         "odrl": ODRL,
         "owl": OWL,
         "prov": PROV,
+        "rdfs": RDFS,
         "sh": SH,
+        "skos": SKOS,
+        "spdx": SPDX,
         "xsd": XSD,
     }
 )
@@ -135,7 +147,10 @@ __all__ = [
     "OWL",
     "PREFIXES",
     "PROV",
+    "RDFS",
     "SH",
+    "SKOS",
+    "SPDX",
     "XSD",
     "bind_all",
     "fdp_namespace",

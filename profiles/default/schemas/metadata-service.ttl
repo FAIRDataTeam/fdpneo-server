@@ -1,0 +1,21 @@
+# FDP-O fdp-o:MetadataService ⊑ dcat:DataService (FDP-O).
+#
+# A service that serves fdp-o:Metadata. Composes the DataService shape and adds
+# fdp-o:servesMetadata (a specialization of dcat:servesDataset).
+
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix fdp-o: <https://w3id.org/fdp/o#> .
+@prefix fs:    <urn:fdp-schema:> .
+
+fs:metadata-service
+    a sh:NodeShape ;
+    sh:targetClass fdp-o:MetadataService ;
+    rdfs:label "FDP Metadata Service" ;
+    sh:node fs:data-service ;
+
+    sh:property [
+        sh:path fdp-o:servesMetadata ;
+        sh:description "Metadata records this service exposes (⊑ dcat:servesDataset)." ;
+        sh:nodeKind sh:IRI ;
+    ] .

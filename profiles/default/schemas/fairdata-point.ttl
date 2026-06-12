@@ -1,0 +1,26 @@
+# FDP-O fdp-o:FAIRDataPoint ⊑ fdp-o:MetadataService (FDP-O) — the FDP root.
+#
+# The root resource of a FAIR Data Point: a MetadataService that serves the
+# repository's catalogs. Composes MetadataService → DataService → Resource, so
+# dct:title is inherited-required; adds the FDP root descriptors.
+
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix fdp-o: <https://w3id.org/fdp/o#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix fs:    <urn:fdp-schema:> .
+
+fs:fairdata-point
+    a sh:NodeShape ;
+    sh:targetClass fdp-o:FAIRDataPoint ;
+    rdfs:label "FAIR Data Point" ;
+    rdfs:comment "The root resource of an FDP instance." ;
+    sh:node fs:metadata-service ;
+
+    sh:property [ sh:path dct:hasVersion ; sh:datatype xsd:string ; sh:maxCount 1 ] ;
+    sh:property [ sh:path foaf:homepage ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path fdp-o:metadataIdentifier ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path fdp-o:metadataIssued ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
+    sh:property [ sh:path fdp-o:metadataModified ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] .

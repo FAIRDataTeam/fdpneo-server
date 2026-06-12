@@ -1,0 +1,55 @@
+# DCAT 3 dcat:Resource — the reusable base shape (a mixin).
+#
+# No sh:targetClass: this shape is *composed* into every concrete type via
+# sh:node (see dataset/catalog/data-service/…), it does not target records of
+# its own. The subject is the urn:fdp-schema: placeholder the applier expands to
+# this shape's deployment storage IRI (task 15.2); concrete shapes reference it
+# by the same placeholder.
+#
+# Carries the common DCAT 3 properties of dcat:Resource. Lenient (v0.2): only
+# dct:title is required; the rest are optional with datatype / nodeKind
+# constraints, so existing records keep validating.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix fs:   <urn:fdp-schema:> .
+
+fs:resource
+    a sh:NodeShape ;
+    rdfs:label "DCAT Resource (base)" ;
+    rdfs:comment "Common DCAT 3 properties shared by every cataloged resource." ;
+
+    sh:property [
+        sh:path dct:title ;
+        sh:name "title" ;
+        sh:description "Human-readable name of the resource." ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [ sh:path dct:description ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path dct:publisher ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:creator ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dcat:contactPoint ] ;
+    sh:property [ sh:path dct:issued ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dct:modified ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dcat:keyword ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path dcat:theme ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:language ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:license ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dct:accessRights ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:conformsTo ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:identifier ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path dcat:landingPage ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path foaf:page ; sh:nodeKind sh:IRI ] ;
+    sh:property [
+        sh:path dct:rights ;
+        sh:description "ODRL Offer governing access to this resource." ;
+        sh:nodeKind sh:IRI ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [ sh:path prov:qualifiedAttribution ] .

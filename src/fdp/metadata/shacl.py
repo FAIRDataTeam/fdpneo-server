@@ -154,6 +154,16 @@ class ShaclValidator:
             violations=_extract_violations(results_graph),
         )
 
+    async def shape_closure(self, shape_iri: str) -> Graph:
+        """The merged shape-graph closure rooted at ``shape_iri``.
+
+        The requested shape plus every shape it composes (assembled by
+        :meth:`_load`), so a single response carries all inherited property
+        shapes — what the client's DASH form renderer needs for a composed type.
+        Returns the cached graph; callers must treat it as read-only.
+        """
+        return await self._load(shape_iri)
+
     def cached_shapes(self) -> frozenset[str]:
         """Diagnostic: IRIs whose shape graphs are currently cached."""
         return frozenset(self._cache)

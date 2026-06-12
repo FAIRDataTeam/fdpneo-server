@@ -1315,9 +1315,32 @@ References: ADR-0008, architecture §6 + conformance, W3C LDP
 > shape's closure is just itself. Tests: 5 new cases in
 > `tests/unit/metadata/test_shacl.py` (inherited-constraint enforcement,
 > A→B→Resource transitivity via sh:node+sh:and, fetch-once-and-cache, cascade
-> invalidation, unresolvable-ref tolerance). **Remaining: (b)** the modular DCAT
-> v3 + FDP-O schema set, the applier `sh:node` reference rewrite, the `/spec`
-> merged-closure response, and the profile/RD rewiring.
+> invalidation, unresolvable-ref tolerance).
+>
+> **(b) modular schema set + wiring — DONE.** Authored the modular default
+> profile: `resource.ttl` (base mixin, no targetClass) + `dataset` (sh:node
+> resource) + `catalog` (sh:node dataset) + `data-service` (sh:node resource) +
+> `distribution` (standalone) + FDP-O `metadata` (sh:node dataset) +
+> `metadata-service` (sh:node data-service, `fdp-o:servesMetadata`) +
+> `fairdata-point` (sh:node metadata-service). Shapes identify themselves and
+> reference each other via the `urn:fdp-schema:<slug>` placeholder; the applier
+> (`iri.expand_schema_refs`) expands every placeholder to the deployment storage
+> IRI on write so subjects + `sh:node` targets resolve. `profile.yaml` rewired to
+> 8 schemas, root RD = `fdp-o:FAIRDataPoint` (served via `fdp-o:servesMetadata`).
+> Fixed a latent bug: the root seed was typed with the schema's *storage* IRI
+> (10.5) not the class IRI, so `sh:targetClass` never matched — now class IRI.
+> `/spec` returns the merged closure (validator wired into the extensions
+> router). Added `fdp-o`/`rdfs`/`skos`/`spdx` prefixes. Tests:
+> `test_iri.test_expand_schema_refs…`, profile validates (8 schemas/5 RDs),
+> integration `tests/integration/metadata/test_modular_schemas.py` (closure in
+> `/spec`, composition enforced on write — a Catalog without inherited
+> `dct:title` 422s — root seeded as fdp-o:FAIRDataPoint).
+>
+> **Remaining:** applying to an *existing* deployment is a `force-apply`
+> re-bootstrap (dev) or a re-type/RD migration (prod), same shape as the
+> schema-namespace migration — not yet built. Property coverage is the lenient
+> v0.2 subset, not the exhaustive DCAT 3 list. (15.1 Direct Containers is the
+> other v0.2 item.)
 
 **Decision:** rebuild the default profile schemas as a modular set composed along
 the **faithful DCAT 3 subclass chain, extended with FDP-O**

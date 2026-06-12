@@ -27,19 +27,31 @@ metadata:
 # Profile this one extends. Null for a base profile (this one).
 extends: null
 
-# SHACL schemas the FDP will register on bootstrap. Order matters when
-# schemas reference each other; declare leaves first.
+# Modular SHACL schemas registered on bootstrap (task 15.2). Each concrete type
+# composes a base shape via `sh:node` (DCAT 3 subclass chain + FDP-O); the
+# applier expands the `urn:fdp-schema:<slug>` placeholders to storage IRIs, and
+# the validator assembles the full closure (task 15.2a). Declare base shapes
+# first. Hierarchy:
+#   Resource ← Dataset ← {Catalog, fdp-o:Metadata}
+#   Resource ← DataService ← fdp-o:MetadataService ← fdp-o:FAIRDataPoint
+#   Distribution (standalone)
 schemas:
-  - id: fdp:Repository
-    path: schemas/repository.ttl
-  - id: dcat:Catalog
-    path: schemas/catalog.ttl
+  - id: dcat:Resource
+    path: schemas/resource.ttl
   - id: dcat:Dataset
     path: schemas/dataset.ttl
+  - id: dcat:Catalog
+    path: schemas/catalog.ttl
   - id: dcat:DataService
     path: schemas/data-service.ttl
   - id: dcat:Distribution
     path: schemas/distribution.ttl
+  - id: fdp-o:Metadata
+    path: schemas/metadata.ttl
+  - id: fdp-o:MetadataService
+    path: schemas/metadata-service.ttl
+  - id: fdp-o:FAIRDataPoint
+    path: schemas/fairdata-point.ttl
 
 # Meta-metadata schema for record provenance. The FDP-managed fields.
 metaMetadataSchema:
@@ -53,15 +65,15 @@ offers:
     isSystemDefault: true
 
 # Metadata types exposed by this deployment. Exactly one entry must
-# declare urlPrefix: "" — that's the Repository at the API root.
+# declare urlPrefix: "" — that's the FAIR Data Point at the API root.
 # `children[]` declares the typed links the OpenAPI generator turns
 # into per-type listing endpoints (`/.../page/<target>`).
 resourceDefinitions:
   - urlPrefix: ""
-    name: Repository
-    schema: fdp:Repository
+    name: FAIRDataPoint
+    schema: fdp-o:FAIRDataPoint
     children:
-      - relationUri: dcat:catalog
+      - relationUri: fdp-o:servesMetadata
         target: catalog
         title: Catalogs
 

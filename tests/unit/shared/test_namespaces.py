@@ -46,7 +46,21 @@ def test_namespace_resolves_terms() -> None:
 
 @pytest.mark.unit
 def test_prefixes_mapping_is_lowercase_and_immutable() -> None:
-    assert set(PREFIXES) == {"dcat", "dct", "foaf", "ldp", "odrl", "owl", "prov", "sh", "xsd"}
+    assert set(PREFIXES) == {
+        "dcat",
+        "dct",
+        "fdp-o",
+        "foaf",
+        "ldp",
+        "odrl",
+        "owl",
+        "prov",
+        "rdfs",
+        "sh",
+        "skos",
+        "spdx",
+        "xsd",
+    }
     with pytest.raises(TypeError):
         PREFIXES["xx"] = Namespace("http://example.org/xx#")  # type: ignore[index]
 

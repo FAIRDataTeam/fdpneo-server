@@ -1,90 +1,32 @@
-# Default SHACL shape for dcat:Dataset.
-#
-# Required: dct:title. The shape recognises distributions, themes,
-# keywords, contact information, and the parent catalog link.
+# DCAT 3 dcat:Dataset = Resource (composed via sh:node) + dataset properties.
 
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix dct:  <http://purl.org/dc/terms/> .
 @prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix fs:   <urn:fdp-schema:> .
 
-dcat:Dataset
+fs:dataset
     a sh:NodeShape ;
     sh:targetClass dcat:Dataset ;
     rdfs:label "DCAT Dataset" ;
-    rdfs:comment "A dataset described by an FDP record." ;
+    sh:node fs:resource ;
 
     sh:property [
-        sh:path dct:title ;
-        sh:name "title" ;
-        sh:minCount 1 ;
-        sh:datatype xsd:string ;
-    ] ;
-    sh:property [
-        sh:path dct:description ;
-        sh:datatype xsd:string ;
-    ] ;
-    sh:property [
-        sh:path dct:identifier ;
-        sh:datatype xsd:string ;
-    ] ;
-    sh:property [
-        sh:path dct:publisher ;
+        sh:path dcat:distribution ;
+        sh:description "Available distributions of this dataset." ;
         sh:nodeKind sh:IRI ;
     ] ;
-    sh:property [
-        sh:path dct:creator ;
-        sh:nodeKind sh:IRI ;
-    ] ;
-    sh:property [
-        sh:path dct:license ;
-        sh:nodeKind sh:IRI ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path dct:language ;
-        sh:nodeKind sh:IRI ;
-    ] ;
-    sh:property [
-        sh:path dct:rights ;
-        sh:description "ODRL Offer governing access to this Dataset." ;
-        sh:nodeKind sh:IRI ;
-        sh:maxCount 1 ;
-    ] ;
+    sh:property [ sh:path dct:spatial ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:temporal ] ;
+    sh:property [ sh:path dct:accrualPeriodicity ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dcat:temporalResolution ; sh:datatype xsd:duration ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dcat:spatialResolutionInMeters ; sh:datatype xsd:decimal ] ;
+    sh:property [ sh:path dcat:inSeries ; sh:nodeKind sh:IRI ] ;
     sh:property [
         sh:path dct:isPartOf ;
-        sh:description "The parent Catalog this Dataset belongs to." ;
+        sh:description "The catalog (or parent) this dataset belongs to." ;
         sh:nodeKind sh:IRI ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path dcat:theme ;
-        sh:nodeKind sh:IRI ;
-    ] ;
-    sh:property [
-        sh:path dcat:keyword ;
-        sh:datatype xsd:string ;
-    ] ;
-    sh:property [
-        sh:path dcat:contactPoint ;
-    ] ;
-    sh:property [
-        sh:path dcat:landingPage ;
-        sh:nodeKind sh:IRI ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path dcat:distribution ;
-        sh:nodeKind sh:IRI ;
-    ] ;
-    sh:property [
-        sh:path dct:issued ;
-        sh:datatype xsd:dateTime ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path dct:modified ;
-        sh:datatype xsd:dateTime ;
         sh:maxCount 1 ;
     ] .

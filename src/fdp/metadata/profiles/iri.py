@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from rdflib import Namespace
+from rdflib import Graph, Namespace, URIRef
 
 from fdp.shared.errors import BadRequest
 from fdp.shared.graphs import schema_graph_uri
@@ -35,6 +35,13 @@ if TYPE_CHECKING:
 # letter. Used to kebab-case a vocabulary local name (``DataService`` →
 # ``data-service``) when deriving a storage slug.
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+# Placeholder URN a modular shape uses to identify itself and reference the base
+# shapes it composes (``urn:fdp-schema:catalog``, ``urn:fdp-schema:resource``).
+# The applier expands it to the deployment storage IRI at apply time (the shape's
+# subject and its sh:node targets must be the real storage IRI for pySHACL to
+# resolve composition — see expand_schema_refs).
+SCHEMA_REF_PLACEHOLDER = "urn:fdp-schema:"
 
 
 def _local_name(identifier: str) -> str:
@@ -120,4 +127,30 @@ class IRIExpander:
         return self._base
 
 
-__all__ = ["IRIExpander", "schema_slug"]
+def expand_schema_refs(graph: Graph, base_url: str) -> Graph:
+    """Expand ``urn:fdp-schema:<slug>`` placeholders to storage IRIs.
+
+    Returns a copy of ``graph`` with every placeholder term — in any position
+    (the shape's own subject, its ``sh:node``/list references) — rewritten to
+    ``{base}/fdp-api/schemas/<slug>``. Blanket substitution is safe because the
+    placeholder URN is only ever shape identity/refs, never a ``sh:targetClass``
+    or ``sh:class`` (those keep the real vocabulary IRI). This is what makes a
+    composed shape resolvable: pySHACL looks up ``sh:node <X>`` by the referenced
+    shape's subject, and the provider fetches it, so both must be the same real
+    storage IRI.
+    """
+    base = base_url.rstrip("/")
+
+    def remap(term: object) -> object:
+        if isinstance(term, URIRef) and str(term).startswith(SCHEMA_REF_PLACEHOLDER):
+            slug = str(term)[len(SCHEMA_REF_PLACEHOLDER) :]
+            return URIRef(str(schema_graph_uri(base, slug)))
+        return term
+
+    out = Graph()
+    for s, p, o in graph:
+        out.add((remap(s), remap(p), remap(o)))  # type: ignore[arg-type]
+    return out
+
+
+__all__ = ["SCHEMA_REF_PLACEHOLDER", "IRIExpander", "expand_schema_refs", "schema_slug"]

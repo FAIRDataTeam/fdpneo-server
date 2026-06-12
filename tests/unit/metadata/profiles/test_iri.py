@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import pytest
 from pydantic import HttpUrl, PostgresDsn
+from rdflib import Graph, URIRef
+from rdflib.namespace import RDF
 
 from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles.iri import IRIExpander, schema_slug
+from fdp.metadata.profiles.iri import IRIExpander, expand_schema_refs, schema_slug
+from fdp.shared.namespaces import DCAT, SH
 
 BASE = "http://localhost:8000"
 
@@ -47,6 +50,25 @@ def test_schema_storage_iri_lands_in_schemas_namespace() -> None:
     exp = _expander()
     assert exp.schema_storage_iri("dcat:Catalog") == f"{BASE}/fdp-api/schemas/catalog"
     assert exp.schema_storage_iri("dcat:DataService") == f"{BASE}/fdp-api/schemas/data-service"
+
+
+@pytest.mark.unit
+def test_expand_schema_refs_rewrites_placeholders_not_class_iris() -> None:
+    g = Graph()
+    catalog = URIRef("urn:fdp-schema:catalog")
+    g.add((catalog, RDF.type, SH.NodeShape))
+    g.add((catalog, SH.targetClass, DCAT.Catalog))  # real class IRI — must stay
+    g.add((catalog, SH.node, URIRef("urn:fdp-schema:dataset")))  # placeholder — rewrite
+
+    out = expand_schema_refs(g, BASE)
+    cat_iri = URIRef(f"{BASE}/fdp-api/schemas/catalog")
+    # Subject + sh:node placeholders → storage IRIs.
+    assert (cat_iri, RDF.type, SH.NodeShape) in out
+    assert (cat_iri, SH.node, URIRef(f"{BASE}/fdp-api/schemas/dataset")) in out
+    # The real vocabulary IRI in sh:targetClass is untouched.
+    assert (cat_iri, SH.targetClass, DCAT.Catalog) in out
+    # Nothing placeholder-shaped survives.
+    assert not any("urn:fdp-schema:" in str(term) for triple in out for term in triple)
 
 
 @pytest.mark.unit

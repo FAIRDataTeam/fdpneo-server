@@ -46,7 +46,7 @@ from rdflib.namespace import RDF
 
 from fdp.metadata.licenses import LICENSE_SHAPE_IRI, predefined_license_shape_graph
 from fdp.metadata.meta import META_SHAPE_IRI
-from fdp.metadata.profiles.iri import IRIExpander
+from fdp.metadata.profiles.iri import IRIExpander, expand_schema_refs
 from fdp.metadata.profiles.licenses import default_license_graphs
 from fdp.metadata.profiles.rd_records import (
     RD_SHAPE_IRI,
@@ -193,7 +193,11 @@ async def apply_profile(
         #    SHACL matching is unaffected; only the storage/fetch key moves.
         for loaded in profile.schemas:
             iri = expander.schema_storage_iri(loaded.entry.id)
-            await repository.put_graph(iri, loaded.graph, subject=None, initial_state=SEED_STATE)
+            # Expand urn:fdp-schema:<slug> placeholders to storage IRIs so a
+            # modular shape's own subject + its sh:node references resolve to
+            # where the referenced base shapes are actually stored (task 15.2).
+            graph = expand_schema_refs(loaded.graph, expander.base_url)
+            await repository.put_graph(iri, graph, subject=None, initial_state=SEED_STATE)
             report.schemas_written.append(iri)
             written.append(iri)
 
@@ -275,9 +279,22 @@ async def apply_profile(
             root_rd = rd_cache.root()
             if root_rd is not None:
                 repo_iri = expander.base_url
+                # The seed's rdf:type must be the *class* IRI (so the shape's
+                # sh:targetClass matches), not the schema's storage IRI that the
+                # RD's ldp:constrainedBy now uses (10.5). Derive it from the root
+                # manifest entry's schema CURIE.
+                root_entry = next(
+                    (rd for rd in profile.manifest.resource_definitions if rd.is_root),
+                    None,
+                )
+                root_class_iri = (
+                    expander.schema_iri(root_entry.schema_id)
+                    if root_entry is not None
+                    else root_rd.schema_iri
+                )
                 graph = _repository_graph(
                     iri=repo_iri,
-                    schema_iri=root_rd.schema_iri,
+                    type_iri=root_class_iri,
                     title=profile.name,
                     rights_iri=system_default_iri,
                 )
@@ -430,20 +447,21 @@ def _find_system_default_offer(
 def _repository_graph(
     *,
     iri: str,
-    schema_iri: str,
+    type_iri: str,
     title: str,
     rights_iri: str | None,
 ) -> Graph:
-    """Build the seed graph for the root Repository record.
+    """Build the seed graph for the root record (the FAIR Data Point).
 
-    The Repository is the single mandatory FDP resource (architecture
-    §10). Sat at the API root, typed as both the root RD's schema
-    class and ``ldp:BasicContainer``, with a human-readable title and
-    an optional link to the system-default Offer for inheritance.
+    The root is the single mandatory FDP resource (architecture §10). Sat at the
+    API root, typed as both the root RD's schema *class* (``type_iri`` — so the
+    shape's ``sh:targetClass`` matches) and ``ldp:BasicContainer``, with a
+    human-readable title and an optional link to the system-default Offer for
+    inheritance.
     """
     subject = URIRef(iri)
     graph = Graph()
-    graph.add((subject, RDF.type, URIRef(schema_iri)))
+    graph.add((subject, RDF.type, URIRef(type_iri)))
     graph.add((subject, RDF.type, LDP.BasicContainer))
     graph.add((subject, DCT.title, Literal(title)))
     if rights_iri is not None:

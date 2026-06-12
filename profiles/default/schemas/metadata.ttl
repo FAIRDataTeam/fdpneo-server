@@ -1,0 +1,15 @@
+# FDP-O fdp-o:Metadata ⊑ dcat:Dataset (FDP-O, FAIRDataTeam/FDP-O).
+#
+# A metadata record served by an FDP MetadataService. Composes the Dataset
+# shape; FDP-O adds no required properties beyond DCAT's at v0.2.
+
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix fdp-o: <https://w3id.org/fdp/o#> .
+@prefix fs:    <urn:fdp-schema:> .
+
+fs:metadata
+    a sh:NodeShape ;
+    sh:targetClass fdp-o:Metadata ;
+    rdfs:label "FDP Metadata" ;
+    sh:node fs:dataset .

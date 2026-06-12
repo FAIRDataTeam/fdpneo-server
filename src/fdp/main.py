@@ -588,6 +588,8 @@ def create_app() -> FastAPI:
             cache_provider=lambda: app.state.resource_definitions,
             base_url=str(settings.base_url),
             state_gate=app.state.state_gate,
+            # /spec returns the merged shape closure (composed types, task 15.2).
+            validator=app.state.shacl_validator,
         ),
         prefix=RESERVED_API_PATH,
     )
