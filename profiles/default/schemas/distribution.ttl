@@ -33,6 +33,14 @@ fs:distribution
     sh:property [ sh:path dcat:compressFormat ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
     sh:property [ sh:path dcat:packageFormat ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
     sh:property [ sh:path dct:license ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dct:rights ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dct:accessRights ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:conformsTo ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:language ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path dct:issued ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dct:modified ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dcat:temporalResolution ; sh:datatype xsd:duration ; sh:maxCount 1 ] ;
+    sh:property [ sh:path dcat:spatialResolutionInMeters ; sh:datatype xsd:decimal ] ;
     sh:property [ sh:path spdx:checksum ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
     sh:property [
         sh:path dct:isPartOf ;

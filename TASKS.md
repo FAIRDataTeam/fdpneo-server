@@ -1436,9 +1436,22 @@ References: ADR-0008, architecture §6 + conformance, W3C LDP
 > correct rebuilt cache, authored Catalog survives, composed schema landed,
 > second pass no-op).
 >
-> **Remaining:** property coverage is the lenient v0.2 subset (`dct:title`
-> mandatory, the rest optional), not the exhaustive DCAT 3 list — tightening is a
-> deliberately-deferred post-v0.2 community decision, not a build gap.
+> **Exhaustive DCAT 3 property coverage — DONE (2026-06-12).** The modular shapes
+> now carry the full DCAT 3 property set: `resource.ttl` gained `dct:type`,
+> `dct:relation`, `dct:provenance`, `dct:source`, `dcat:qualifiedRelation`, and the
+> DCAT 3 §9 versioning chain (`dcat:version`, `adms:versionNotes`,
+> `dcat:hasVersion`, `dcat:hasCurrentVersion`, `dcat:previousVersion`,
+> `dct:isVersionOf`, `dct:replaces`); `dataset.ttl` gained `prov:wasGeneratedBy`;
+> `distribution.ttl` gained `dct:issued`/`dct:modified`/`dct:rights`/
+> `dct:accessRights`/`dct:conformsTo`/`dct:language`/`dcat:temporalResolution`/
+> `dcat:spatialResolutionInMeters`. **Strictness is unchanged and deliberately
+> lenient** — only `dct:title` is mandatory; every added property is optional with
+> a `sh:datatype`/`sh:nodeKind` constraint, so the change is purely additive and
+> existing records keep validating. (Making properties *mandatory* remains the
+> deferred post-v0.2 community decision — that is the only open 15.2 item, and it
+> is a policy call, not a build gap.) Verified: `validate_profile` passes on the
+> 8-schema bundle; the SHACL closure tests + `test_modular_schemas` integration
+> (a record validates against the composed closure over a real store) stay green.
 
 **Decision:** rebuild the default profile schemas as a modular set composed along
 the **faithful DCAT 3 subclass chain, extended with FDP-O**
