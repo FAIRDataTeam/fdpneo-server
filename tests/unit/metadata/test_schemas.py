@@ -147,6 +147,38 @@ async def test_get_turtle_404_when_absent() -> None:
 
 
 @pytest.mark.unit
+async def test_get_turtle_composed_returns_merged_closure() -> None:
+    store = _Store()
+    svc = _service(store)
+    base_iri = f"{BASE}/fdp-api/schemas/base"
+    await svc.put(
+        "base",
+        "@prefix sh: <http://www.w3.org/ns/shacl#> ."
+        "@prefix dct: <http://purl.org/dc/terms/> ."
+        f"<{base_iri}> a sh:NodeShape ; sh:property [ sh:path dct:title ; sh:minCount 1 ] .",
+        subject="admin",
+    )
+    await svc.put(
+        "comp",
+        "@prefix sh: <http://www.w3.org/ns/shacl#> ."
+        "@prefix dcat: <http://www.w3.org/ns/dcat#> ."
+        f"<{BASE}/fdp-api/schemas/comp> a sh:NodeShape ; sh:targetClass dcat:Dataset ; "
+        f"sh:node <{base_iri}> .",
+        subject="admin",
+    )
+    # The single shape carries only its own (no dct:title); the composed closure
+    # pulls in the base shape's dct:title constraint.
+    assert "title" not in await svc.get_turtle("comp")
+    assert "title" in await svc.get_turtle("comp", composed=True)
+
+
+@pytest.mark.unit
+async def test_get_turtle_composed_404_when_absent() -> None:
+    with pytest.raises(NotFound):
+        await _service(_Store()).get_turtle("nope", composed=True)
+
+
+@pytest.mark.unit
 async def test_validate_sample_conforms_and_reports_violations() -> None:
     store = _Store()
     svc = _service(store)
@@ -253,8 +285,8 @@ class _FakeService:
 
         return SchemaInfo(id=schema_id, iri=self.iri(schema_id), version=1)
 
-    async def get_turtle(self, schema_id: str) -> str:
-        return f"# {schema_id}\n"
+    async def get_turtle(self, schema_id: str, *, composed: bool = False) -> str:
+        return f"# {schema_id} composed={composed}\n"
 
     async def delete(self, schema_id: str) -> None:
         self.deletes.append(schema_id)

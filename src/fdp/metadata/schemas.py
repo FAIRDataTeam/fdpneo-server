@@ -40,12 +40,13 @@ from typing import TYPE_CHECKING, Annotated, Final, cast
 
 import pyshacl  # type: ignore[import-untyped]
 import structlog
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 from rdflib import Graph
 from rdflib.namespace import RDF
 
 from fdp.identity.deps import require_auth
+from fdp.metadata.shacl import UnknownShapeError
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
 from fdp.shared.graphs import (
@@ -160,10 +161,25 @@ class SchemaService:
         log.info("schema_published", iri=iri, subject=subject)
         return await self._info(schema_id, iri, graph=graph)
 
-    async def get_turtle(self, schema_id: str) -> str:
+    async def get_turtle(self, schema_id: str, *, composed: bool = False) -> str:
+        """Return the shape as Turtle.
+
+        ``composed=False`` (default) returns the single modular shape as stored —
+        the editable unit, with its ``sh:node`` references left as pointers.
+        ``composed=True`` returns the merged shape-graph **closure** (this shape
+        plus every shape it transitively composes), the same effective shape
+        ``GET /{type}/spec`` serves — so a client can render a record form
+        directly from the schema id without mapping it to a resource type.
+        """
         _check_slug(schema_id)
         iri = self.iri(schema_id)
-        graph = await self._repo.get_graph(iri)
+        if composed:
+            try:
+                graph = await self._validator.shape_closure(iri)
+            except UnknownShapeError as err:
+                raise NotFound(f"no schema: {schema_id}") from err
+        else:
+            graph = await self._repo.get_graph(iri)
         if len(graph) == 0:
             raise NotFound(f"no schema: {schema_id}")
         return graph.serialize(format="turtle")
@@ -343,8 +359,16 @@ def build_schema_router(*, service: SchemaService, prefix: str = "/schemas") -> 
         return SchemaListView(schemas=await service.list_schemas())
 
     @router.get("/{schema_id}", name="schema_get")
-    async def get_schema(schema_id: str) -> Response:  # pyright: ignore[reportUnusedFunction]
-        turtle = await service.get_turtle(schema_id)
+    async def get_schema(  # pyright: ignore[reportUnusedFunction]
+        schema_id: str,
+        composed: Annotated[
+            bool,
+            Query(
+                description="Return the merged shape closure (composed type) instead of the single modular shape."
+            ),
+        ] = False,
+    ) -> Response:
+        turtle = await service.get_turtle(schema_id, composed=composed)
         return Response(content=turtle, media_type=_TURTLE)
 
     @router.put("/{schema_id}", response_model=SchemaInfo, name="schema_put")
