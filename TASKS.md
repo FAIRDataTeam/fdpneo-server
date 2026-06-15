@@ -1603,3 +1603,87 @@ Personal TODO for v0.2
 - Validate LDP interfaces: check whether the server correctly implemnt a LDP server
 - Re-write the default profile schemas with complete DCAT v3. Modularize, i.e., create the Resources, Catalog, Dataset, DataService and Distribution from DCAT and the Repository and FAIRDataPoint from the FDP Ontology. Then make the resources, FDP, Catalog, Dataset, Data Service and Distribution by composing DCAT's Resource schema with the related schemas.
 
+---
+
+## Phase 16 — v0.3.0 release: persistent identifiers (FAIR F1)
+
+Make record/schema/policy/data identifiers **globally unique and persistent** by
+decoupling a record's identity from its serving host, honoring client-supplied
+identifiers, and automating W3ID redirect setup. Full design + decisions in
+[ADR-0014](docs/adr/0014-persistent-identifiers.md) and the approved plan. Two
+new top-level concepts: `IDENTIFIER_BASE` (the persistent PID namespace records
+are minted under) vs `BASE_URL` (the serving origin a redirector points to);
+`IDENTIFIER_BASE` defaults to `BASE_URL` so localhost is unchanged.
+
+### 16.1 [x] Config: `identifier_base` + `PIDSettings`
+
+Top-level `identifier_base: HttpUrl | None` with `resolved_identifier_base` /
+`serving_base` accessors; `pid: PIDSettings` subgroup (`FDP_PID_*`: w3id prefix,
+GitHub token, fork owner, host allow-list). `.env.example` +
+`docs/security/deployment-hardening.md` updated. (`src/fdp/config.py`)
+
+### 16.2 [x] Canonicalization helper (`shared/identifiers.py`)
+
+Pure `canonicalize(request_url, identifier_base, serving_origins)` + `is_under()`
++ `relative_path()`, mapping an inbound serving-origin request to its canonical
+identifier-base IRI (sub-path deployments + unknown-host fallback handled).
+Unit-tested (`tests/unit/shared/test_identifiers.py`, 17 cases).
+
+### 16.3 [x] Mint all IRIs under `identifier_base`
+
+`IRIExpander` and every managed-doc / registry / service construction site
+(`main.py`, `cli.py`, schemas/policies/licenses/RDs/data) switched from
+`base_url` to `resolved_identifier_base`. Registry cache resolves against it.
+Defaults to `base_url`, so localhost is unchanged (LDP + profile/registry unit
+suites green).
+
+### 16.4 [x] LDP router canonicalization
+
+`build_ldp_router` takes `identifier_base` + `serving_origins`; `_resource_iri`
+→ `_request_url` + a `_canonical_iri` closure used by every handler; wired in
+`main.py`. Cross-host stability covered by `tests/unit/metadata/ldp/test_router_pid.py`
+(PUT stores + reads under the canonical IRI regardless of serving host).
+
+### 16.5 [x] Dual identifier model on write (`metadata/identifiers.py`)
+
+`reconcile_identifiers()` — rebind a foreign primary subject to the canonical IRI
++ add `owl:sameAs`; preserve client `dct:identifier`/`owl:sameAs`/
+`skos:exactMatch`; within-base honoring via PUT-path / POST-`Slug`. Wired into
+PUT + POST. `resource.ttl` SHACL shape gained optional `dct:identifier` (already
+present) + `owl:sameAs` + `skos:exactMatch`. Tested:
+`tests/unit/metadata/test_identifiers.py` + router-level cases.
+
+### 16.6 [x] `/config` exposes identifier + serving bases
+
+`identity/bootstrap.py`: `fdp_url` = canonical identifier base; new `serving_url`
+= serving origin. Coincide in dev. Tested in `tests/unit/identity/test_bootstrap.py`.
+
+### 16.7 [x] PID tooling + `fdp pid` CLI (`metadata/pid/`)
+
+`w3id-config` (emit `.htaccess` + README), `w3id-pr` (opt-in GitHub fork+PR,
+reusable to update the redirect target when the deployment moves), `verify`
+(resolution test: the PID redirects and resolves to this FDP), `rebase` (one-time
+adoption migration for a pre-PID deployment). 17 unit tests in
+`tests/unit/metadata/pid/` (pure w3id, respx-mocked GitHub + verify, fake-adapter
+rebase).
+
+### 16.8 [x] ADR-0014 + architecture docs
+
+[ADR-0014](docs/adr/0014-persistent-identifiers.md) written + indexed; the
+architecture README open-questions list updated with the resolution.
+
+### 16.9 [~] Release: quality gate, version bump, client coordination
+
+Quality gate green (`ruff` clean, `pyright` 0 errors, 999 unit tests pass — also
+fixed 7 pre-existing pyright errors in the migrate-modular tests). Integration:
+`tests/integration/metadata/test_persistent_identifiers.py` (testcontainers
+Oxigraph + Postgres) — 3/3 pass: `/config` exposes distinct bases; a record
+created on the serving host is minted/stored under the canonical IDENTIFIER_BASE
+IRI and resolves via the serving path; a foreign subject is rebound + kept as
+`owl:sameAs`. Bumped `pyproject.toml` + `uv.lock` to `0.3.0`; `__version__` now
+derives from package metadata (was stale at 0.1.0). **Remaining:** tag after
+merge; coordinate `fdp-client` (see below).
+
+**Out of scope (v0.3.0):** backup/restore (enabled by this work, built later);
+honoring *foreign* IRIs as the dereferenceable subject; DOI/Handle minting.
+

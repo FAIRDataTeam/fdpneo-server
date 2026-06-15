@@ -30,6 +30,9 @@ import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
+    from fdp.metadata.pid.github import PublishResult
+    from fdp.metadata.pid.rebase import RebaseReport
+    from fdp.metadata.pid.verify import ResolutionReport
     from fdp.metadata.profiles.applier import ApplyReport
     from fdp.metadata.profiles.backfill import MembershipBackfillReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
@@ -51,6 +54,7 @@ metrics_app = typer.Typer(help="Metrics-pipeline commands.", no_args_is_help=Tru
 schema_app = typer.Typer(help="Schema commands.", no_args_is_help=True)
 search_app = typer.Typer(help="Search commands.", no_args_is_help=True)
 ldp_app = typer.Typer(help="LDP-conformance commands.", no_args_is_help=True)
+pid_app = typer.Typer(help="Persistent-identifier commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
@@ -58,6 +62,7 @@ app.add_typer(metrics_app, name="metrics")
 app.add_typer(schema_app, name="schema")
 app.add_typer(search_app, name="search")
 app.add_typer(ldp_app, name="ldp")
+app.add_typer(pid_app, name="pid")
 
 console = Console()
 
@@ -530,7 +535,9 @@ async def _run_membership_backfill() -> MembershipBackfillReport:
     settings = get_settings()
     async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
         repository = MetadataRepository(adapter)
-        cache = await build_cache_from_repository(adapter, base_url=str(settings.base_url))
+        cache = await build_cache_from_repository(
+            adapter, base_url=settings.resolved_identifier_base
+        )
         return await backfill_direct_container_membership(
             repository=repository, adapter=adapter, cache=cache
         )
@@ -558,14 +565,14 @@ async def _run_schema_sync() -> SyncReport:
             repository=repository,
             adapter=adapter,
             validator=ShaclValidator(MetadataShapeProvider(repository)),
-            base_url=str(settings.base_url),
+            base_url=settings.resolved_identifier_base,
         )
         syncer = SchemaSyncService(
             schema_service=schema_service,
             adapter=adapter,
             http_client=http_client,
             settings=settings.schema_sync,
-            base_url=str(settings.base_url),
+            base_url=settings.resolved_identifier_base,
         )
         return await syncer.sync_all()
 
@@ -660,6 +667,190 @@ async def _load_applied() -> dict[str, str] | None:
             return {k: str(v) for k, v in ProfileStateRepository.to_dict(row).items()}
     finally:
         await engine.dispose()
+
+
+# --- persistent-identifier commands (ADR-0014) ---------------------------
+
+
+@pid_app.command("w3id-config")
+def pid_w3id_config(
+    prefix: str = typer.Option(
+        None, "--prefix", help="W3ID prefix; derived from IDENTIFIER_BASE if it is a w3id URL."
+    ),
+) -> None:
+    """Print the W3ID redirect .htaccess (+ README) for this deployment.
+
+    No network access, no secrets. Commit the output under ``<prefix>/`` in a
+    fork of ``perma-id/w3id.org`` and open a PR — or use ``fdp pid w3id-pr`` to
+    do that automatically.
+    """
+    from fdp.config import get_settings
+    from fdp.metadata.pid.w3id import build_w3id_config
+
+    settings = get_settings()
+    try:
+        config = build_w3id_config(
+            identifier_base=settings.resolved_identifier_base,
+            serving_base=settings.serving_base,
+            prefix=prefix or settings.pid.w3id_prefix,
+        )
+    except ValueError as err:
+        console.print(f"[red]{err}[/]")
+        raise typer.Exit(code=1) from err
+
+    console.print(f"[green]W3ID redirect[/] https://w3id.org/{config.prefix} → {config.target}")
+    console.print(f"\n[bold]{config.path}[/]")
+    console.print(config.htaccess)
+    console.print(f"[bold]{config.prefix}/README.md[/]")
+    console.print(config.readme)
+
+
+@pid_app.command("w3id-pr")
+def pid_w3id_pr(
+    prefix: str = typer.Option(None, "--prefix", help="Override the derived W3ID prefix."),
+) -> None:
+    """Fork w3id.org and open/update the redirect PR (opt-in; needs a token).
+
+    Requires ``FDP_PID_GITHUB_TOKEN``. Idempotent and reusable: re-run after a
+    deployment move to update the redirect target on the existing PR. Every
+    request host is checked against ``FDP_PID_ALLOWED_HOSTS``.
+    """
+    from fdp.config import get_settings
+
+    settings = get_settings()
+    if settings.pid.github_token is None:
+        console.print(
+            "[yellow]no GitHub token[/] — set FDP_PID_GITHUB_TOKEN to open the w3id.org PR "
+            "(or run `fdp pid w3id-config` and submit it manually)."
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        result = asyncio.run(_run_w3id_pr(prefix))
+    except Exception as err:
+        console.print(f"[red]w3id PR failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    verb = "opened" if result.created_pr else "updated"
+    console.print(f"[green]w3id PR {verb}[/] {result.pull_request_url} (branch {result.branch})")
+
+
+@pid_app.command("verify")
+def pid_verify(
+    iri: list[str] = typer.Option(
+        None, "--iri", help="Identifier(s) to resolve. Defaults to the FDP root."
+    ),
+) -> None:
+    """Check that the FDP's persistent identifiers redirect and resolve here.
+
+    Performs real HTTP requests against ``IDENTIFIER_BASE`` IRIs and confirms
+    they land on the serving origin with a successful response. In dev (no PID
+    base) the redirect is a no-op and this just checks the root resolves.
+    """
+    try:
+        report = asyncio.run(_run_pid_verify(iri or []))
+    except Exception as err:
+        console.print(f"[red]verification failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    for check in report.checks:
+        mark = "[green]ok[/]" if check.ok else "[red]FAIL[/]"
+        suffix = f" → {check.redirected_to}" if check.redirected_to else ""
+        detail = f" ({check.detail})" if check.detail else ""
+        console.print(f"  {mark} {check.iri}{suffix}{detail}")
+    if not report.ok:
+        raise typer.Exit(code=1)
+    console.print(
+        f"[green]all {len(report.checks)} identifier(s) resolve to {report.serving_base}[/]"
+    )
+
+
+@pid_app.command("rebase")
+def pid_rebase(
+    from_base: str = typer.Option(..., "--from", help="The old base records currently live under."),
+    to_base: str = typer.Option(
+        None, "--to", help="The new identifier base. Defaults to IDENTIFIER_BASE."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would move; write nothing."),
+) -> None:
+    """One-time: move existing record IRIs from an old base to the PID base.
+
+    For a deployment adopting a persistent ``IDENTIFIER_BASE`` after it was
+    bootstrapped under ``BASE_URL``. Re-keys every named graph under ``--from``
+    to the new base and rewrites cross-record IRIs. Idempotent; after adoption
+    the identifier base never changes again (a move only re-points the redirect).
+    """
+    from fdp.config import get_settings
+
+    settings = get_settings()
+    target = (to_base or settings.resolved_identifier_base).rstrip("/")
+    try:
+        report = asyncio.run(_run_pid_rebase(from_base.rstrip("/"), target, dry_run))
+    except Exception as err:
+        console.print(f"[red]rebase failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if report.count == 0:
+        console.print("[green]nothing to rebase[/] — no graphs under the old base")
+        return
+    verb = "would move" if dry_run else "moved"
+    console.print(f"[green]{verb}[/] {report.count} graph(s) → {report.new_base}")
+    for old, new in report.moved:
+        console.print(f"  {old} → {new}")
+
+
+async def _run_w3id_pr(prefix: str | None) -> PublishResult:
+    import httpx
+
+    from fdp.config import get_settings
+    from fdp.metadata.pid.github import W3IDPublisher
+    from fdp.metadata.pid.w3id import build_w3id_config
+
+    settings = get_settings()
+    assert settings.pid.github_token is not None  # guarded by the caller
+    config = build_w3id_config(
+        identifier_base=settings.resolved_identifier_base,
+        serving_base=settings.serving_base,
+        prefix=prefix or settings.pid.w3id_prefix,
+    )
+    async with httpx.AsyncClient(timeout=settings.pid.timeout_seconds) as http_client:
+        publisher = W3IDPublisher(
+            http_client=http_client,
+            token=settings.pid.github_token.get_secret_value(),
+            allowed_hosts=settings.pid.allowed_hosts,
+            fork_owner=settings.pid.github_fork_owner,
+        )
+        return await publisher.publish(config)
+
+
+async def _run_pid_verify(iris: list[str]) -> ResolutionReport:
+    import httpx
+
+    from fdp.config import get_settings
+    from fdp.metadata.pid.verify import verify_resolution
+
+    settings = get_settings()
+    targets = iris or [settings.resolved_identifier_base]
+    async with httpx.AsyncClient() as http_client:
+        return await verify_resolution(
+            identifier_base=settings.resolved_identifier_base,
+            serving_base=settings.serving_base,
+            iris=targets,
+            http_client=http_client,
+            timeout_seconds=settings.pid.timeout_seconds,
+        )
+
+
+async def _run_pid_rebase(from_base: str, to_base: str, dry_run: bool) -> RebaseReport:
+    from fdp.config import get_settings
+    from fdp.metadata.pid.rebase import rebase_identifiers
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        return await rebase_identifiers(
+            adapter=adapter, old_base=from_base, new_base=to_base, dry_run=dry_run
+        )
 
 
 if __name__ == "__main__":

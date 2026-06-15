@@ -242,8 +242,9 @@ async def _run() -> None:
 
         # 2. The rebuilt cache has a single, correct root.
         cache = await build_cache_from_repository(adapter, base_url=str(settings.base_url))
-        assert cache.root() is not None
-        assert cache.root().name == "FAIRDataPoint"
+        root = cache.root()
+        assert root is not None
+        assert root.name == "FAIRDataPoint"
 
         # 3. The authored member survived untouched.
         member = await repository.get_graph(catalog_iri)

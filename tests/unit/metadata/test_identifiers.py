@@ -1,0 +1,87 @@
+"""Tests for ``fdp.metadata.identifiers`` — dual identifier model (ADR-0014)."""
+
+from __future__ import annotations
+
+from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import RDF
+
+from fdp.metadata.identifiers import reconcile_identifiers
+from fdp.shared.namespaces import DCAT, DCT, OWL, SKOS
+
+ID_BASE = "https://w3id.org/myfdp"
+CANON = f"{ID_BASE}/catalog/c1"
+
+
+class TestReconcile:
+    def test_relative_subject_is_noop(self) -> None:
+        # Body authored with <> → parsed to the canonical IRI; nothing to rebind.
+        g = Graph()
+        canon = URIRef(CANON)
+        g.add((canon, RDF.type, DCAT.Catalog))
+        g.add((canon, DCT.title, Literal("My catalog")))
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        assert out is g  # unchanged, same object
+        assert (canon, DCT.title, Literal("My catalog")) in out
+
+    def test_foreign_primary_subject_rebound_with_sameas(self) -> None:
+        foreign = URIRef("https://doi.org/10.1234/foo")
+        g = Graph()
+        g.add((foreign, RDF.type, DCAT.Catalog))
+        g.add((foreign, DCT.title, Literal("Brought-along ID")))
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        canon = URIRef(CANON)
+        # Triples rebound to canonical; foreign kept only as a cross-reference.
+        assert (canon, DCT.title, Literal("Brought-along ID")) in out
+        assert (canon, RDF.type, DCAT.Catalog) in out
+        assert (canon, OWL.sameAs, foreign) in out
+        assert (foreign, RDF.type, DCAT.Catalog) not in out
+
+    def test_self_reference_object_is_rebound(self) -> None:
+        foreign = URIRef("https://example.org/thing")
+        child = URIRef("https://example.org/thing/part")
+        g = Graph()
+        g.add((foreign, RDF.type, DCAT.Catalog))
+        g.add((foreign, DCAT.dataset, child))
+        g.add((child, DCAT.distribution, foreign))  # back-reference to primary
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        canon = URIRef(CANON)
+        assert (child, DCAT.distribution, canon) in out
+        assert (canon, DCAT.dataset, child) in out
+
+    def test_within_base_mismatch_rebound_without_sameas(self) -> None:
+        # A subject under our base but != canonical is a mis-addressing: correct
+        # it to canonical, but do NOT assert sameAs between two of our own IRIs.
+        other = URIRef(f"{ID_BASE}/catalog/typo")
+        g = Graph()
+        g.add((other, RDF.type, DCAT.Catalog))
+        g.add((other, DCT.title, Literal("x")))
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        canon = URIRef(CANON)
+        assert (canon, DCT.title, Literal("x")) in out
+        assert not list(out.triples((None, OWL.sameAs, None)))
+
+    def test_explicit_external_ids_preserved(self) -> None:
+        canon = URIRef(CANON)
+        g = Graph()
+        g.add((canon, RDF.type, DCAT.Catalog))
+        g.add((canon, DCT.identifier, Literal("ACME-2024-001")))
+        g.add((canon, SKOS.exactMatch, URIRef("https://doi.org/10.1234/foo")))
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        assert (canon, DCT.identifier, Literal("ACME-2024-001")) in out
+        assert (canon, SKOS.exactMatch, URIRef("https://doi.org/10.1234/foo")) in out
+
+    def test_ambiguous_multiple_typed_subjects_left_as_is(self) -> None:
+        a = URIRef("https://example.org/a")
+        b = URIRef("https://example.org/b")
+        g = Graph()
+        g.add((a, RDF.type, DCAT.Catalog))
+        g.add((b, RDF.type, DCAT.Dataset))
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        assert out is g  # too ambiguous to rebind — preserved verbatim
+
+    def test_canonical_trailing_slash_variant_is_noop(self) -> None:
+        canon_slash = URIRef(CANON + "/")
+        g = Graph()
+        g.add((canon_slash, RDF.type, DCAT.Catalog))
+        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+        assert out is g

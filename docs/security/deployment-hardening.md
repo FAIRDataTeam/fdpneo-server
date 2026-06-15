@@ -33,7 +33,11 @@ binds a public port. App ↔ store ↔ DB traffic stays on a private network.
 - [ ] Terminate TLS at the proxy; redirect HTTP→HTTPS. Modern ciphers only (TLS 1.2+).
 - [ ] **HSTS** enabled (`max-age` ≥ 1 year, `includeSubDomains`; add `preload` once stable).
       The app already emits HSTS; the proxy is authoritative.
-- [ ] `BASE_URL` is the **https://** origin (it mints resource IRIs).
+- [ ] `BASE_URL` is the **https://** serving origin (where the proxy/PID
+      redirector points). When `IDENTIFIER_BASE` is unset it also mints resource
+      IRIs; for a public deployment set `IDENTIFIER_BASE` to a persistent PID
+      namespace (e.g. a W3ID prefix) so identifiers survive a host move
+      (ADR-0014). Both must be `https://` in production.
 - [ ] TLS (or mTLS) on app→Postgres and app→GraphDB links (e.g. `?ssl=require`).
 - [ ] Internal CA or ACME certs; automate renewal.
 

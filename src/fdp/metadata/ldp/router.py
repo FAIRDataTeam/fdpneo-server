@@ -45,6 +45,7 @@ from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
 from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.metadata.graphs import record_graph_uri
+from fdp.metadata.identifiers import reconcile_identifiers
 from fdp.metadata.ldp.negotiation import (
     SPARQL_UPDATE,
     SUPPORTED_TYPES,
@@ -70,6 +71,7 @@ from fdp.shared.errors import (
     Unauthenticated,
     UnsupportedMediaType,
 )
+from fdp.shared.identifiers import canonicalize
 from fdp.shared.namespaces import LDP as LDP_NS
 
 if TYPE_CHECKING:
@@ -148,6 +150,8 @@ def build_ldp_router(
     event_bus: EventBus | None = None,
     state_gate: StateGate | None = None,
     containment: ContainmentManager | None = None,
+    identifier_base: str | None = None,
+    serving_origins: list[str] | None = None,
     prefix: str = "/ldp",
 ) -> APIRouter:
     """Build the LDP router wired with ``repo`` + ``pdp`` + optional helpers.
@@ -160,9 +164,32 @@ def build_ldp_router(
     ``HEAD`` additionally enforce publication-state visibility *after* the ODRL
     read decision: a ``DRAFT``/``ARCHIVED`` record is 404 to anyone but its
     owner or an admin. Writes are unaffected — an owner edits their own drafts.
+
+    ``identifier_base`` / ``serving_origins`` drive persistent-identifier
+    canonicalization (ADR-0014): a request arriving on a serving origin is mapped
+    to the canonical IRI rooted at ``identifier_base`` before any storage/lookup,
+    so a record's identity is stable across hosts. When ``identifier_base`` is
+    ``None`` (the default, and most tests) the raw request URL is used unchanged.
     """
     router = APIRouter(prefix=prefix, tags=["ldp"])
     registry: ContainerRegistry = containers or DefaultContainerRegistry()
+    _id_base = identifier_base.rstrip("/") if identifier_base else None
+    _serving = [o.rstrip("/") for o in (serving_origins or [])]
+
+    def _canonical_iri(request: Request) -> str:
+        """The request's canonical, identifier-base-rooted record IRI."""
+        raw = _request_url(request)
+        if _id_base is None:
+            return raw
+        return canonicalize(raw, identifier_base=_id_base, serving_origins=_serving)
+
+    def _reconcile(graph: Graph, canonical_iri: str) -> Graph:
+        """Apply the dual identifier model when a PID base is configured."""
+        if _id_base is None:
+            return graph
+        return reconcile_identifiers(
+            graph, canonical_iri=canonical_iri, identifier_base=_id_base
+        )
 
     async def _publish(event: Event) -> None:
         if event_bus is None:
@@ -268,7 +295,7 @@ def build_ldp_router(
         path: str,  # noqa: ARG001
         ctx: Annotated[RequestContext, Depends(current_context)],
     ) -> Response:
-        iri = _resource_iri(request)
+        iri = _canonical_iri(request)
         await _enforce(ctx, Action.READ, iri)
         media = _negotiate(request)
         graph = await repo.get_graph(iri)
@@ -301,7 +328,7 @@ def build_ldp_router(
         path: str,  # noqa: ARG001
         ctx: Annotated[RequestContext, Depends(current_context)],
     ) -> Response:
-        iri = _resource_iri(request)
+        iri = _canonical_iri(request)
         await _enforce(ctx, Action.READ, iri)
         media = _negotiate(request)
         graph = await repo.get_graph(iri)
@@ -325,12 +352,15 @@ def build_ldp_router(
         path: str,  # noqa: ARG001
         ctx: Annotated[RequestContext, Depends(current_context)],
     ) -> Response:
-        iri = _resource_iri(request)
+        iri = _canonical_iri(request)
         await _enforce(ctx, Action.MODIFY, iri)
         existing = await repo.get_graph(iri)
         resource_exists = len(existing) > 0
         _enforce_if_match(request, existing, required=resource_exists)
         new_graph = _parse_body(request, await request.body(), base=iri)
+        # Dual identifier model (ADR-0014): a foreign primary subject is rebound
+        # to the canonical IRI and kept as owl:sameAs; a <> body is unchanged.
+        new_graph = _reconcile(new_graph, iri)
         # PUT replaces the resource itself, so validate against the resource's
         # own type shape (resolved by its URL prefix) — not the container's
         # member shape, which only applies to POST and resolves to None for a
@@ -380,7 +410,7 @@ def build_ldp_router(
         path: str,  # noqa: ARG001
         ctx: Annotated[RequestContext, Depends(current_context)],
     ) -> Response:
-        container_iri = _resource_iri(request)
+        container_iri = _canonical_iri(request)
         if not registry.is_container(container_iri):
             # 405 MUST carry Allow (RFC 7231 §6.5.5); a leaf resource omits POST.
             raise MethodNotAllowed(
@@ -397,6 +427,9 @@ def build_ldp_router(
             # 415 on a container POST advertises the accepted POST media types.
             exc.headers["Accept-Post"] = _ACCEPT_POST
             raise
+        # Dual identifier model (ADR-0014): rebind a foreign primary subject to
+        # the minted member IRI, preserving it as owl:sameAs.
+        member_graph = _reconcile(member_graph, member_iri)
         await _validate_member(member_graph, container_iri)
         _stamp_container_config(member_graph, member_iri)
         etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
@@ -428,7 +461,7 @@ def build_ldp_router(
         path: str,  # noqa: ARG001
         ctx: Annotated[RequestContext, Depends(current_context)],
     ) -> Response:
-        iri = _resource_iri(request)
+        iri = _canonical_iri(request)
         ctype = normalize_content_type(request.headers.get("content-type"))
         if ctype != SPARQL_UPDATE:
             raise UnsupportedMediaType(
@@ -463,7 +496,7 @@ def build_ldp_router(
         path: str,  # noqa: ARG001
         ctx: Annotated[RequestContext, Depends(current_context)],
     ) -> Response:
-        iri = _resource_iri(request)
+        iri = _canonical_iri(request)
         await _enforce(ctx, Action.DELETE, iri)
         existing = await repo.get_graph(iri)
         if len(existing) == 0:
@@ -498,7 +531,7 @@ def build_ldp_router(
         request: Request,
         path: str,  # noqa: ARG001
     ) -> Response:
-        iri = _resource_iri(request)
+        iri = _canonical_iri(request)
         is_container = registry.is_container(iri)
         headers = _response_headers(etag=None, is_container=is_container)
         return Response(status_code=204, headers=headers)
@@ -506,8 +539,8 @@ def build_ldp_router(
     return router
 
 
-def _resource_iri(request: Request) -> str:
-    """Resource IRI = the absolute request URL without query string."""
+def _request_url(request: Request) -> str:
+    """The absolute request URL without query string (pre-canonicalization)."""
     url = str(request.url)
     return url.split("?", 1)[0]
 

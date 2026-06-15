@@ -293,6 +293,66 @@ class SchemaSyncSettings(BaseSettings):
         return value
 
 
+class PIDSettings(BaseSettings):
+    """Configuration for persistent identifiers (v0.3.0, ADR-0014).
+
+    Persistent identifiers decouple a record's identity from the serving host:
+    records are minted under ``Settings.identifier_base`` (a stable PID namespace
+    such as ``https://w3id.org/<prefix>``) while the deployment is reachable at
+    ``Settings.base_url`` (the serving origin a redirector points to). This group
+    holds the *W3ID automation* knobs — generating redirect rules and, opt-in,
+    opening/updating the w3id.org PR via the GitHub API.
+
+    The GitHub integration follows the same outbound posture as schema sync: it
+    is off unless a token is supplied, and every call is checked against
+    ``allowed_hosts``. ``w3id-config`` (artifact generation) needs none of this.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_PID_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    w3id_prefix: str | None = None
+    """The w3id.org path prefix this FDP owns, e.g. ``myfdp`` for
+    ``https://w3id.org/myfdp``. Used to name the redirect directory + branch.
+    When unset it is derived from ``identifier_base`` if that is a w3id URL."""
+
+    github_token: SecretStr | None = None
+    """A GitHub token with permission to fork ``perma-id/w3id.org`` and open a
+    PR from the fork. Required only for ``fdp pid w3id-pr``; absent ⇒ the
+    command refuses rather than making an unauthenticated call."""
+
+    github_fork_owner: str | None = None
+    """The GitHub account/org under which the w3id.org fork lives (defaults to
+    the token's authenticated user). The branch + PR are created here."""
+
+    # ``NoDecode`` to accept a comma-separated string as well as a JSON array,
+    # matching ``SchemaSyncSettings.allowed_hosts``.
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["api.github.com", "github.com"],
+        description=(
+            "Hostnames the PID GitHub integration may call. Enforced on every "
+            "request. Set via FDP_PID_ALLOWED_HOSTS (JSON array or CSV)."
+        ),
+    )
+
+    timeout_seconds: float = 30.0
+    """Per-request timeout for GitHub API and resolution-verification calls."""
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: object) -> object:
+        """Parse the env value into a list of hostnames (JSON array or CSV)."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [host.strip() for host in text.split(",") if host.strip()]
+        return value
+
+
 class DataSettings(BaseSettings):
     """Configuration for the simple data provider (architecture §5.6).
 
@@ -426,7 +486,20 @@ class Settings(BaseSettings):
     expose_api_docs: bool = False
     base_url: HttpUrl = Field(
         default=HttpUrl("http://localhost:8000"),
-        description="The public URL at which this FDP is reachable. Used to mint resource URIs.",
+        description=(
+            "The serving origin at which this FDP is reachable — where a PID "
+            "redirector (W3ID/PURL) ultimately points. When identifier_base is "
+            "unset this also mints resource IRIs (localhost-friendly default)."
+        ),
+    )
+    identifier_base: HttpUrl | None = Field(
+        default=None,
+        description=(
+            "The persistent identifier namespace records are minted under, e.g. "
+            "https://w3id.org/myfdp. Decoupled from base_url so identifiers "
+            "survive a deployment/host move. Unset ⇒ falls back to base_url, so "
+            "local deployments keep using their serving URL as the identifier."
+        ),
     )
     fdp_namespace: HttpUrl = Field(
         default=HttpUrl("https://w3id.org/fdp/o#"),
@@ -460,6 +533,23 @@ class Settings(BaseSettings):
     search: SearchSettings = Field(default_factory=lambda: SearchSettings())
     idp_admin: IdpAdminSettings = Field(default_factory=lambda: IdpAdminSettings())
     rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
+    pid: PIDSettings = Field(default_factory=lambda: PIDSettings())
+
+    @property
+    def serving_base(self) -> str:
+        """The serving origin (``base_url``), trailing slash stripped."""
+        return str(self.base_url).rstrip("/")
+
+    @property
+    def resolved_identifier_base(self) -> str:
+        """The persistent identifier base records are minted under.
+
+        ``identifier_base`` when set, otherwise ``base_url`` — so a local
+        deployment that never configures a PID namespace keeps minting under
+        its serving URL, exactly as before v0.3.0.
+        """
+        base = self.identifier_base if self.identifier_base is not None else self.base_url
+        return str(base).rstrip("/")
 
 
 @lru_cache(maxsize=1)

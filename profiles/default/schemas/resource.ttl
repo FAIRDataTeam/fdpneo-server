@@ -17,6 +17,8 @@
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix adms: <http://www.w3.org/ns/adms#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix fs:   <urn:fdp-schema:> .
 
@@ -44,7 +46,24 @@ fs:resource
     sh:property [ sh:path dct:license ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
     sh:property [ sh:path dct:accessRights ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dct:conformsTo ; sh:nodeKind sh:IRI ] ;
-    sh:property [ sh:path dct:identifier ; sh:datatype xsd:string ] ;
+    sh:property [
+        sh:path dct:identifier ;
+        sh:name "identifier" ;
+        sh:description "An external identifier for the resource (e.g. a DOI string). The record's own dereferenceable IRI is its persistent identifier; this carries additional, FDP-external ones." ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path owl:sameAs ;
+        sh:name "sameAs" ;
+        sh:description "An equivalent IRI for this resource minted elsewhere (a foreign persistent identifier the FDP does not resolve)." ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path skos:exactMatch ;
+        sh:name "exactMatch" ;
+        sh:description "An IRI asserted to denote the same concept/resource in another vocabulary or registry." ;
+        sh:nodeKind sh:IRI ;
+    ] ;
     sh:property [ sh:path dcat:landingPage ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path foaf:page ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dct:type ; sh:nodeKind sh:IRI ] ;
