@@ -1324,10 +1324,19 @@ modular SHACL shapes.
 > implementation-status section was rewritten to match shipped reality (runtime
 > stamping + backfill done) and points at the matrix.
 >
-> Open SHOULD/MAY items are tracked as **gaps in the matrix**, not as 15.1
-> blockers: `Allow`/`Accept-Post` echoed on 4xx error envelopes, `Prefer`-driven
-> container minimisation, and a W3C `ldp-testsuite` CI run. (Deliberate deviations
-> stand: custom `X-FDP-Page-*` paging, SPARQL-Update PATCH only.)
+> **Conformance gaps closed (2026-06-15).** The two code-level SHOULD gaps are now
+> implemented + tested: (1) advisory headers on 4xx — `FDPError` carries optional
+> headers (emitted by the handler and the catch-all middleware), so a 405 carries
+> `Allow` (RFC 7231 MUST), a container-POST 415 carries `Accept-Post`, and a PATCH
+> 415 carries `Accept-Patch`; (2) `Prefer` container minimisation — a container
+> `GET` honours `omit`/`include` of `ldp:PreferContainment`/`PreferMembership`/
+> `PreferMinimalContainer`, returns `Preference-Applied`, and advertises
+> `Vary: Prefer`. The in-repo conformance suite now runs as a dedicated
+> **`conformance` CI job** gating the image build. Tests: `tests/unit/metadata/ldp/test_router.py`
+> (+6) and `tests/conformance/test_ldp.py` (Allow assertion + `test_container_prefer_minimisation`).
+> Only remaining (MAY, optional): running the *external* W3C Java `ldp-testsuite`.
+> (Deliberate deviations stand: custom `X-FDP-Page-*` paging, SPARQL-Update PATCH
+> only.)
 
 **Decision:** implement real LDP **Direct Containers** (not "Basic + typed
 relations"). ADR-0008 claims full LDP-DC but the implementation is a Basic

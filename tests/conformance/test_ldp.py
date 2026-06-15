@@ -211,6 +211,9 @@ def test_post_to_leaf_is_method_not_allowed(client: TestClient) -> None:
     )
     r = client.post("/distribution/d1", content=body, headers={"Content-Type": "text/turtle"})
     assert r.status_code == 405
+    # 405 MUST carry Allow (RFC 7231 §6.5.5); a leaf omits POST.
+    assert "POST" not in r.headers["Allow"]
+    assert "GET" in r.headers["Allow"]
 
 
 def test_created_catalog_is_a_direct_container(client: TestClient) -> None:
@@ -225,3 +228,40 @@ def test_created_catalog_is_a_direct_container(client: TestClient) -> None:
         URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
         LDP.DirectContainer,
     ) in g
+
+
+def test_container_prefer_minimisation(client: TestClient) -> None:
+    # Give the root container a member so there is containment/membership to omit.
+    member = f"{BASE_URL}/catalog/pref1"
+    assert (
+        client.put(
+            "/catalog/pref1", content=_catalog(member), headers={"Content-Type": "text/turtle"}
+        ).status_code
+        == 201
+    )
+
+    full = client.get("/", headers={"Accept": "text/turtle"})
+    assert full.status_code == 200
+    assert full.headers["Vary"] == "Prefer"  # representation varies by Prefer (LDP §7.2)
+
+    minimal = client.get(
+        "/",
+        headers={
+            "Accept": "text/turtle",
+            "Prefer": (
+                'return=representation; omit="http://www.w3.org/ns/ldp#PreferContainment '
+                'http://www.w3.org/ns/ldp#PreferMembership"'
+            ),
+        },
+    )
+    assert minimal.status_code == 200
+    assert minimal.headers["Preference-Applied"] == "return=representation"
+
+    contains = URIRef(str(LDP.contains))
+    full_g, min_g = Graph(), Graph()
+    full_g.parse(data=full.text, format="turtle")
+    min_g.parse(data=minimal.text, format="turtle")
+    root = URIRef(BASE_URL)
+    # The full representation lists the member; the minimal one omits containment.
+    assert (root, contains, URIRef(member)) in full_g
+    assert (root, contains, URIRef(member)) not in min_g

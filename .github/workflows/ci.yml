@@ -51,11 +51,25 @@ jobs:
       # job with Docker services when desired.
       - run: uv run pytest tests/unit tests/contract
 
+  conformance:
+    name: pytest (LDP conformance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      # The LDP conformance suite is testcontainers-backed (Oxigraph + Postgres);
+      # GitHub's ubuntu runners ship Docker, so it runs without extra services.
+      # Encodes the LDP MUST/SHOULD matrix — see docs/conformance/ldp-conformance.md.
+      - run: uv run pytest tests/conformance
+
   image:
     name: build + push image
-    # Publish only when lint + tests are green; pyright runs in parallel and is
-    # visible on the PR without blocking the image.
-    needs: [lint, test]
+    # Publish only when lint + tests + conformance are green; pyright runs in
+    # parallel and is visible on the PR without blocking the image.
+    needs: [lint, test, conformance]
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -48,10 +48,20 @@ class FDPError(Exception):
     http_status: ClassVar[int]
     docs_url: ClassVar[str]
 
-    def __init__(self, message: str, *, details: object | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: object | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.details = details
+        # Advisory HTTP headers to attach to the error response — e.g. ``Allow``
+        # on a 405 (RFC 7231 §6.5.5) or ``Accept-Post`` on a 415 to a container
+        # (LDP §4.2.1). Mutable so a raising site can augment it after the fact.
+        self.headers: dict[str, str] = dict(headers) if headers else {}
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -230,7 +240,11 @@ async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
         message=exc.message,
         trace_id=ctx.trace_id if ctx is not None else None,
     )
-    return JSONResponse(status_code=exc.http_status, content=_envelope(exc))
+    return JSONResponse(
+        status_code=exc.http_status,
+        content=_envelope(exc),
+        headers=exc.headers or None,
+    )
 
 
 class CatchAllExceptionMiddleware:
@@ -263,7 +277,7 @@ class CatchAllExceptionMiddleware:
         except FDPError as exc:
             if started:
                 raise
-            await _send_envelope(send, exc.http_status, _envelope(exc))
+            await _send_envelope(send, exc.http_status, _envelope(exc), exc.headers)
         except Exception as exc:
             ctx = get_current()
             log.error(
@@ -278,13 +292,18 @@ class CatchAllExceptionMiddleware:
             await _send_envelope(send, err.http_status, _envelope(err))
 
 
-async def _send_envelope(send: Send, status: int, body: dict[str, object]) -> None:
+async def _send_envelope(
+    send: Send, status: int, body: dict[str, object], headers: dict[str, str] | None = None
+) -> None:
     payload = json.dumps(body).encode("utf-8")
+    raw_headers: list[tuple[bytes, bytes]] = [(b"content-type", b"application/json")]
+    for name, value in (headers or {}).items():
+        raw_headers.append((name.encode("latin-1"), value.encode("latin-1")))
     await send(
         {
             "type": "http.response.start",
             "status": status,
-            "headers": [(b"content-type", b"application/json")],
+            "headers": raw_headers,
         }
     )
     await send({"type": "http.response.body", "body": payload})

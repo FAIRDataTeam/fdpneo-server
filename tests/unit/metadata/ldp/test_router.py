@@ -29,7 +29,7 @@ from fdp.policy.model import Action, Decision, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.events import EventBus
-from fdp.shared.namespaces import DCT
+from fdp.shared.namespaces import DCT, LDP
 
 RECORD_PATH = "/ldp/catalogs/c1"
 CONTAINER_PATH = "/ldp/catalogs"
@@ -855,3 +855,116 @@ async def test_delete_publishes_record_deleted() -> None:
     assert len(deleted) == 1
     assert deleted[0].record_iri == RECORD_IRI
     assert deleted[0].subject == ALICE
+
+
+# --- LDP conformance: advisory headers + Prefer minimisation ----------------
+
+_DATASET_REL = "http://www.w3.org/ns/dcat#dataset"
+
+
+async def _seed_container_with_member(repo: MetadataRepository, member_iri: str) -> None:
+    """A container graph carrying ldp:contains + a typed membership triple."""
+    g = Graph()
+    s = URIRef(CONTAINER_IRI)
+    g.add((s, DCT.title, Literal("Catalogs")))
+    g.add((s, RDF.type, LDP.DirectContainer))
+    g.add((s, LDP.membershipResource, s))
+    g.add((s, LDP.hasMemberRelation, URIRef(_DATASET_REL)))
+    g.add((s, LDP.contains, URIRef(member_iri)))
+    g.add((s, URIRef(_DATASET_REL), URIRef(member_iri)))
+    await repo.put_graph(CONTAINER_IRI, g, subject=ALICE)
+
+
+async def test_post_to_leaf_returns_405_with_allow_header() -> None:
+    """405 MUST carry Allow (RFC 7231); a leaf omits POST."""
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry(set()))
+    with TestClient(app) as client:
+        r = client.post(RECORD_PATH, content="<a:a> <a:b> <a:c> .", headers={"Content-Type": TURTLE})
+    assert r.status_code == 405
+    allow = r.headers["Allow"]
+    assert "GET" in allow and "PUT" in allow
+    assert "POST" not in allow
+
+
+async def test_post_unsupported_media_type_advertises_accept_post() -> None:
+    repo, _ = _make_repo()
+    app = _build_app(
+        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
+    )
+    with TestClient(app) as client:
+        r = client.post(
+            CONTAINER_PATH, content="<a/>", headers={"Content-Type": "application/x-tar"}
+        )
+    assert r.status_code == 415
+    assert r.headers["Accept-Post"]
+
+
+async def test_patch_unsupported_media_type_advertises_accept_patch() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    app = _build_app(repo=repo, pdp=FakePDP())
+    with TestClient(app) as client:
+        r = client.patch(RECORD_PATH, content="x", headers={"Content-Type": "text/plain"})
+    assert r.status_code == 415
+    assert r.headers["Accept-Patch"] == SPARQL_UPDATE
+
+
+async def test_get_container_advertises_vary_prefer() -> None:
+    repo, _ = _make_repo()
+    await _seed_container_with_member(repo, CONTAINER_IRI + "/d1")
+    app = _build_app(
+        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
+    )
+    with TestClient(app) as client:
+        r = client.get(CONTAINER_PATH, headers={"Accept": TURTLE})
+    assert r.status_code == 200
+    assert r.headers["Vary"] == "Prefer"
+    # No Prefer sent → full representation, no Preference-Applied.
+    assert "Preference-Applied" not in r.headers
+
+
+async def test_get_container_prefer_omits_containment_and_membership() -> None:
+    repo, _ = _make_repo()
+    member = CONTAINER_IRI + "/d1"
+    await _seed_container_with_member(repo, member)
+    app = _build_app(
+        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
+    )
+    prefer = (
+        'return=representation; omit="http://www.w3.org/ns/ldp#PreferContainment '
+        'http://www.w3.org/ns/ldp#PreferMembership"'
+    )
+    with TestClient(app) as client:
+        r = client.get(CONTAINER_PATH, headers={"Accept": TURTLE, "Prefer": prefer})
+    assert r.status_code == 200
+    assert r.headers["Preference-Applied"] == "return=representation"
+    g = Graph()
+    g.parse(data=r.text, format="turtle")
+    s = URIRef(CONTAINER_IRI)
+    # Containment + membership triples are gone…
+    assert (s, LDP.contains, URIRef(member)) not in g
+    assert (s, URIRef(_DATASET_REL), URIRef(member)) not in g
+    # …but the minimal container (title + membership config) survives.
+    assert (s, DCT.title, Literal("Catalogs")) in g
+    assert (s, LDP.hasMemberRelation, URIRef(_DATASET_REL)) in g
+
+
+async def test_get_container_prefer_minimal_container_omits_both() -> None:
+    repo, _ = _make_repo()
+    member = CONTAINER_IRI + "/d1"
+    await _seed_container_with_member(repo, member)
+    app = _build_app(
+        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
+    )
+    prefer = 'return=representation; include="http://www.w3.org/ns/ldp#PreferMinimalContainer"'
+    with TestClient(app) as client:
+        r = client.get(CONTAINER_PATH, headers={"Accept": TURTLE, "Prefer": prefer})
+    assert r.status_code == 200
+    assert r.headers["Preference-Applied"] == "return=representation"
+    g = Graph()
+    g.parse(data=r.text, format="turtle")
+    s = URIRef(CONTAINER_IRI)
+    assert (s, LDP.contains, URIRef(member)) not in g
+    assert (s, URIRef(_DATASET_REL), URIRef(member)) not in g

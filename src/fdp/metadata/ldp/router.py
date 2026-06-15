@@ -70,6 +70,7 @@ from fdp.shared.errors import (
     Unauthenticated,
     UnsupportedMediaType,
 )
+from fdp.shared.namespaces import LDP as LDP_NS
 
 if TYPE_CHECKING:
     from fdp.metadata.containment import ContainmentManager
@@ -275,12 +276,23 @@ def build_ldp_router(
             raise NotFound(f"resource not found: {iri}")
         if state_gate is not None:
             await state_gate.ensure_visible(ctx, iri)
-        body = serialize(graph, media)
+        is_container = registry.is_container(iri)
+        # ETag is the *full-resource* validator (used for If-Match), computed
+        # before any Prefer-driven minimisation so a conditional write keyed off
+        # a minimized GET still matches the stored resource.
         etag = compute_etag(graph)
-        headers = _response_headers(
-            etag, registry.is_container(iri), constrained_by=registry.shape_for(iri)
+        omit_containment, omit_membership = (
+            _parse_prefer(request.headers.get("prefer")) if is_container else (False, False)
         )
+        if omit_containment or omit_membership:
+            _minimize_container(graph, iri, omit_containment, omit_membership)
+        body = serialize(graph, media)
+        headers = _response_headers(etag, is_container, constrained_by=registry.shape_for(iri))
         headers["Content-Type"] = media
+        if is_container:
+            headers["Vary"] = "Prefer"
+        if omit_containment or omit_membership:
+            headers["Preference-Applied"] = "return=representation"
         return Response(content=body, status_code=200, headers=headers)
 
     @router.head("/{path:path}", name="ldp_head")
@@ -297,11 +309,14 @@ def build_ldp_router(
             raise NotFound(f"resource not found: {iri}")
         if state_gate is not None:
             await state_gate.ensure_visible(ctx, iri)
+        is_container = registry.is_container(iri)
         etag = compute_etag(graph)
-        headers = _response_headers(
-            etag, registry.is_container(iri), constrained_by=registry.shape_for(iri)
-        )
+        headers = _response_headers(etag, is_container, constrained_by=registry.shape_for(iri))
         headers["Content-Type"] = media
+        if is_container:
+            # HEAD advertises that the representation varies by Prefer, even
+            # though there is no body to minimise.
+            headers["Vary"] = "Prefer"
         return Response(status_code=200, headers=headers)
 
     @router.put("/{path:path}", name="ldp_put")
@@ -367,12 +382,21 @@ def build_ldp_router(
     ) -> Response:
         container_iri = _resource_iri(request)
         if not registry.is_container(container_iri):
-            raise MethodNotAllowed(f"{container_iri} is not a container")
+            # 405 MUST carry Allow (RFC 7231 §6.5.5); a leaf resource omits POST.
+            raise MethodNotAllowed(
+                f"{container_iri} is not a container",
+                headers={"Allow": _ALLOWED_METHODS_RESOURCE},
+            )
         await _enforce(ctx, Action.MODIFY, container_iri)
         # Mint the member IRI first so a relative ``<>`` in the body resolves to
         # the new member's URI (LDP), not to the container or a file:// base.
         member_iri = _mint_member_iri(container_iri, request.headers.get("slug"))
-        member_graph = _parse_body(request, await request.body(), base=member_iri)
+        try:
+            member_graph = _parse_body(request, await request.body(), base=member_iri)
+        except UnsupportedMediaType as exc:
+            # 415 on a container POST advertises the accepted POST media types.
+            exc.headers["Accept-Post"] = _ACCEPT_POST
+            raise
         await _validate_member(member_graph, container_iri)
         _stamp_container_config(member_graph, member_iri)
         etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
@@ -409,6 +433,7 @@ def build_ldp_router(
         if ctype != SPARQL_UPDATE:
             raise UnsupportedMediaType(
                 f"PATCH requires Content-Type: {SPARQL_UPDATE}",
+                headers={"Accept-Patch": _ACCEPT_PATCH},
             )
         await _enforce(ctx, Action.MODIFY, iri)
         existing = await repo.get_graph(iri)
@@ -495,6 +520,61 @@ def _negotiate(request: Request) -> str:
             details={"supported": list(SUPPORTED_TYPES)},
         )
     return media
+
+
+# LDP container-representation preference hints (LDP §7.2 / §5.2.x).
+_LDP_PREFER_CONTAINMENT = "http://www.w3.org/ns/ldp#PreferContainment"
+_LDP_PREFER_MEMBERSHIP = "http://www.w3.org/ns/ldp#PreferMembership"
+_LDP_PREFER_MINIMAL = "http://www.w3.org/ns/ldp#PreferMinimalContainer"
+_LDP_PREFER_EMPTY = "http://www.w3.org/ns/ldp#PreferEmptyContainer"  # pre-Rec alias
+_RETURN_REPRESENTATION = re.compile(r"return\s*=\s*representation")
+
+
+def _parse_prefer(header: str | None) -> tuple[bool, bool]:
+    """Parse an LDP ``Prefer: return=representation`` header for a container GET.
+
+    Returns ``(omit_containment, omit_membership)`` — which classes of triple the
+    client asked the server to leave out (LDP §7.2). ``ldp:PreferMinimalContainer``
+    (and the legacy ``PreferEmptyContainer``) means *omit both*; an explicit
+    ``omit`` of ``ldp:PreferContainment`` / ``ldp:PreferMembership`` targets one.
+    Anything we don't recognise is ignored (no preference applied).
+    """
+    if not header or not _RETURN_REPRESENTATION.search(header):
+        return (False, False)
+    omit = _prefer_uris(header, "omit")
+    include = _prefer_uris(header, "include")
+    minimal = _LDP_PREFER_MINIMAL in include or _LDP_PREFER_EMPTY in include
+    return (
+        minimal or _LDP_PREFER_CONTAINMENT in omit,
+        minimal or _LDP_PREFER_MEMBERSHIP in omit,
+    )
+
+
+def _prefer_uris(header: str, kind: str) -> set[str]:
+    """Extract the whitespace-separated URI set from a ``kind="…"`` Prefer param."""
+    match = re.search(rf'{kind}\s*=\s*"([^"]*)"', header)
+    return set(match.group(1).split()) if match else set()
+
+
+def _minimize_container(
+    graph: Graph, container_iri: str, omit_containment: bool, omit_membership: bool
+) -> None:
+    """Drop containment and/or membership triples from a container representation.
+
+    Containment is ``ldp:contains``; membership is each member link reached via the
+    container's ``ldp:hasMemberRelation`` predicates (e.g. ``dcat:dataset``). The
+    Direct-Container *configuration* triples (``ldp:membershipResource`` etc.) are
+    kept — they describe the minimal container, they are not membership triples.
+    """
+    # Normalize to the canonical record IRI: the request URL for the root arrives
+    # as ".../" but the stored container subject is slash-stripped, so a bare
+    # URIRef(container_iri) would target the wrong subject and remove nothing.
+    subject = record_graph_uri(container_iri)
+    if omit_containment:
+        graph.remove((subject, LDP_NS.contains, None))
+    if omit_membership:
+        for relation in set(graph.objects(subject, LDP_NS.hasMemberRelation)):
+            graph.remove((subject, relation, None))
 
 
 def _parse_body(request: Request, body: bytes, *, base: str) -> Graph:

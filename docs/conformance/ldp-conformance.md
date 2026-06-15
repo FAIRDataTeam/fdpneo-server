@@ -62,7 +62,7 @@ The FDP does **not** claim LDP **Paging** (§7) conformance — see
 | R10 | Support `PATCH`; advertise the accepted patch format via `Accept-Patch`. | MAY | ↔️ | `PATCH` accepts `application/sparql-update` only (no LD-PATCH); `Accept-Patch` advertised on all responses. See [Deviations](#deliberate-deviations). | `test_get_root_advertises_ldp_interaction_model` (Accept-Patch) |
 | R11 | Reject a request body whose `Content-Type` is unsupported with **415**. | MUST | ✅ | `_parse_body` / PATCH content-type check → 415. | `test_put_rejects_unsupported_media_type` |
 | R12 | A constrained resource advertises its constraints via `Link: rel="http://www.w3.org/ns/ldp#constrainedBy"`. | SHOULD | ✅ | `GET`/`HEAD` add `constrainedBy` pointing at the resource's SHACL shape when known. | `test_get_root_advertises_ldp_interaction_model` |
-| R13 | A `415`/`405`/`406` error response carries the relevant advisory header (`Accept-Post`/`Allow`/`Accept`). | SHOULD | ⚠️ | Advisory headers ride on **successful** responses and `OPTIONS`; the JSON error envelope for 4xx does not currently echo `Allow`/`Accept`. The information is in the envelope body + discoverable via `OPTIONS`. Tracked as a gap. | — |
+| R13 | A `405`/`415` error response carries the relevant advisory header (`Allow` / `Accept-Post` / `Accept-Patch`). | SHOULD (MUST for 405 `Allow`) | ✅ | `FDPError` carries optional advisory headers, emitted by both the handler and the catch-all middleware. A 405 (POST to a leaf) carries `Allow` (RFC 7231 §6.5.5); a 415 on a container POST carries `Accept-Post`; a 415 on PATCH carries `Accept-Patch`. | `test_post_to_leaf_is_method_not_allowed`; unit `test_post_unsupported_media_type_advertises_accept_post`, `test_patch_unsupported_media_type_advertises_accept_patch` |
 
 ## LDP Container (LDPC / LDP Direct Container) — §5
 
@@ -75,7 +75,7 @@ The FDP does **not** claim LDP **Paging** (§7) conformance — see
 | C5 | On member creation, add the membership triple per the container's membership pattern (and `ldp:contains`). | MUST | ✅ | `ContainmentManager` writes `ldp:contains` + the typed forward relation; membership is read directly from the container's Direct-Container config. | `test_created_catalog_is_a_direct_container` |
 | C6 | `POST` to a resource that is **not** a container → **405**. | MUST | ✅ | `http_post` raises `MethodNotAllowed` when `registry.is_container` is false (e.g. a Distribution leaf). | `test_post_to_leaf_is_method_not_allowed` |
 | C7 | `GET` on a container returns its containment/membership triples by default. | MUST | ✅ | The container's stored graph holds `ldp:contains` + membership triples; `GET` serializes them inline. | — |
-| C8 | Honour the `Prefer` header (`return=representation` with `include`/`omit`) to minimise containment/membership triples. | SHOULD | ❌ | `Prefer` is not interpreted; a container `GET` always returns the full graph. Tracked as a gap (low priority — FDP containers are small). | — |
+| C8 | Honour the `Prefer` header (`return=representation` with `include`/`omit`) to minimise containment/membership triples. | SHOULD | ✅ | A container `GET` parses `Prefer`: `omit` of `ldp:PreferContainment`/`ldp:PreferMembership` (or `include` of `ldp:PreferMinimalContainer`) drops the `ldp:contains` and/or membership triples, the Direct-Container config is kept, and the response carries `Preference-Applied: return=representation`. Container responses also advertise `Vary: Prefer`. | `test_container_prefer_minimisation`; unit `test_get_container_prefer_omits_containment_and_membership`, `..._prefer_minimal_container_omits_both`, `..._advertises_vary_prefer` |
 | C9 | Advertise the accepted POST media types via `Accept-Post` on the container. | MUST | ✅ | `Accept-Post` is emitted on containers only (not leaves). | `test_get_root_advertises_ldp_interaction_model` |
 | C10 | `Allow` reflects the container method set (adds `POST`). | MUST | ✅ | Containers advertise `GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE`; leaves omit `POST`. | `test_get_root_advertises_ldp_interaction_model` |
 
@@ -102,9 +102,11 @@ These are divergences the project has chosen, each sanctioned by an ADR. They ar
 
 | Gap | Requirement | Priority | Note |
 |---|---|---|---|
-| `Allow`/`Accept-Post` on 4xx error responses | LDPR R13 (SHOULD) | Low | The advisory header is present on success + `OPTIONS`; add it to the 405/415 error envelopes for full conformance. |
-| `Prefer` representation minimisation | LDPC C8 (SHOULD) | Low | FDP containers are small, so returning the full graph is acceptable; honour `Prefer: return=representation; omit="…#PreferContainment"` when a large-container use case appears. |
-| W3C `ldp-testsuite` run on CI | external validation (MAY) | Medium | The in-repo suite covers the load-bearing rows; running the W3C Java `ldp-testsuite` against a dev instance and archiving the report would add independent coverage. |
+| External W3C `ldp-testsuite` run | external validation (MAY) | Low | The in-repo suite (`tests/conformance/test_ldp.py`) now runs as a dedicated **`conformance` CI job** (`.github/workflows/ci.yml`) and gates the image build, so the LDP MUST/SHOULD matrix is checked on every PR. Running the *external* W3C Java `ldp-testsuite` against a dev instance and archiving the report would add independent third-party coverage; it needs a Java step and is optional. |
+
+The two code-level SHOULD gaps from the previous revision — advisory headers on 4xx
+(R13) and `Prefer` container minimisation (C8) — are now **implemented and tested**;
+see those rows above.
 
 ## How the suite runs
 
@@ -112,7 +114,7 @@ These are divergences the project has chosen, each sanctioned by an ADR. They ar
 real Oxigraph + Postgres via testcontainers, auto-applies the default profile,
 and authors as a steward/admin (with an **absolute** subject IRI — a relative one
 produces N-Triples that strict, spec-conformant stores reject; see the fixture
-note). All seven checks pass on Oxigraph, including the write/`If-Match`/`DELETE`
+note). All checks pass on Oxigraph, including the write/`If-Match`/`DELETE`
 round-trip and the 405-on-POST-to-leaf check.
 
 > Historical note: two write checks were once `xfail`ed on the belief that
