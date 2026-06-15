@@ -1,10 +1,14 @@
 # FAIR Data Point v2 — Server
 
+> [!CAUTION]
+This is NOT the reference implementation, just an experimentation. The initial development has been heavily based on AI code generation.
+
 A FAIR-aligned metadata repository implementing the [FAIR Data Point specifications](https://specs.fairdatapoint.org), modelled on W3C DCAT with user-defined SHACL schemas, ODRL-based access control, and a full W3C Linked Data Platform API.
 
 This repository contains the **server** implementation. The reference web client lives in a separate repository: `fdp-client` (URL to be set at repo creation).
 
-> **Status: design phase.** This README describes the target architecture. Code in this repository is in active development and not yet ready for production deployment.
+> **Status: design phase.** This README describes the target architecture. Code in this repository is in active development and not yet ready for production deployment. 
+
 
 ## What the FDP does
 
