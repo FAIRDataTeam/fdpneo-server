@@ -677,6 +677,7 @@ These are flagged for discussion and resolution before the architecture is consi
 
 ## See also
 
+- [Developer documentation](../dev-docs/) — contributor onboarding guide: code organization, request lifecycle, and the seven key processes, with UML sequence/activity and ArchiMate-style diagrams
 - [ADR index](../adr/) — rationale for the major decisions
 - FDP specifications: [specs.fairdatapoint.org](https://specs.fairdatapoint.org)
 - Reference implementation (legacy): [github.com/FAIRDataTeam/FAIRDataPoint](https://github.com/FAIRDataTeam/FAIRDataPoint)

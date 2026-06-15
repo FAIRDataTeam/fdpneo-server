@@ -30,6 +30,7 @@ The FDP is a metadata repository. It serves descriptions of datasets, data servi
 | Document | Purpose |
 |---|---|
 | [Architecture overview](docs/architecture/) | Full architecture design with diagrams |
+| [Developer documentation](docs/dev-docs/) | Onboarding guide for contributors — code organization, request lifecycle, key processes, with UML/ArchiMate diagrams |
 | [Architecture Decision Records](docs/adr/) | Rationale for major architectural choices |
 | API reference | Generated OpenAPI spec (link forthcoming) |
 | Operator guide | Deployment, configuration, profile management (link forthcoming) |
