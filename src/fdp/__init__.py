@@ -11,4 +11,9 @@ intentionally does not duplicate it.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("fdp")
+except PackageNotFoundError:  # pragma: no cover - source tree without an install
+    __version__ = "0.0.0"

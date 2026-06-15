@@ -14,6 +14,7 @@ from rdflib.namespace import RDF
 
 from fdp.config import OIDCSettings, Settings, TripleStoreSettings
 from fdp.metadata.profiles import load_profile
+from fdp.metadata.profiles.manifest import DeploymentProfile
 from fdp.metadata.profiles.migrate_modular import migrate_to_modular_profile
 from fdp.metadata.states import MetadataState
 from fdp.shared.graphs import record_graph_uri
@@ -129,7 +130,7 @@ def _pre_15_2_root() -> Graph:
 
 
 @pytest.fixture
-def profile(write_bundle: Callable[..., Path]):
+def profile(write_bundle: Callable[..., Path]) -> DeploymentProfile:
     return load_profile(
         write_bundle(
             manifest_text=MANIFEST,
@@ -139,7 +140,7 @@ def profile(write_bundle: Callable[..., Path]):
 
 
 @pytest.mark.unit
-async def test_migrate_retypes_root_and_writes_config(profile) -> None:
+async def test_migrate_retypes_root_and_writes_config(profile: DeploymentProfile) -> None:
     store = _FakeStore(graphs={BASE: _pre_15_2_root()})
 
     report = await migrate_to_modular_profile(
@@ -171,7 +172,7 @@ async def test_migrate_retypes_root_and_writes_config(profile) -> None:
 
 
 @pytest.mark.unit
-async def test_migrate_is_idempotent(profile) -> None:
+async def test_migrate_is_idempotent(profile: DeploymentProfile) -> None:
     store = _FakeStore(graphs={BASE: _pre_15_2_root()})
     settings = _settings()
 
@@ -197,7 +198,7 @@ async def test_migrate_is_idempotent(profile) -> None:
 
 
 @pytest.mark.unit
-async def test_migrate_no_root_record_is_safe(profile) -> None:
+async def test_migrate_no_root_record_is_safe(profile: DeploymentProfile) -> None:
     """A store without a root record: config is written, root step is a no-op."""
     store = _FakeStore()
 

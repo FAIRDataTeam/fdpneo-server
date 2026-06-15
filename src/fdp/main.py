@@ -245,7 +245,7 @@ def _build_shared_state(app: FastAPI) -> None:
     app.state.resource_definition_service = ResourceDefinitionService(
         repository=app.state.metadata_repository,
         adapter=app.state.triplestore,
-        base_url=str(settings.base_url),
+        base_url=settings.resolved_identifier_base,
         validator=app.state.shacl_validator,
         on_rebuilt=lambda cache: _publish_resource_definitions(app, cache),
     )
@@ -257,7 +257,7 @@ def _build_shared_state(app: FastAPI) -> None:
         repository=app.state.metadata_repository,
         adapter=app.state.triplestore,
         validator=app.state.shacl_validator,
-        base_url=str(settings.base_url),
+        base_url=settings.resolved_identifier_base,
         # The FDP root schema (the root RD's schema) is editable but not
         # deletable (task 10.5). Resolved per-call from the live RD cache, which
         # is published after this point and swapped on every profile re-apply /
@@ -273,14 +273,14 @@ def _build_shared_state(app: FastAPI) -> None:
         repository=app.state.metadata_repository,
         adapter=app.state.triplestore,
         pdp=app.state.pdp,
-        base_url=str(settings.base_url),
+        base_url=settings.resolved_identifier_base,
         event_bus=app.state.event_bus,
     )
     app.state.license_service = LicenseService(
         repository=app.state.metadata_repository,
         adapter=app.state.triplestore,
         validator=app.state.shacl_validator,
-        base_url=str(settings.base_url),
+        base_url=settings.resolved_identifier_base,
         event_bus=app.state.event_bus,
     )
 
@@ -560,7 +560,7 @@ def create_app() -> FastAPI:
             pdp=app.state.pdp,
             adapter=app.state.triplestore,
             settings=settings.data,
-            base_url=str(settings.base_url),
+            base_url=settings.resolved_identifier_base,
             http_client=app.state.http_client,
             state_reader=app.state.state_reader,
         ),
@@ -586,7 +586,7 @@ def create_app() -> FastAPI:
             repo=app.state.metadata_repository,
             pdp=app.state.pdp,
             cache_provider=lambda: app.state.resource_definitions,
-            base_url=str(settings.base_url),
+            base_url=settings.resolved_identifier_base,
             state_gate=app.state.state_gate,
             # /spec returns the merged shape closure (composed types, task 15.2).
             validator=app.state.shacl_validator,
@@ -598,7 +598,7 @@ def create_app() -> FastAPI:
     app.include_router(
         build_state_router(
             service=app.state.state_service,
-            base_url=str(settings.base_url),
+            base_url=settings.resolved_identifier_base,
         ),
         prefix=RESERVED_API_PATH,
     )
@@ -625,7 +625,7 @@ def create_app() -> FastAPI:
             service=InstanceLookupService(
                 adapter=app.state.triplestore,
                 pdp=app.state.pdp,
-                base_url=str(settings.base_url),
+                base_url=settings.resolved_identifier_base,
                 state_gate=app.state.state_gate,
             )
         ),
@@ -670,6 +670,11 @@ def create_app() -> FastAPI:
             containment=ContainmentManager(
                 repo=app.state.metadata_repository, resolver=container_registry
             ),
+            # Persistent-identifier canonicalization (ADR-0014): map an inbound
+            # request on the serving origin to the canonical IRI under the PID
+            # base. Identity when identifier_base is unset (== serving origin).
+            identifier_base=settings.resolved_identifier_base,
+            serving_origins=[settings.serving_base],
             prefix="",
         )
     )
@@ -805,7 +810,7 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
                 profile, settings=settings
             )
             store_cache = await build_cache_from_repository(
-                app.state.triplestore, base_url=str(settings.base_url)
+                app.state.triplestore, base_url=settings.resolved_identifier_base
             )
             resource_definitions = store_cache if store_cache.all() else manifest_cache
             await _publish_runtime_state(app, system_default_offer_iri, resource_definitions)
@@ -958,7 +963,7 @@ async def _warm_anonymous_authz_cache(app: FastAPI) -> None:
     auto-bootstrap and on every runtime mutation), so this only needs the
     root.
     """
-    base = str(get_settings().base_url).rstrip("/")
+    base = get_settings().resolved_identifier_base
     await _warm_authz(app, [str(record_graph_uri(base + "/"))])
 
 

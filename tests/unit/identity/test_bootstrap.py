@@ -63,7 +63,7 @@ def _fake_session_factory(row: ProfileAppliedRow | None) -> Any:
     return _factory
 
 
-def _settings(*, metrics_enabled: bool = True) -> Settings:
+def _settings(*, metrics_enabled: bool = True, identifier_base: str | None = None) -> Settings:
     """Construct a Settings instance with the minimum required fields.
 
     The test env (tests/conftest.py) already provides FDP_OIDC_*,
@@ -71,6 +71,8 @@ def _settings(*, metrics_enabled: bool = True) -> Settings:
     """
     return Settings(
         postgres_dsn="postgresql+asyncpg://fdp:fdp@localhost/fdp",  # type: ignore[arg-type]
+        base_url=HttpUrl("http://localhost:8000"),
+        identifier_base=HttpUrl(identifier_base) if identifier_base else None,
         oidc=OIDCSettings(  # type: ignore[call-arg]
             issuer=HttpUrl("http://idp.local/realms/fdp/"),
             audience="fdp",
@@ -79,11 +81,11 @@ def _settings(*, metrics_enabled: bool = True) -> Settings:
     )
 
 
-def _build_app(*, row: ProfileAppliedRow | None) -> FastAPI:
+def _build_app(*, row: ProfileAppliedRow | None, identifier_base: str | None = None) -> FastAPI:
     app = FastAPI()
     app.include_router(
         build_bootstrap_router(
-            settings=_settings(),
+            settings=_settings(identifier_base=identifier_base),
             session_factory=_fake_session_factory(row),
         )
     )
@@ -103,6 +105,27 @@ def test_returns_minimum_payload_when_no_profile_applied() -> None:
     assert body["fdp_url"]  # populated, non-empty
     assert body["fdp_namespace"]
     assert body["fdp_version"]
+
+
+@pytest.mark.unit
+def test_fdp_url_equals_serving_url_in_dev() -> None:
+    # No identifier_base configured → the persistent base falls back to the
+    # serving origin, so the two coincide (localhost-friendly default).
+    body = TestClient(_build_app(row=None)).get("/config").json()
+    assert body["fdp_url"] == body["serving_url"] == "http://localhost:8000"
+
+
+@pytest.mark.unit
+def test_pid_base_decoupled_from_serving_url() -> None:
+    # With a PID namespace configured, fdp_url is the persistent identifier base
+    # while serving_url stays the deployment origin (ADR-0014).
+    body = (
+        TestClient(_build_app(row=None, identifier_base="https://w3id.org/myfdp"))
+        .get("/config")
+        .json()
+    )
+    assert body["fdp_url"] == "https://w3id.org/myfdp"
+    assert body["serving_url"] == "http://localhost:8000"
 
 
 @pytest.mark.unit

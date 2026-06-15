@@ -68,6 +68,15 @@ class BootstrapConfig(BaseModel):
     """Self-description payload returned from ``GET /config``."""
 
     fdp_url: str
+    """The FDP's canonical, persistent base IRI — the identifier namespace
+    records are minted under (ADR-0014). Equals ``serving_url`` when no PID
+    namespace is configured (local/dev). The client renders record PIDs against
+    this, but issues API calls against ``serving_url``."""
+
+    serving_url: str
+    """The serving origin where this FDP's API is reachable (``base_url``). A PID
+    redirector (W3ID/PURL) ultimately points here. Equals ``fdp_url`` in dev."""
+
     fdp_namespace: str
     fdp_version: str
     oidc: OIDCBootstrap
@@ -99,7 +108,8 @@ def build_bootstrap_router(
                 profile = ProfileBootstrap(name=row.name, version=row.version)
 
         return BootstrapConfig(
-            fdp_url=str(settings.base_url).rstrip("/"),
+            fdp_url=settings.resolved_identifier_base,
+            serving_url=settings.serving_base,
             fdp_namespace=str(settings.fdp_namespace),
             fdp_version=__version__,
             oidc=OIDCBootstrap(

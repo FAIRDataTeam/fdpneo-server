@@ -78,7 +78,11 @@ class IRIExpander:
     """Translates manifest-local identifiers into absolute IRIs."""
 
     def __init__(self, *, settings: Settings) -> None:
-        self._base = str(settings.base_url).rstrip("/")
+        # Records and managed documents are minted under the *identifier* base
+        # (the persistent PID namespace, ADR-0014), which defaults to base_url
+        # when no PID namespace is configured — so local deployments are
+        # unchanged. base_url remains the serving origin.
+        self._base = settings.resolved_identifier_base
         self._prefixes = dict(PREFIXES)
         self._fdp = fdp_namespace(settings)
 
