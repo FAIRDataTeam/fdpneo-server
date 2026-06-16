@@ -29,6 +29,17 @@ COPY profiles ./profiles
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
+# Bundle the DB-IP IP-to-City Lite database (CC BY 4.0 — redistributable, unlike
+# MaxMind GeoLite2). Binary-compatible with the MaxMind DB format, so the geo
+# lookup reads it unchanged. Bump DBIP_CITY_VERSION monthly (CI passes --build-arg);
+# the layer re-downloads only when the arg changes. Attribution lives in NOTICE.
+# `gunzip` is in the debian-slim base; this all happens in the discarded builder.
+ARG DBIP_CITY_VERSION=2026-06
+ADD https://download.db-ip.com/free/dbip-city-lite-${DBIP_CITY_VERSION}.mmdb.gz /tmp/geo.mmdb.gz
+RUN mkdir -p /app/geo \
+    && gunzip -c /tmp/geo.mmdb.gz > /app/geo/GeoLite2-City.mmdb \
+    && rm /tmp/geo.mmdb.gz
+
 # --- runtime: slim image with just the venv + app, run as non-root -----------
 FROM python:3.12-slim AS runtime
 
@@ -44,7 +55,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     ENVIRONMENT=production \
     FDP_PROFILE_AUTO_APPLY=true \
-    FDP_PROFILE_PATH=/app/profiles/default
+    FDP_PROFILE_PATH=/app/profiles/default \
+    FDP_METRICS_GEOIP_DATABASE_PATH=/app/geo/GeoLite2-City.mmdb
 
 USER fdp
 EXPOSE 8000

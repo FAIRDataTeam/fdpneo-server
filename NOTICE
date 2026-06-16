@@ -1,0 +1,20 @@
+fdp-server
+==========
+
+This product includes the following third-party data.
+
+IP geolocation database (DB-IP IP-to-City Lite)
+-----------------------------------------------
+IP geolocation by DB-IP — https://db-ip.com
+
+The bundled GeoLite2-City.mmdb is the DB-IP "IP to City Lite" database,
+distributed under the Creative Commons Attribution 4.0 International License
+(CC BY 4.0): https://creativecommons.org/licenses/by/4.0/
+
+Attribution to DB-IP (https://db-ip.com) is required wherever this data, or
+results derived from it, are distributed or displayed. The metrics dashboard
+surfaces this attribution in its footer; keep it in place.
+
+The database is fetched by scripts/fetch-geoip.sh and bundled into the Docker
+image at build time (see Dockerfile, DBIP_CITY_VERSION). It is not vendored in
+source control.

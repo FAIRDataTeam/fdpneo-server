@@ -92,6 +92,22 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha
+      # Pick the freshest DB-IP IP-to-City Lite build that's actually published
+      # (current month, else previous). Keeps the bundled GeoIP DB current with
+      # no manual Dockerfile bumps; the ARG default is only a local-build fallback.
+      - name: Resolve newest available GeoIP DB month
+        id: geoip
+        run: |
+          base="https://download.db-ip.com/free"
+          for m in "$(date -u +%Y-%m)" "$(date -u -d 'last month' +%Y-%m)"; do
+            if curl -fsI "$base/dbip-city-lite-$m.mmdb.gz" >/dev/null; then
+              echo "version=$m" >> "$GITHUB_OUTPUT"
+              echo "Using DB-IP city-lite $m"
+              exit 0
+            fi
+          done
+          echo "::error::No published DB-IP city-lite database found" >&2
+          exit 1
       - name: Build (push on main)
         uses: docker/build-push-action@v6
         with:
@@ -99,5 +115,7 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DBIP_CITY_VERSION=${{ steps.geoip.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

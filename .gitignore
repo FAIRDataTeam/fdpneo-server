@@ -92,3 +92,7 @@ desktop.ini
 
 # Claude local settings (keep shared settings.json, ignore personal overrides)
 .claude/settings.local.json
+
+# GeoIP database fetched by scripts/fetch-geoip.sh (DB-IP lite, refreshed monthly;
+# redistributed via the Docker image, not vendored in git)
+/data/geoip/
