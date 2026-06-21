@@ -53,6 +53,24 @@ def test_dbip_resolves_a_known_public_ip_to_a_country() -> None:
         lookup.close()
 
 
+def test_dbip_extracts_region_and_city_fields() -> None:
+    """The region + city extraction path yields populated, typed fields.
+
+    The country-only assertion above never exercises ``subdivisions.most_specific``
+    or ``city.name`` (geo.py). 8.8.8.8 resolves to a city-level location in both
+    the GeoLite2 and DB-IP Lite builds, so assert the two fields come back as
+    non-empty strings without hardcoding values that differ between databases.
+    """
+    lookup = open_geo_lookup(_DB_PATH)
+    try:
+        result = lookup.lookup("8.8.8.8")
+        assert result.country_code == "US"
+        assert isinstance(result.region, str) and result.region
+        assert isinstance(result.city, str) and result.city
+    finally:
+        lookup.close()
+
+
 def test_dbip_unresolvable_ip_returns_empty() -> None:
     """Private-range IPs aren't in the DB and must yield an empty result."""
     lookup = open_geo_lookup(_DB_PATH)

@@ -252,3 +252,74 @@ def test_foreign_identifier_preserved_as_sameas(app_env: None) -> None:
     assert (canon, RDF.type, DCAT.Catalog) in g
     assert (canon, OWL.sameAs, URIRef(foreign)) in g
     assert URIRef(foreign) not in set(g.subjects())
+
+
+def test_identifier_is_immutable_across_a_content_edit(app_env: None) -> None:
+    """A record's persistent identifier must not change when it is edited (ADR-0014).
+
+    Conformance property: the canonical IRI is the record's stable identity, so a
+    content update keeps it — the serving-host IRI never becomes the subject.
+    """
+    canonical = f"{IDENTIFIER_BASE}/catalog/c3"
+    serving_iri = f"{SERVING_URL}/catalog/c3"
+    create = '<> a <http://www.w3.org/ns/dcat#Catalog> ; <http://purl.org/dc/terms/title> "v1" .'
+    edit = '<> a <http://www.w3.org/ns/dcat#Catalog> ; <http://purl.org/dc/terms/title> "v2" .'
+
+    with _make_client() as client:
+        created = client.put("/catalog/c3", content=create, headers={"content-type": "text/turtle"})
+        assert created.status_code == 201
+        assert created.headers["location"] == canonical
+
+        # Re-PUT updates the existing record (If-Match from the current ETag).
+        etag = client.get("/catalog/c3").headers["etag"]
+        edited = client.put(
+            "/catalog/c3",
+            content=edit,
+            headers={"content-type": "text/turtle", "if-match": etag},
+        )
+        assert edited.status_code == 200  # PUT to an existing resource → update
+
+        got = client.get("/catalog/c3", headers={"accept": "text/turtle"})
+        assert got.status_code == 200
+
+    g = _graph(got.text)
+    canon = URIRef(canonical)
+    # The edit took effect…
+    assert {str(o) for o in g.objects(canon, DCT.title)} == {"v2"}
+    # …but the identifier is unchanged: canonical IRI is still the subject and the
+    # serving-host IRI never becomes one.
+    assert canon in set(g.subjects())
+    assert URIRef(serving_iri) not in set(g.subjects())
+
+
+def test_sameas_survives_a_content_edit(app_env: None) -> None:
+    """The dual-identifier ``owl:sameAs`` link is preserved across a re-edit."""
+    canonical = f"{IDENTIFIER_BASE}/catalog/c4"
+    foreign = "https://doi.org/10.1234/kept"
+    create = (
+        f"<{foreign}> a <http://www.w3.org/ns/dcat#Catalog> ; "
+        '<http://purl.org/dc/terms/title> "v1" .'
+    )
+    edit = (
+        f"<{foreign}> a <http://www.w3.org/ns/dcat#Catalog> ; "
+        '<http://purl.org/dc/terms/title> "v2" .'
+    )
+
+    with _make_client() as client:
+        created = client.put("/catalog/c4", content=create, headers={"content-type": "text/turtle"})
+        assert created.status_code == 201
+        etag = client.get("/catalog/c4").headers["etag"]
+        edited = client.put(
+            "/catalog/c4",
+            content=edit,
+            headers={"content-type": "text/turtle", "if-match": etag},
+        )
+        assert edited.status_code == 200  # PUT to an existing resource → update
+        got = client.get("/catalog/c4", headers={"accept": "text/turtle"})
+        assert got.status_code == 200
+
+    g = _graph(got.text)
+    canon = URIRef(canonical)
+    assert {str(o) for o in g.objects(canon, DCT.title)} == {"v2"}
+    assert (canon, OWL.sameAs, URIRef(foreign)) in g
+    assert URIRef(foreign) not in set(g.subjects())

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 
 import pytest
-from rdflib import Graph
+from rdflib import BNode, Graph, Literal, URIRef
 
-from fdp.metadata.pid.rebase import rebase_identifiers
+from fdp.metadata.pid.rebase import _rebased, _rewrite_term, rebase_identifiers
 
 OLD = "http://localhost:8000"
 NEW = "https://w3id.org/myfdp"
@@ -97,3 +97,50 @@ async def test_dry_run_writes_nothing() -> None:
     assert report.count == 1  # reported
     assert adapter.dropped == []  # but nothing changed
     assert catalog in adapter.graphs
+
+
+# --- pure IRI-matching helpers --------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (OLD, NEW),  # exact base match
+        (f"{OLD}/catalog/c1", f"{NEW}/catalog/c1"),  # path-separated descendant
+        (f"{OLD}#frag", f"{NEW}#frag"),  # fragment separator
+        (f"{OLD}?q=1", f"{NEW}?q=1"),  # query separator
+    ],
+)
+def test_rebased_rewrites_old_base(value: str, expected: str) -> None:
+    assert _rebased(value, OLD, NEW) == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://other.example/catalog/c1",  # unrelated base
+        f"{OLD}0/catalog",  # boundary guard: ":8000" must not match ":80000"
+        f"{OLD}xyz",  # string-prefix but no path/fragment/query separator
+        f"{NEW}/catalog/c1",  # already under the new base
+    ],
+)
+def test_rebased_leaves_unaffected_values(value: str) -> None:
+    assert _rebased(value, OLD, NEW) is None
+
+
+@pytest.mark.unit
+def test_rewrite_term_rewrites_uriref_under_old_base() -> None:
+    assert _rewrite_term(URIRef(f"{OLD}/x"), OLD, NEW) == URIRef(f"{NEW}/x")
+
+
+@pytest.mark.unit
+def test_rewrite_term_leaves_non_matching_terms_untouched() -> None:
+    # A Literal that merely *looks* like an old-base IRI is never rewritten.
+    lit = Literal(f"{OLD}/looks-like-a-uri")
+    assert _rewrite_term(lit, OLD, NEW) == lit
+    foreign = URIRef("https://example.org/x")
+    assert _rewrite_term(foreign, OLD, NEW) == foreign
+    bnode = BNode()
+    assert _rewrite_term(bnode, OLD, NEW) == bnode
