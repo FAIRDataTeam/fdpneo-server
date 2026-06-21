@@ -24,7 +24,6 @@ from fdp.metadata.autocomplete import (
     AutocompleteService,
     _parse_sparql_items,
     _resolve_inline,
-    _sparql_string_literal,
     build_autocomplete_router,
 )
 from fdp.metadata.settings import (
@@ -68,23 +67,6 @@ def _row(iri: str, label: str) -> dict[str, Any]:
         "iri": {"type": "uri", "value": iri},
         "label": {"type": "literal", "value": label},
     }
-
-
-# --- _sparql_string_literal ---------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("hello", '"hello"'),
-        ('with "quotes"', '"with \\"quotes\\""'),
-        ("line\nbreak", '"line\\nbreak"'),
-        ("back\\slash", '"back\\\\slash"'),
-    ],
-)
-def test_sparql_string_literal_escapes_safely(raw: str, expected: str) -> None:
-    assert _sparql_string_literal(raw) == expected
 
 
 # --- inline resolution ---------------------------------------------------

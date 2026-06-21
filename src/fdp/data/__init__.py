@@ -17,11 +17,12 @@ Non-responsibilities:
   is a v1.x increment.
 * Does *not* evaluate ODRL itself — calls the policy module.
 
-Public interface (planned):
+Public interface:
 
-* ``api`` — FastAPI router for distribution access.
-* ``streams`` — file streaming and redirect handlers.
-* ``per_distribution_sparql`` — scoped SPARQL endpoint per RDF distribution.
+* ``router.build_data_router`` — FastAPI router factory for distribution access:
+  streaming, redirect, and the per-distribution SPARQL endpoint.
+* ``distributions.resolve_distribution`` — resolve a distribution IRI to its
+  access info (``DistributionInfo``), backed by ``RecordReader``.
 
 See architecture section 5.6 and CLAUDE.md.
 """

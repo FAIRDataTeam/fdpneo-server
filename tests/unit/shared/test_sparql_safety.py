@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from fdp.shared.errors import BadRequest
-from fdp.shared.sparql_safety import assert_query_safe
+from fdp.shared.sparql_safety import assert_query_safe, sparql_string_literal
 
 
 @pytest.mark.unit
@@ -68,3 +68,17 @@ def test_rejects_empty_body() -> None:
 def test_rejects_malformed_query() -> None:
     with pytest.raises(BadRequest):
         assert_query_safe("SELECT WHERE not-valid-sparql {{{")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("hello", '"hello"'),
+        ('with "quotes"', '"with \\"quotes\\""'),
+        ("line\nbreak", '"line\\nbreak"'),
+        ("back\\slash", '"back\\\\slash"'),
+    ],
+)
+def test_sparql_string_literal_escapes_safely(raw: str, expected: str) -> None:
+    assert sparql_string_literal(raw) == expected

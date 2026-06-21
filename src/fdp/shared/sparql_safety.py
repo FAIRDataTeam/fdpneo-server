@@ -17,6 +17,7 @@ store?", never "who may see what".
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -67,6 +68,17 @@ def assert_query_safe(sparql: str) -> None:
     reject_service(prepared.algebra)
 
 
+def sparql_string_literal(value: str) -> str:
+    """Render ``value`` as a quoted SPARQL string literal.
+
+    JSON's string-escape rules are a safe subset of SPARQL's, so ``json.dumps``
+    produces a literal the SPARQL parser accepts unchanged. This is the safe
+    substitution path for caller-supplied values that must be interpolated into
+    a query (e.g. an autocomplete prefix or a free-text search needle).
+    """
+    return json.dumps(value)
+
+
 def walk_compvalues(node: Any) -> Iterator[CompValue]:
     """Yield ``node`` and every nested :class:`CompValue` descendant."""
     if isinstance(node, CompValue):
@@ -86,5 +98,6 @@ __all__ = [
     "SERVICE_REJECTED_MESSAGE",
     "assert_query_safe",
     "reject_service",
+    "sparql_string_literal",
     "walk_compvalues",
 ]

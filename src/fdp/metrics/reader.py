@@ -26,9 +26,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Date, Select, Subquery, case, cast, desc, distinct, func, select, union_all
+from sqlalchemy import Date, Select, Subquery, cast, desc, distinct, func, select, union_all
 
-from fdp.metrics.repository import MetricsDaily, MetricsHourly, MetricsRaw
+from fdp.metrics.repository import MetricsDaily, MetricsHourly, MetricsRaw, _status_class_sum
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,19 +72,6 @@ class CountryCount:
     country_code: str | None
     request_count: int
     unique_visitors: int
-
-
-def _status_class_sum(lower: int) -> Any:
-    """A ``SUM(CASE …)`` over raw rows counting one status class (e.g. 2xx)."""
-    return func.coalesce(
-        func.sum(
-            case(
-                ((MetricsRaw.status_code >= lower) & (MetricsRaw.status_code < lower + 100), 1),
-                else_=0,
-            )
-        ),
-        0,
-    )
 
 
 def _unified_window(since: date, until: date) -> Subquery:

@@ -187,6 +187,27 @@ class MetricsDaily(Base):
     )
 
 
+# --- aggregation helpers ----------------------------------------------------
+
+
+def _status_class_sum(lower: int) -> Any:
+    """A ``COALESCE(SUM(CASE …), 0)`` over raw rows counting one HTTP status class.
+
+    ``lower`` is the class floor (200, 300, 400, 500); the class spans
+    ``[lower, lower + 100)``. Shared by the hourly rollup (this module) and the
+    on-the-fly dashboard reader (:mod:`fdp.metrics.reader`).
+    """
+    return func.coalesce(
+        func.sum(
+            case(
+                ((MetricsRaw.status_code >= lower) & (MetricsRaw.status_code < lower + 100), 1),
+                else_=0,
+            )
+        ),
+        0,
+    )
+
+
 # --- repository -------------------------------------------------------------
 
 
@@ -243,48 +264,10 @@ class MetricsRepository:
         ``request_count``, distinct ``unique_visitors`` (ignoring NULL
         hashes), ``latency_ms_sum``, and the four status-class counts.
         """
-        status_2xx = func.coalesce(
-            func.sum(
-                case(
-                    (
-                        (MetricsRaw.status_code >= 200) & (MetricsRaw.status_code < 300),
-                        1,
-                    ),
-                    else_=0,
-                )
-            ),
-            0,
-        )
-        status_3xx = func.coalesce(
-            func.sum(
-                case(
-                    (
-                        (MetricsRaw.status_code >= 300) & (MetricsRaw.status_code < 400),
-                        1,
-                    ),
-                    else_=0,
-                )
-            ),
-            0,
-        )
-        status_4xx = func.coalesce(
-            func.sum(
-                case(
-                    (
-                        (MetricsRaw.status_code >= 400) & (MetricsRaw.status_code < 500),
-                        1,
-                    ),
-                    else_=0,
-                )
-            ),
-            0,
-        )
-        status_5xx = func.coalesce(
-            func.sum(
-                case((MetricsRaw.status_code >= 500, 1), else_=0),
-            ),
-            0,
-        )
+        status_2xx = _status_class_sum(200)
+        status_3xx = _status_class_sum(300)
+        status_4xx = _status_class_sum(400)
+        status_5xx = _status_class_sum(500)
         stmt = (
             select(
                 MetricsRaw.event_type,

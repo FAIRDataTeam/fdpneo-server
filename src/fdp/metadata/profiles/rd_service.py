@@ -28,7 +28,6 @@ import json
 from typing import TYPE_CHECKING, Protocol
 
 import structlog
-from rdflib import Graph
 
 from fdp.metadata.profiles.rd_records import (
     RD_SHAPE_IRI,
@@ -40,7 +39,7 @@ from fdp.metadata.profiles.rd_records import (
 from fdp.metadata.profiles.registry import ResourceDefinitionCache, resolve_cache
 from fdp.shared.graphs import record_graph_uri, resource_definition_graph_uri
 from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, SH
-from fdp.storage.triplestore.adapter import SPARQL_JSON, TURTLE
+from fdp.storage.triplestore.adapter import SPARQL_JSON, construct_named_graph
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -72,7 +71,7 @@ async def load_definition_records(
     """Read and parse every resource-definition record from the store."""
     records: list[ResourceDefinitionRecord] = []
     for iri in await list_definition_iris(adapter):
-        graph = await _fetch_graph(adapter, iri)
+        graph = await construct_named_graph(adapter, str(record_graph_uri(iri)))
         records.append(record_from_graph(graph, iri))
     return records
 
@@ -89,16 +88,6 @@ async def build_cache_from_repository(
     """
     records = await load_definition_records(adapter)
     return resolve_cache(records, base_url=base_url.rstrip("/"))
-
-
-async def _fetch_graph(adapter: TripleStoreAdapter, iri: str) -> Graph:
-    graph_uri = record_graph_uri(iri)
-    sparql = f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}"
-    body = await adapter.query(sparql, accept=TURTLE)
-    graph = Graph()
-    if body:
-        graph.parse(data=body.decode("utf-8"), format="turtle")
-    return graph
 
 
 # --- mutation coordinator --------------------------------------------------

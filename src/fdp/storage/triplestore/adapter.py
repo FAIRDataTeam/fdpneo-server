@@ -284,6 +284,27 @@ class TripleStoreAdapter:
         return data.serialize(format=_rdflib_format_for(mime)).encode("utf-8")
 
 
+async def construct_named_graph(adapter: TripleStoreAdapter, graph_uri: str) -> Graph:
+    """Fetch every triple in a single named graph as an in-memory :class:`Graph`.
+
+    Runs ``CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <graph_uri> { ?s ?p ?o } }`` through
+    the adapter and parses the result, returning an empty graph when the named graph
+    holds no triples. ``graph_uri`` must be a server-owned graph URI — it is
+    interpolated into the query and must never be caller-supplied input.
+
+    A free function rather than a method so it composes over any object providing
+    :meth:`TripleStoreAdapter.query` (test doubles need not reimplement it).
+    """
+    body = await adapter.query(
+        f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}",
+        accept=TURTLE,
+    )
+    graph = Graph()
+    if body:
+        graph.parse(data=body.decode("utf-8"), format="turtle")
+    return graph
+
+
 def _dataset_params(
     default_graph_uris: Sequence[str],
     named_graph_uris: Sequence[str],
@@ -327,4 +348,11 @@ def _rdflib_format_for(mime: str) -> str:
     return mapping.get(mime, "turtle")
 
 
-__all__ = ["SPARQL_JSON", "SPARQL_QUERY", "SPARQL_UPDATE", "TURTLE", "TripleStoreAdapter"]
+__all__ = [
+    "SPARQL_JSON",
+    "SPARQL_QUERY",
+    "SPARQL_UPDATE",
+    "TURTLE",
+    "TripleStoreAdapter",
+    "construct_named_graph",
+]

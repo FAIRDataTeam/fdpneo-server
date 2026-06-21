@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Annotated, Final
 import structlog
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from rdflib import Graph, Literal
+from rdflib import Literal
 
 from fdp.identity.deps import require_auth
 from fdp.metadata.events import RecordStateChanged
@@ -39,6 +39,7 @@ from fdp.shared.context import RequestContext
 from fdp.shared.errors import Conflict, Forbidden, NotFound
 from fdp.shared.graphs import meta_graph_uri, record_graph_uri
 from fdp.shared.namespaces import DCT, FDP_METADATA_STATE
+from fdp.storage.triplestore.adapter import construct_named_graph
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -274,21 +275,11 @@ class StateService:
         """
         meta_uri = str(meta_graph_uri(record_iri))
         subj = record_graph_uri(record_iri)
-        graph = await self._construct(meta_uri)
+        graph = await construct_named_graph(self._adapter, meta_uri)
         graph.set((subj, FDP_METADATA_STATE, Literal(to.value)))
         if self._clock is not None:
             graph.set((subj, DCT.modified, Literal(self._clock())))
         await self._adapter.replace_graph(meta_uri, graph.serialize(format="nt"), mime=_NT)
-
-    async def _construct(self, graph_uri: str) -> Graph:
-        body = await self._adapter.query(
-            f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}",
-            accept="text/turtle",
-        )
-        graph = Graph()
-        if body:
-            graph.parse(data=body.decode("utf-8"), format="turtle")
-        return graph
 
 
 # --- router ----------------------------------------------------------------

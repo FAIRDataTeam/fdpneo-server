@@ -35,6 +35,7 @@ from fdp.metadata.graphs import (
 )
 from fdp.metadata.meta import MetaResult, MetaWriter
 from fdp.metadata.states import DEFAULT_STATE, MetadataState
+from fdp.storage.triplestore.adapter import construct_named_graph
 
 if TYPE_CHECKING:
     from fdp.metadata.shacl import ShaclValidator
@@ -74,13 +75,7 @@ class MetadataRepository:
         caller (LDP layer) decides whether that is a 404 by also checking
         the meta graph for ``dct:created``.
         """
-        graph_uri = record_graph_uri(record_uri)
-        sparql = f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}"
-        body = await self._adapter.query(sparql, accept="text/turtle")
-        graph = Graph()
-        if body:
-            graph.parse(data=body.decode("utf-8"), format="turtle")
-        return graph
+        return await construct_named_graph(self._adapter, str(record_graph_uri(record_uri)))
 
     async def get_meta(self, record_uri: str | URIRef) -> Graph:
         """Fetch the record's meta graph (provenance, version, state).
@@ -88,7 +83,7 @@ class MetadataRepository:
         Public read of the ``<record>/meta`` sibling — used by the search
         indexer to pull ``fdp:metadataState`` and ``dct:modified``.
         """
-        return await self._get_meta(meta_graph_uri(record_uri))
+        return await construct_named_graph(self._adapter, str(meta_graph_uri(record_uri)))
 
     # --- write --------------------------------------------------------------
 
@@ -114,26 +109,6 @@ class MetadataRepository:
         await self._refresh_meta(record_uri, subject=subject, initial_state=initial_state)
         return compute_etag(graph)
 
-    async def patch_graph(
-        self,
-        record_uri: str | URIRef,
-        sparql_update: str,
-        *,
-        subject: str | None,
-    ) -> str:
-        """Execute ``sparql_update`` then refresh meta and return the new ETag.
-
-        The update body is run verbatim against the triple store. The LDP
-        layer no longer uses this path — its PATCH handler simulates
-        locally and commits via :meth:`put_graph`. ``patch_graph`` stays
-        as the lower-level escape hatch for the SPARQL endpoint (ticket
-        3.x).
-        """
-        await self._adapter.update(sparql_update)
-        await self._refresh_meta(record_uri, subject=subject)
-        new_graph = await self.get_graph(record_uri)
-        return compute_etag(new_graph)
-
     async def delete_graph(self, record_uri: str | URIRef) -> None:
         """Drop the record graph and both siblings.
 
@@ -158,7 +133,7 @@ class MetadataRepository:
         subject: str | None,
         initial_state: MetadataState = DEFAULT_STATE,
     ) -> MetaResult:
-        prior = await self._get_meta(meta_graph_uri(record_uri))
+        prior = await construct_named_graph(self._adapter, str(meta_graph_uri(record_uri)))
         return await self._meta.write(
             self._adapter,
             record_iri=record_uri,
@@ -167,14 +142,6 @@ class MetadataRepository:
             now=self._clock(),
             initial_state=initial_state,
         )
-
-    async def _get_meta(self, meta_uri: URIRef) -> Graph:
-        sparql = f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{meta_uri}> {{ ?s ?p ?o }} }}"
-        body = await self._adapter.query(sparql, accept="text/turtle")
-        graph = Graph()
-        if body:
-            graph.parse(data=body.decode("utf-8"), format="turtle")
-        return graph
 
 
 __all__ = ["MetadataRepository"]
