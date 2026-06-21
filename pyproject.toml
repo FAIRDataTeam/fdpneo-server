@@ -47,9 +47,6 @@ dependencies = [
   "asyncpg>=0.29",
   "alembic>=1.13",
 
-  # Background jobs
-  "arq>=0.26",
-
   # Observability
   "structlog>=24.2",
   "opentelemetry-api>=1.27",

@@ -40,16 +40,11 @@ def upgrade() -> None:
         "profile_applied",
         sa.Column("applied_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.add_column(
-        "profile_applied", sa.Column("manifest_checksum", sa.String(64), nullable=False)
-    )
+    op.add_column("profile_applied", sa.Column("manifest_checksum", sa.String(64), nullable=False))
     # Forces a single applied profile at a time. Using a partial unique
     # index on a constant lets us express "at most one row" without
     # picking an arbitrary value to be unique on.
-    op.execute(
-        "CREATE UNIQUE INDEX ux_profile_applied_singleton "
-        "ON profile_applied ((true))"
-    )
+    op.execute("CREATE UNIQUE INDEX ux_profile_applied_singleton ON profile_applied ((true))")
 
 
 def downgrade() -> None:

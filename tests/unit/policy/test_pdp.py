@@ -109,6 +109,11 @@ class FakeCache:
             del self.rows[k]
         return len(keys)
 
+    async def invalidate_all(self) -> int:
+        dropped = len(self.rows)
+        self.rows.clear()
+        return dropped
+
 
 def _empty_offer_map() -> dict[str, Offer | None]:
     return {}
@@ -270,36 +275,14 @@ async def test_authorized_graphs_excludes_internal_graphs() -> None:
 
 
 @pytest.mark.unit
-async def test_invalidate_resource_drops_cached_rows() -> None:
+async def test_invalidate_all_drops_cached_rows() -> None:
     pdp, cache, _ = _pdp(offers={RESOURCE: _permitting_offer()})
     await pdp.authorize(_ctx(subject=ALICE), Action.READ, RESOURCE)
     assert len(cache.rows) == 1
 
-    dropped = await pdp.invalidate_resource(RESOURCE)
+    dropped = await pdp.invalidate_all()
     assert dropped == 1
     assert cache.rows == {}
-
-
-@pytest.mark.unit
-async def test_invalidate_subject_drops_only_that_subjects_rows() -> None:
-    pdp, cache, _ = _pdp(
-        offers={
-            "https://example.org/r1": _permitting_offer(),
-            "https://example.org/r2": _permitting_offer(),
-        }
-    )
-    alice = _ctx(subject=ALICE)
-    await pdp.authorize(alice, Action.READ, "https://example.org/r1")
-    await pdp.authorize(alice, Action.READ, "https://example.org/r2")
-    # Different subject_key (anonymous) → separate rows
-    await pdp.authorize(_ctx(subject=None), Action.READ, "https://example.org/r1")
-    assert len(cache.rows) == 3
-
-    dropped = await pdp.invalidate_subject(alice)
-    assert dropped == 2
-    assert len(cache.rows) == 1
-    [remaining] = cache.rows.values()
-    assert remaining.subject_key == ANONYMOUS_SUBJECT_KEY
 
 
 @pytest.mark.unit
@@ -307,7 +290,7 @@ async def test_cache_miss_after_invalidation_recomputes() -> None:
     pdp, _cache, resolver = _pdp(offers={RESOURCE: _permitting_offer()})
     ctx = _ctx(subject=ALICE)
     await pdp.authorize(ctx, Action.READ, RESOURCE)
-    await pdp.invalidate_resource(RESOURCE)
+    await pdp.invalidate_all()
 
     resolver.calls.clear()
     decision = await pdp.authorize(ctx, Action.READ, RESOURCE)

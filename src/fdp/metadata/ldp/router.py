@@ -187,9 +187,7 @@ def build_ldp_router(
         """Apply the dual identifier model when a PID base is configured."""
         if _id_base is None:
             return graph
-        return reconcile_identifiers(
-            graph, canonical_iri=canonical_iri, identifier_base=_id_base
-        )
+        return reconcile_identifiers(graph, canonical_iri=canonical_iri, identifier_base=_id_base)
 
     async def _publish(event: Event) -> None:
         if event_bus is None:

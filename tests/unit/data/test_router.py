@@ -44,9 +44,7 @@ class _FakePDP:
     )
     calls: list[tuple[bool, str, str]] = field(default_factory=list)
 
-    async def authorize(
-        self, ctx: RequestContext, action: Action, resource_iri: str
-    ) -> Decision:
+    async def authorize(self, ctx: RequestContext, action: Action, resource_iri: str) -> Decision:
         self.calls.append((ctx.is_anonymous, action.value, resource_iri))
         return self.decision
 
@@ -187,9 +185,7 @@ _INTERNAL_UPSTREAM = "http://169.254.169.254/latest/meta-data/"
 
 @pytest.mark.unit
 def test_download_streams_upstream_bytes_in_stream_mode() -> None:
-    repo = _FakeRepo(
-        graphs={DIST_IRI: _distribution_graph(download_url=_PUBLIC_UPSTREAM)}
-    )
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph(download_url=_PUBLIC_UPSTREAM)})
 
     with respx.mock(assert_all_called=True) as mock:
         mock.get(_PUBLIC_UPSTREAM).mock(
@@ -218,9 +214,7 @@ def test_download_streams_upstream_bytes_in_stream_mode() -> None:
 def test_stream_mode_blocks_internal_download_url_with_502() -> None:
     # An attacker-supplied downloadURL pointing at the cloud-metadata service
     # is rejected up front (audit N-02) — the proxy never issues the request.
-    repo = _FakeRepo(
-        graphs={DIST_IRI: _distribution_graph(download_url=_INTERNAL_UPSTREAM)}
-    )
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph(download_url=_INTERNAL_UPSTREAM)})
     with respx.mock(assert_all_called=False) as mock:
         route = mock.get(_INTERNAL_UPSTREAM).mock(
             return_value=httpx.Response(200, content=b"secrets")
@@ -243,9 +237,7 @@ def test_stream_mode_blocks_internal_download_url_with_502() -> None:
 def test_stream_mode_does_not_follow_redirect_to_internal_host() -> None:
     # A public upstream that 302s inward must not be followed — each hop is
     # re-validated (audit N-02). The body is truncated rather than fetched.
-    repo = _FakeRepo(
-        graphs={DIST_IRI: _distribution_graph(download_url=_PUBLIC_UPSTREAM)}
-    )
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph(download_url=_PUBLIC_UPSTREAM)})
     with respx.mock(assert_all_called=False) as mock:
         mock.get(_PUBLIC_UPSTREAM).mock(
             return_value=httpx.Response(302, headers={"location": _INTERNAL_UPSTREAM})
@@ -380,9 +372,7 @@ def test_sparql_get_rejects_service_clause_without_forwarding() -> None:
     client = TestClient(app)
     response = client.get(
         f"/data/{DIST_ID}/sparql",
-        params={
-            "query": "SELECT * WHERE { SERVICE <http://169.254.169.254/> { ?s ?p ?o } }"
-        },
+        params={"query": "SELECT * WHERE { SERVICE <http://169.254.169.254/> { ?s ?p ?o } }"},
     )
     assert response.status_code == 400
     assert response.json()["code"] == "fdp.bad_request"

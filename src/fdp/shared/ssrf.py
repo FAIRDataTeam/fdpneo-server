@@ -78,9 +78,7 @@ async def assert_public_url(
         raise UpstreamError("download URL host is not on the egress allow-list")
     for address in await _resolve(host, parts.port):
         if not _is_public_ip(address):
-            raise UpstreamError(
-                "download URL resolves to a non-public address (SSRF blocked)"
-            )
+            raise UpstreamError("download URL resolves to a non-public address (SSRF blocked)")
 
 
 async def _resolve(host: str, port: int | None) -> list[_IpAddress]:
@@ -110,7 +108,9 @@ async def _resolve(host: str, port: int | None) -> list[_IpAddress]:
         try:
             addresses.append(ipaddress.ip_address(ip_str))
         except ValueError as err:
-            raise UpstreamError(f"download URL resolved to an unparseable address: {ip_str}") from err
+            raise UpstreamError(
+                f"download URL resolved to an unparseable address: {ip_str}"
+            ) from err
     if not addresses:
         raise UpstreamError(f"download URL host did not resolve: {host}")
     return addresses

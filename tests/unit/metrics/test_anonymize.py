@@ -203,25 +203,19 @@ def test_different_envelopes_hash_differently() -> None:
 def test_subject_is_never_in_sample_string_representation() -> None:
     """Subject must not leak into the output, even via repr() coincidence."""
     raw = _raw(subject="https://idp/alice-secret-handle")
-    sample = anonymize(
-        raw, geo=_geo_us(), salt_rotator=_rotator(), counting_enabled=True
-    )
+    sample = anonymize(raw, geo=_geo_us(), salt_rotator=_rotator(), counting_enabled=True)
     assert "alice-secret-handle" not in repr(sample)
 
 
 @pytest.mark.unit
 def test_ip_is_never_in_sample_string_representation() -> None:
     raw = _raw(ip="203.0.113.42")
-    sample = anonymize(
-        raw, geo=_geo_us(), salt_rotator=_rotator(), counting_enabled=True
-    )
+    sample = anonymize(raw, geo=_geo_us(), salt_rotator=_rotator(), counting_enabled=True)
     assert "203.0.113.42" not in repr(sample)
 
 
 @pytest.mark.unit
 def test_user_agent_is_never_in_sample_string_representation() -> None:
     raw = _raw(user_agent="MyDistinctiveAgent/1.0")
-    sample = anonymize(
-        raw, geo=_geo_us(), salt_rotator=_rotator(), counting_enabled=True
-    )
+    sample = anonymize(raw, geo=_geo_us(), salt_rotator=_rotator(), counting_enabled=True)
     assert "MyDistinctiveAgent" not in repr(sample)

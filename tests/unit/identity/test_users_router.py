@@ -90,9 +90,7 @@ def _seed() -> _FakeDirectory:
             ADMIN_ID: UserInfo(
                 id=ADMIN_ID, username="admin", email="a@x", roles=["admin", "steward"]
             ),
-            STEWARD_ID: UserInfo(
-                id=STEWARD_ID, username="alice", email="al@x", roles=["steward"]
-            ),
+            STEWARD_ID: UserInfo(id=STEWARD_ID, username="alice", email="al@x", roles=["steward"]),
         }
     )
 
@@ -133,7 +131,9 @@ def _admin() -> RequestContext:
 
 
 def _steward() -> RequestContext:
-    return RequestContext(subject=f"{ISSUER}#{STEWARD_ID}", roles=frozenset({"steward"}), trace_id="t")
+    return RequestContext(
+        subject=f"{ISSUER}#{STEWARD_ID}", roles=frozenset({"steward"}), trace_id="t"
+    )
 
 
 def _anon() -> RequestContext:

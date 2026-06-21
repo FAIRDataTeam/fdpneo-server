@@ -39,10 +39,6 @@ class TripleStoreSettings(BaseSettings):
     username: str | None = None
     password: SecretStr | None = None
 
-    # Capability flags - opted into per backend
-    supports_repository_management: bool = False  # e.g., GraphDB
-    supports_named_graph_sync: bool = False
-
     # Read timeout (seconds) for SPARQL query/update HTTP calls. Bounds how long
     # a single query can run before the store call is aborted — a DoS control
     # (audit R-02). Connect/write/pool keep their built-in defaults.

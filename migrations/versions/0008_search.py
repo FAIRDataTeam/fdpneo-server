@@ -55,9 +55,7 @@ def upgrade() -> None:
     op.create_index("ix_metadata_search_license", "metadata_search", ["license"])
     op.create_index("ix_metadata_search_updated_at", "metadata_search", ["updated_at"])
     # The dominant anonymous query filters on these two together.
-    op.create_index(
-        "ix_metadata_search_visibility", "metadata_search", ["state", "anon_read"]
-    )
+    op.create_index("ix_metadata_search_visibility", "metadata_search", ["state", "anon_read"])
 
     op.create_table(
         "search_saved_queries",
@@ -68,12 +66,8 @@ def upgrade() -> None:
         sa.Column("shared", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index(
-        "ix_search_saved_queries_owner", "search_saved_queries", ["owner_subject"]
-    )
-    op.create_index(
-        "ix_search_saved_queries_shared", "search_saved_queries", ["shared"]
-    )
+    op.create_index("ix_search_saved_queries_owner", "search_saved_queries", ["owner_subject"])
+    op.create_index("ix_search_saved_queries_shared", "search_saved_queries", ["shared"])
 
 
 def downgrade() -> None:

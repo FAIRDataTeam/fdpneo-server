@@ -148,22 +148,16 @@ async def _check_postgres(
             )
     except Exception as exc:
         return CheckOutcome(status="fail", error=_short_error(exc))
-    return CheckOutcome(
-        status="ok", latency_ms=int((time.perf_counter() - start) * 1000)
-    )
+    return CheckOutcome(status="ok", latency_ms=int((time.perf_counter() - start) * 1000))
 
 
 async def _check_triplestore(adapter: TripleStoreAdapter) -> CheckOutcome:
     start = time.perf_counter()
     try:
-        await asyncio.wait_for(
-            adapter.ask("ASK { ?s ?p ?o }"), timeout=_PROBE_TIMEOUT_SECONDS
-        )
+        await asyncio.wait_for(adapter.ask("ASK { ?s ?p ?o }"), timeout=_PROBE_TIMEOUT_SECONDS)
     except Exception as exc:
         return CheckOutcome(status="fail", error=_short_error(exc))
-    return CheckOutcome(
-        status="ok", latency_ms=int((time.perf_counter() - start) * 1000)
-    )
+    return CheckOutcome(status="ok", latency_ms=int((time.perf_counter() - start) * 1000))
 
 
 async def _check_oidc(
@@ -179,18 +173,12 @@ async def _check_oidc(
     start = time.perf_counter()
     url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
     try:
-        response = await asyncio.wait_for(
-            http_client.get(url), timeout=_PROBE_TIMEOUT_SECONDS
-        )
+        response = await asyncio.wait_for(http_client.get(url), timeout=_PROBE_TIMEOUT_SECONDS)
     except Exception as exc:
         return CheckOutcome(status="fail", error=_short_error(exc))
     if response.status_code >= 400:
-        return CheckOutcome(
-            status="fail", error=f"discovery returned HTTP {response.status_code}"
-        )
-    return CheckOutcome(
-        status="ok", latency_ms=int((time.perf_counter() - start) * 1000)
-    )
+        return CheckOutcome(status="fail", error=f"discovery returned HTTP {response.status_code}")
+    return CheckOutcome(status="ok", latency_ms=int((time.perf_counter() - start) * 1000))
 
 
 def _short_error(exc: BaseException) -> str:
@@ -246,11 +234,7 @@ def build_readiness_router(
             response.status_code = 503
             log.warning(
                 "readiness_probe_failed",
-                checks={
-                    name: c.error
-                    for name, c in checks.items()
-                    if c.status == "fail"
-                },
+                checks={name: c.error for name, c in checks.items() if c.status == "fail"},
             )
         return report
 

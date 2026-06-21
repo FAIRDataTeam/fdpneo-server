@@ -22,6 +22,7 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0012](0012-first-class-odrl-policy-and-license-documents.md) | First-class ODRL policy and license documents | Accepted |
 | [0013](0013-user-management-facade.md) | User-management facade over the IdP Admin API | Accepted |
 | [0014](0014-persistent-identifiers.md) | Persistent identifiers — base/serving split, dual model, W3ID | Accepted |
+| [0015](0015-form-grouping-presentation-overlay.md) | Cross-schema form grouping via a presentation overlay | Proposed |
 
 ## Format
 

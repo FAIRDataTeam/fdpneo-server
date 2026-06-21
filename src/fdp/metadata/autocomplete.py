@@ -103,9 +103,7 @@ class AutocompleteService:
                 "prefix too long",
                 details={"max": _MAX_PREFIX_LENGTH},
             )
-        sources_model = await self._settings.read_with_default(
-            "forms.autocomplete-sources"
-        )
+        sources_model = await self._settings.read_with_default("forms.autocomplete-sources")
         assert isinstance(sources_model, AutocompleteSources)
         src = next((s for s in sources_model.sources if s.name == source), None)
         if src is None:
@@ -131,9 +129,9 @@ class AutocompleteService:
     ) -> list[AutocompleteResultItem]:
         if not source.sparql:
             return []
-        sparql = source.sparql.replace(
-            "${PREFIX}", _sparql_string_literal(prefix)
-        ).replace("${LIMIT}", str(limit))
+        sparql = source.sparql.replace("${PREFIX}", _sparql_string_literal(prefix)).replace(
+            "${LIMIT}", str(limit)
+        )
         # If the source's SPARQL doesn't include its own LIMIT, append
         # one defensively so a malformed source can't fan out to
         # millions of bindings.
@@ -180,9 +178,7 @@ def _parse_sparql_items(
         if not iri or not label or iri in seen_iris:
             continue
         seen_iris.add(iri)
-        items.append(
-            AutocompleteResultItem(iri=iri, label=label, source=source_name)
-        )
+        items.append(AutocompleteResultItem(iri=iri, label=label, source=source_name))
         if len(items) >= limit:
             break
     return items

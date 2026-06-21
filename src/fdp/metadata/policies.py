@@ -68,6 +68,7 @@ class _CacheInvalidatingPDP(Protocol):
 
     async def invalidate_all(self) -> int: ...
 
+
 log = structlog.get_logger(__name__)
 
 _ADMIN_ROLE: Final = "admin"

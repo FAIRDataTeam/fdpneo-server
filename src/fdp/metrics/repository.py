@@ -367,14 +367,10 @@ class MetricsRepository:
                 "request_count": MetricsHourly.request_count + stmt.excluded.request_count,
                 "unique_visitors": MetricsHourly.unique_visitors + stmt.excluded.unique_visitors,
                 "latency_ms_sum": MetricsHourly.latency_ms_sum + stmt.excluded.latency_ms_sum,
-                "status_2xx_count": MetricsHourly.status_2xx_count
-                + stmt.excluded.status_2xx_count,
-                "status_3xx_count": MetricsHourly.status_3xx_count
-                + stmt.excluded.status_3xx_count,
-                "status_4xx_count": MetricsHourly.status_4xx_count
-                + stmt.excluded.status_4xx_count,
-                "status_5xx_count": MetricsHourly.status_5xx_count
-                + stmt.excluded.status_5xx_count,
+                "status_2xx_count": MetricsHourly.status_2xx_count + stmt.excluded.status_2xx_count,
+                "status_3xx_count": MetricsHourly.status_3xx_count + stmt.excluded.status_3xx_count,
+                "status_4xx_count": MetricsHourly.status_4xx_count + stmt.excluded.status_4xx_count,
+                "status_5xx_count": MetricsHourly.status_5xx_count + stmt.excluded.status_5xx_count,
             },
         )
         await self._session.execute(stmt)
@@ -410,9 +406,7 @@ class MetricsRepository:
                 MetricsHourly.region,
                 MetricsHourly.city,
                 func.coalesce(func.sum(MetricsHourly.request_count), 0).label("request_count"),
-                func.coalesce(func.sum(MetricsHourly.unique_visitors), 0).label(
-                    "unique_visitors"
-                ),
+                func.coalesce(func.sum(MetricsHourly.unique_visitors), 0).label("unique_visitors"),
                 func.coalesce(func.sum(MetricsHourly.latency_ms_sum), 0).label("latency_ms_sum"),
                 func.coalesce(func.sum(MetricsHourly.status_2xx_count), 0).label(
                     "status_2xx_count"

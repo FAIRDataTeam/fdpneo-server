@@ -144,10 +144,7 @@ def test_inline_matches_aliases_too() -> None:
 def test_inline_honours_limit() -> None:
     src = _src(
         "x",
-        [
-            AutocompleteItem(iri=f"urn:{i}", label=f"Item {i}")
-            for i in range(20)
-        ],
+        [AutocompleteItem(iri=f"urn:{i}", label=f"Item {i}") for i in range(20)],
     )
     items = _resolve_inline(src, prefix="", limit=5)
     assert len(items) == 5
@@ -204,7 +201,7 @@ async def test_service_substitutes_prefix_safely_into_sparql(
                 AutocompleteSource(
                     name="publisher",
                     kind="sparql",
-                    sparql='ASK { FILTER(STR(?iri) = ${PREFIX}) }\nLIMIT ${LIMIT}',
+                    sparql="ASK { FILTER(STR(?iri) = ${PREFIX}) }\nLIMIT ${LIMIT}",
                 )
             ]
         ),
@@ -323,14 +320,8 @@ async def test_router_rejects_invalid_limit(session_factory: Any) -> None:
         adapter=_FakeAdapter(),  # type: ignore[arg-type]
     )
     client = TestClient(_build_app(service))
-    assert (
-        client.get("/forms/autocomplete?source=license&limit=0").status_code
-        == 422
-    )
-    assert (
-        client.get("/forms/autocomplete?source=license&limit=999").status_code
-        == 422
-    )
+    assert client.get("/forms/autocomplete?source=license&limit=0").status_code == 422
+    assert client.get("/forms/autocomplete?source=license&limit=999").status_code == 422
 
 
 @pytest.mark.unit

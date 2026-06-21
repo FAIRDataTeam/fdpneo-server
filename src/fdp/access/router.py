@@ -53,7 +53,6 @@ from fdp.policy.model import Action
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
     BadRequest,
-    MethodNotAllowed,
     NotAcceptable,
     ServiceUnavailable,
     Unauthenticated,
@@ -221,11 +220,6 @@ async def _extract_post_body(request: Request) -> str:
             "supported": [_SPARQL_QUERY, _SPARQL_UPDATE, _FORM_ENCODED],
         },
     )
-
-
-# Re-export so callers importing the module's symbols don't have to know
-# which exception types the router raises.
-_ = MethodNotAllowed
 
 
 __all__ = ["build_sparql_router"]

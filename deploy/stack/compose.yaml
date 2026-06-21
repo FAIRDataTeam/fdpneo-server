@@ -90,7 +90,7 @@ services:
     healthcheck:
       test:
         - "CMD-SHELL"
-        - "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
+        - "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
       interval: 10s
       timeout: 5s
       retries: 18
@@ -120,10 +120,11 @@ services:
       FDP_TRIPLESTORE_QUERY_ENDPOINT: http://graphdb:7200/repositories/fdp
       FDP_TRIPLESTORE_UPDATE_ENDPOINT: http://graphdb:7200/repositories/fdp/statements
       FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT: http://graphdb:7200/repositories/fdp/rdf-graphs/service
-      FDP_TRIPLESTORE_SUPPORTS_REPOSITORY_MANAGEMENT: "true"
       FDP_OIDC_ISSUER: http://${PUBLIC_HOST:-localhost}:${KEYCLOAK_PORT:-8081}/realms/fdp-dev
       FDP_OIDC_AUDIENCE: ${FDP_OIDC_AUDIENCE:-fdp}
-      FDP_CORS_ALLOW_ORIGINS: http://${PUBLIC_HOST:-localhost}:${CLIENT_PORT:-8080}
+      # Containerized client (CLIENT_PORT) plus the Vite dev server origins, so
+      # `npm run dev` (5173) can hit this stack's API without a CORS rejection.
+      FDP_CORS_ALLOW_ORIGINS: http://${PUBLIC_HOST:-localhost}:${CLIENT_PORT:-8080},http://localhost:5173,http://127.0.0.1:5173
       FDP_CORS_ALLOW_CREDENTIALS: "true"
       # Enable the /fdp-api/users IdP-admin facade (confidential service account).
       FDP_IDP_ADMIN_CLIENT_ID: ${FDP_IDP_ADMIN_CLIENT_ID:-fdp-server}

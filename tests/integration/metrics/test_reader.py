@@ -106,9 +106,7 @@ def reader(session: AsyncSession) -> MetricsReader:
 
 
 @pytest.mark.integration
-async def test_summary_aggregates_full_range(
-    seeded: None, reader: MetricsReader
-) -> None:
+async def test_summary_aggregates_full_range(seeded: None, reader: MetricsReader) -> None:
     del seeded
     totals = await reader.summary(since=date(2026, 5, 29), until=date(2026, 5, 31))
     # 5 + 10 + 20 + 8 + 12 + 4
@@ -122,9 +120,7 @@ async def test_summary_aggregates_full_range(
 
 
 @pytest.mark.integration
-async def test_summary_respects_date_window(
-    seeded: None, reader: MetricsReader
-) -> None:
+async def test_summary_respects_date_window(seeded: None, reader: MetricsReader) -> None:
     del seeded
     totals = await reader.summary(since=date(2026, 5, 30), until=date(2026, 5, 30))
     assert totals.request_count == 30
@@ -132,9 +128,7 @@ async def test_summary_respects_date_window(
 
 
 @pytest.mark.integration
-async def test_summary_filters_by_resource(
-    seeded: None, reader: MetricsReader
-) -> None:
+async def test_summary_filters_by_resource(seeded: None, reader: MetricsReader) -> None:
     del seeded
     totals = await reader.summary(
         since=date(2026, 5, 29),
@@ -146,9 +140,7 @@ async def test_summary_filters_by_resource(
 
 
 @pytest.mark.integration
-async def test_summary_filters_by_event_type(
-    seeded: None, reader: MetricsReader
-) -> None:
+async def test_summary_filters_by_event_type(seeded: None, reader: MetricsReader) -> None:
     del seeded
     totals = await reader.summary(
         since=date(2026, 5, 29),
@@ -206,13 +198,9 @@ async def test_top_resources_orders_descending_and_excludes_null(
 
 
 @pytest.mark.integration
-async def test_top_resources_respects_limit(
-    seeded: None, reader: MetricsReader
-) -> None:
+async def test_top_resources_respects_limit(seeded: None, reader: MetricsReader) -> None:
     del seeded
-    rows = await reader.top_resources(
-        since=date(2026, 5, 29), until=date(2026, 5, 31), limit=1
-    )
+    rows = await reader.top_resources(since=date(2026, 5, 29), until=date(2026, 5, 31), limit=1)
     assert len(rows) == 1
     assert rows[0].resource_iri == "https://example.org/r1"
 
@@ -221,9 +209,7 @@ async def test_top_resources_respects_limit(
 
 
 @pytest.mark.integration
-async def test_geography_aggregates_per_country(
-    seeded: None, reader: MetricsReader
-) -> None:
+async def test_geography_aggregates_per_country(seeded: None, reader: MetricsReader) -> None:
     del seeded
     rows = await reader.geography(since=date(2026, 5, 29), until=date(2026, 5, 31))
     by_country = {r.country_code: r for r in rows}
@@ -298,9 +284,7 @@ async def test_summary_unions_daily_hourly_and_raw(
 
 
 @pytest.mark.integration
-async def test_daily_series_spans_all_tiers(
-    seeded_all_tiers: None, reader: MetricsReader
-) -> None:
+async def test_daily_series_spans_all_tiers(seeded_all_tiers: None, reader: MetricsReader) -> None:
     del seeded_all_tiers
     points = await reader.daily_series(since=date(2026, 6, 8), until=date(2026, 6, 11))
     by_day = {p.bucket: p.request_count for p in points}

@@ -134,9 +134,7 @@ def pipeline_factory(factory: _FakeSessionFactory) -> Iterator[Any]:
 
 
 @pytest.mark.unit
-async def test_start_subscribes_to_request_observed(
-    bus: EventBus, pipeline_factory: Any
-) -> None:
+async def test_start_subscribes_to_request_observed(bus: EventBus, pipeline_factory: Any) -> None:
     pipeline = pipeline_factory()
     pipeline.start(bus)
     try:
@@ -154,9 +152,7 @@ async def test_stop_drops_the_subscription(bus: EventBus, pipeline_factory: Any)
 
 
 @pytest.mark.unit
-async def test_disabled_pipeline_does_not_subscribe(
-    bus: EventBus, pipeline_factory: Any
-) -> None:
+async def test_disabled_pipeline_does_not_subscribe(bus: EventBus, pipeline_factory: Any) -> None:
     pipeline = pipeline_factory(enabled=False)
     pipeline.start(bus)
     assert bus.subscriber_count(RequestObserved) == 0

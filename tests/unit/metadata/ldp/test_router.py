@@ -881,7 +881,9 @@ async def test_post_to_leaf_returns_405_with_allow_header() -> None:
     await _seed_record(repo, RECORD_IRI)
     app = _build_app(repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry(set()))
     with TestClient(app) as client:
-        r = client.post(RECORD_PATH, content="<a:a> <a:b> <a:c> .", headers={"Content-Type": TURTLE})
+        r = client.post(
+            RECORD_PATH, content="<a:a> <a:b> <a:c> .", headers={"Content-Type": TURTLE}
+        )
     assert r.status_code == 405
     allow = r.headers["Allow"]
     assert "GET" in allow and "PUT" in allow
@@ -890,9 +892,7 @@ async def test_post_to_leaf_returns_405_with_allow_header() -> None:
 
 async def test_post_unsupported_media_type_advertises_accept_post() -> None:
     repo, _ = _make_repo()
-    app = _build_app(
-        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
-    )
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI}))
     with TestClient(app) as client:
         r = client.post(
             CONTAINER_PATH, content="<a/>", headers={"Content-Type": "application/x-tar"}
@@ -914,9 +914,7 @@ async def test_patch_unsupported_media_type_advertises_accept_patch() -> None:
 async def test_get_container_advertises_vary_prefer() -> None:
     repo, _ = _make_repo()
     await _seed_container_with_member(repo, CONTAINER_IRI + "/d1")
-    app = _build_app(
-        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
-    )
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI}))
     with TestClient(app) as client:
         r = client.get(CONTAINER_PATH, headers={"Accept": TURTLE})
     assert r.status_code == 200
@@ -929,9 +927,7 @@ async def test_get_container_prefer_omits_containment_and_membership() -> None:
     repo, _ = _make_repo()
     member = CONTAINER_IRI + "/d1"
     await _seed_container_with_member(repo, member)
-    app = _build_app(
-        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
-    )
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI}))
     prefer = (
         'return=representation; omit="http://www.w3.org/ns/ldp#PreferContainment '
         'http://www.w3.org/ns/ldp#PreferMembership"'
@@ -955,9 +951,7 @@ async def test_get_container_prefer_minimal_container_omits_both() -> None:
     repo, _ = _make_repo()
     member = CONTAINER_IRI + "/d1"
     await _seed_container_with_member(repo, member)
-    app = _build_app(
-        repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI})
-    )
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=FixedContainerRegistry({CONTAINER_IRI}))
     prefer = 'return=representation; include="http://www.w3.org/ns/ldp#PreferMinimalContainer"'
     with TestClient(app) as client:
         r = client.get(CONTAINER_PATH, headers={"Accept": TURTLE, "Prefer": prefer})

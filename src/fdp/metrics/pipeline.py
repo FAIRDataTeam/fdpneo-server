@@ -45,7 +45,15 @@ class MetricsPipeline:
     fakes; the FastAPI lifespan wires the real ones.
     """
 
-    __slots__ = ("_bus", "_counting_enabled", "_enabled", "_geo", "_salt", "_session_factory", "_sub")
+    __slots__ = (
+        "_bus",
+        "_counting_enabled",
+        "_enabled",
+        "_geo",
+        "_salt",
+        "_session_factory",
+        "_sub",
+    )
 
     def __init__(
         self,

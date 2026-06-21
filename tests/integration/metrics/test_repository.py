@@ -53,9 +53,7 @@ def _sample(
 
 
 @pytest.mark.integration
-async def test_insert_raw_persists_one_row(
-    repo: MetricsRepository, session: AsyncSession
-) -> None:
+async def test_insert_raw_persists_one_row(repo: MetricsRepository, session: AsyncSession) -> None:
     await repo.insert_raw(_sample())
     await session.commit()
     assert await repo.count_raw() == 1
@@ -119,9 +117,7 @@ async def test_aggregate_raw_distinct_ignores_null_visitor_hash(
 
 
 @pytest.mark.integration
-async def test_aggregate_raw_status_classes(
-    repo: MetricsRepository, session: AsyncSession
-) -> None:
+async def test_aggregate_raw_status_classes(repo: MetricsRepository, session: AsyncSession) -> None:
     await repo.insert_raw(_sample(status_code=200))
     await repo.insert_raw(_sample(status_code=204))
     await repo.insert_raw(_sample(status_code=301))
@@ -172,9 +168,7 @@ async def test_upsert_hourly_inserts_then_increments(
     await session.commit()
 
     row = (
-        await session.execute(
-            select(MetricsHourly).where(MetricsHourly.bucket == H0)
-        )
+        await session.execute(select(MetricsHourly).where(MetricsHourly.bucket == H0))
     ).scalar_one()
     assert row.request_count == 15
     assert row.unique_visitors == 6
