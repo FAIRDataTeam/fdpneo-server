@@ -9,7 +9,7 @@ SPARQL has two answer shapes:
 
 This module picks the right format per query form using the standard
 Accept-header negotiation rules from
-:mod:`fdp.metadata.ldp.negotiation`, but with a query-form-aware
+:mod:`fdp.shared.negotiation`, but with a query-form-aware
 candidate set so a ``SELECT`` never accidentally gets a Turtle response.
 
 Default media types when the client sends no Accept header — or only
@@ -22,7 +22,7 @@ Default media types when the client sends no Accept header — or only
 from __future__ import annotations
 
 from fdp.access.parser import QueryForm
-from fdp.metadata.ldp.negotiation import (
+from fdp.shared.negotiation import (
     JSON_LD,
     N_TRIPLES,
     RDF_XML,

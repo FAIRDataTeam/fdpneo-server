@@ -7,7 +7,7 @@ Public surface:
   :class:`ContainerRegistry` into a FastAPI router.
 
 See :mod:`fdp.metadata.ldp.router` for routing semantics and
-:mod:`fdp.metadata.ldp.negotiation` for content negotiation.
+:mod:`fdp.shared.negotiation` for content negotiation.
 """
 
 from fdp.metadata.ldp.router import (

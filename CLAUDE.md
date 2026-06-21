@@ -23,7 +23,7 @@ The server is a **modular monolith** with four bounded contexts. Respect the bou
 
 | Module | Owns | Imports allowed |
 |---|---|---|
-| `identity/` | OIDC, request context | shared |
+| `identity/` | OIDC, request context | shared, storage |
 | `metadata/` | LDP server, records, schemas, SHACL | shared, storage, identity, policy |
 | `policy/` | ODRL PDP, authorization cache | shared, storage |
 | `access/` | SPARQL endpoint, query rewriting | shared, storage, policy, identity |
@@ -38,7 +38,9 @@ The top-level composition root (`config.py`, `main.py`) is exempt from this tabl
 
 **Why `metadata`/`access`/`metrics` may import `identity` and `policy`:** these modules host the HTTP handlers that act as Policy Enforcement Points. A PEP resolves the request `identity` (the `current_context`/`require_auth` deps) and asks `policy` for a decision through the `authorize` protocol and its `Action`/`Outcome` model types. This is the *only* sanctioned cross-context coupling — it goes through those public interfaces, never into a module's internals, and no module evaluates ODRL outside `policy`.
 
-**The shared kernel is for genuinely cross-cutting concerns only.** RDF utilities, namespace registry, event bus, identity context, error types, structured logging. If you're tempted to add something here, ask whether it really crosses contexts or whether it belongs inside one of them.
+**Why table-owning contexts may import `storage`:** `identity`, `metadata`, `policy`, and `metrics` each own Postgres tables and define their ORM models against the shared declarative `Base` (and `AwareDateTime`) in `storage.postgres`. Importing those is the sanctioned way to own a table — it is not reaching into another context's data.
+
+**The shared kernel is for genuinely cross-cutting concerns only.** RDF utilities (content negotiation, namespace registry), event bus, identity context, error types, structured logging. If you're tempted to add something here, ask whether it really crosses contexts or whether it belongs inside one of them.
 
 ## Critical invariants
 

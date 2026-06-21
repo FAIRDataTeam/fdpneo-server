@@ -46,15 +46,6 @@ from fdp.metadata.etag import compute_etag
 from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.identifiers import reconcile_identifiers
-from fdp.metadata.ldp.negotiation import (
-    SPARQL_UPDATE,
-    SUPPORTED_TYPES,
-    TURTLE,
-    normalize_content_type,
-    parse as parse_rdf,
-    select_media_type,
-    serialize,
-)
 from fdp.metadata.patch import simulate_update
 from fdp.metadata.profiles.applier import direct_container_config
 from fdp.policy.model import Action, Outcome
@@ -73,6 +64,15 @@ from fdp.shared.errors import (
 )
 from fdp.shared.identifiers import canonicalize
 from fdp.shared.namespaces import LDP as LDP_NS
+from fdp.shared.negotiation import (
+    SPARQL_UPDATE,
+    SUPPORTED_TYPES,
+    TURTLE,
+    normalize_content_type,
+    parse as parse_rdf,
+    select_media_type,
+    serialize,
+)
 
 if TYPE_CHECKING:
     from fdp.metadata.containment import ContainmentManager
