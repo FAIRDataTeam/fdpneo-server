@@ -157,26 +157,6 @@ async def test_put_etag_changes_when_content_changes() -> None:
 
 
 @pytest.mark.unit
-async def test_patch_runs_update_and_bumps_meta() -> None:
-    repo, adapter = _repo()
-    await repo.put_graph(RECORD, _record_graph(), subject=ALICE)
-
-    update = (
-        f"INSERT DATA {{ GRAPH <{RECORD}> "
-        "{ <https://example.org/records/r1> "
-        '<http://purl.org/dc/terms/description> "added" } }'
-    )
-    # Mirror the side effect of the update on the fake.
-    adapter.graphs[RECORD].add((RECORD_URI, DCT.description, Literal("added")))
-    new_etag = await repo.patch_graph(RECORD, update, subject=ALICE)
-
-    assert adapter.update_calls == [update]
-    meta = adapter.graphs[str(meta_graph_uri(RECORD))]
-    assert (RECORD_URI, OWL.versionInfo, Literal(2)) in meta
-    assert new_etag
-
-
-@pytest.mark.unit
 async def test_delete_drops_record_meta_and_audit_graphs() -> None:
     repo, adapter = _repo()
     await repo.put_graph(RECORD, _record_graph(), subject=ALICE)

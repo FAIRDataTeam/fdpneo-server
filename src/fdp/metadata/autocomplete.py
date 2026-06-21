@@ -45,6 +45,7 @@ from fdp.metadata.settings import (
     SettingsRepository,
 )
 from fdp.shared.errors import BadRequest, NotFound
+from fdp.shared.sparql_safety import sparql_string_literal
 
 if TYPE_CHECKING:
     from fdp.storage.triplestore.adapter import TripleStoreAdapter
@@ -129,7 +130,7 @@ class AutocompleteService:
     ) -> list[AutocompleteResultItem]:
         if not source.sparql:
             return []
-        sparql = source.sparql.replace("${PREFIX}", _sparql_string_literal(prefix)).replace(
+        sparql = source.sparql.replace("${PREFIX}", sparql_string_literal(prefix)).replace(
             "${LIMIT}", str(limit)
         )
         # If the source's SPARQL doesn't include its own LIMIT, append
@@ -182,16 +183,6 @@ def _parse_sparql_items(
         if len(items) >= limit:
             break
     return items
-
-
-def _sparql_string_literal(value: str) -> str:
-    """Render ``value`` as a SPARQL ``"..."`` string literal.
-
-    JSON's escape rules are a subset of SPARQL's, so ``json.dumps``
-    produces a literal that the SPARQL parser accepts unchanged. This
-    is the safe substitution path for caller-supplied prefixes.
-    """
-    return json.dumps(value)
 
 
 # --- router --------------------------------------------------------------

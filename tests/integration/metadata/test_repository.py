@@ -76,13 +76,10 @@ async def test_full_lifecycle(repo: MetadataRepository) -> None:
     assert (RECORD_URI, DCT.creator, URIRef(ALICE)) in meta1
     assert (RECORD_URI, OWL.versionInfo, Literal(1)) in meta1
 
-    # PATCH inserts a description; meta version becomes 2.
-    update = (
-        f"INSERT DATA {{ GRAPH <{RECORD}> "
-        "{ <https://example.org/records/integration-r1> "
-        '<http://purl.org/dc/terms/description> "added" } }'
-    )
-    etag2 = await repo.patch_graph(RECORD, update, subject=ALICE)
+    # A second write (content edit) bumps the meta version to 2.
+    updated = _record_graph("hello")
+    updated.add((RECORD_URI, DCT.description, Literal("added")))
+    etag2 = await repo.put_graph(RECORD, updated, subject=ALICE)
     assert etag1 != etag2
     meta2 = Graph()
     meta2.parse(

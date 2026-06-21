@@ -220,8 +220,13 @@ class InternalError(FDPError):
     docs_url = _DOCS_BASE + "fdp.internal_error"
 
 
-def _envelope(exc: FDPError) -> dict[str, object]:
-    """The documented error JSON: ``{code, message, docs_url, details}``."""
+def error_envelope(exc: FDPError) -> dict[str, object]:
+    """The documented error JSON: ``{code, message, docs_url, details}``.
+
+    Single source of truth for the error-response body. ASGI middlewares that
+    must emit an error before the FastAPI handler chain runs (auth, rate limit,
+    body-size) build their bytes from this so the envelope shape never drifts.
+    """
     return {
         "code": exc.code,
         "message": exc.message,
@@ -242,7 +247,7 @@ async def fdp_error_handler(_request: Request, exc: FDPError) -> JSONResponse:
     )
     return JSONResponse(
         status_code=exc.http_status,
-        content=_envelope(exc),
+        content=error_envelope(exc),
         headers=exc.headers or None,
     )
 
@@ -277,7 +282,7 @@ class CatchAllExceptionMiddleware:
         except FDPError as exc:
             if started:
                 raise
-            await _send_envelope(send, exc.http_status, _envelope(exc), exc.headers)
+            await _send_envelope(send, exc.http_status, error_envelope(exc), exc.headers)
         except Exception as exc:
             ctx = get_current()
             log.error(
@@ -289,7 +294,7 @@ class CatchAllExceptionMiddleware:
             if started:
                 raise
             err = InternalError("an internal error occurred")
-            await _send_envelope(send, err.http_status, _envelope(err))
+            await _send_envelope(send, err.http_status, error_envelope(err))
 
 
 async def _send_envelope(
@@ -339,6 +344,7 @@ __all__ = [
     "Unauthenticated",
     "UnsupportedMediaType",
     "UpstreamError",
+    "error_envelope",
     "fdp_error_handler",
     "register_exception_handlers",
 ]

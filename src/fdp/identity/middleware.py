@@ -39,7 +39,7 @@ from jwt import InvalidTokenError
 from fdp.identity.api_keys import TOKEN_PREFIX
 from fdp.identity.jwks import JWKSError
 from fdp.shared.context import RequestContext, reset_current, set_current
-from fdp.shared.errors import Unauthenticated
+from fdp.shared.errors import Unauthenticated, error_envelope
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -255,14 +255,7 @@ async def _send_envelope(send: Send, exc: Unauthenticated, trace_id: str) -> Non
         message=exc.message,
         trace_id=trace_id,
     )
-    body = json.dumps(
-        {
-            "code": exc.code,
-            "message": exc.message,
-            "docs_url": exc.docs_url,
-            "details": None,
-        }
-    ).encode("utf-8")
+    body = json.dumps(error_envelope(exc)).encode("utf-8")
     start: Message = {
         "type": "http.response.start",
         "status": exc.http_status,

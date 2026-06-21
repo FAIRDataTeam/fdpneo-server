@@ -19,7 +19,7 @@ import json
 import time
 from typing import TYPE_CHECKING, Final
 
-from fdp.shared.errors import PayloadTooLarge, TooManyRequests
+from fdp.shared.errors import PayloadTooLarge, TooManyRequests, error_envelope
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,9 +47,7 @@ async def _send_envelope(
     *,
     extra_headers: tuple[tuple[bytes, bytes], ...] = (),
 ) -> None:
-    body = json.dumps(
-        {"code": error.code, "message": error.message, "docs_url": error.docs_url, "details": None}
-    ).encode("utf-8")
+    body = json.dumps(error_envelope(error)).encode("utf-8")
     headers = [(b"content-type", b"application/json"), *extra_headers]
     await send({"type": "http.response.start", "status": error.http_status, "headers": headers})
     await send({"type": "http.response.body", "body": body})

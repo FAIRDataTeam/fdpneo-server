@@ -43,6 +43,7 @@ from fdp.identity.deps import current_context
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest
+from fdp.shared.sparql_safety import sparql_string_literal
 
 if TYPE_CHECKING:
     from fdp.metadata.lifecycle import StateGate
@@ -207,7 +208,7 @@ def _instances_where(cls: str, q: str | None) -> str:
     coalesce = ", ".join(f"?l{i}" for i in range(len(_LABEL_IRIS)))
     body = f" GRAPH ?s {{ ?s <{_RDF_TYPE}> <{cls}> .{labels} BIND(COALESCE({coalesce}) AS ?lbl) }}"
     if q:
-        needle = _sparql_literal(q.lower())
+        needle = sparql_string_literal(q.lower())
         body += f" FILTER(CONTAINS(LCASE(STR(COALESCE(?lbl, STR(?s)))), {needle}))"
     return body
 
@@ -219,11 +220,6 @@ def _label_of(row: dict[str, dict[str, str]], iri: str) -> str:
         return label
     tail = re.split(r"[#/]", iri.rstrip("#/"))[-1]
     return tail or iri
-
-
-def _sparql_literal(value: str) -> str:
-    """Render ``value`` as a SPARQL string literal (JSON escaping is a safe subset)."""
-    return json.dumps(value)
 
 
 # --- router ----------------------------------------------------------------

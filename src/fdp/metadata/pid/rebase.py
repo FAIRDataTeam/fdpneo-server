@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 import structlog
 from rdflib import Graph, URIRef
 
-from fdp.storage.triplestore.adapter import TripleStoreAdapter
+from fdp.storage.triplestore.adapter import TripleStoreAdapter, construct_named_graph
 
 __all__ = ["RebaseReport", "rebase_identifiers"]
 
@@ -86,18 +86,6 @@ async def _list_graphs(adapter: TripleStoreAdapter) -> list[str]:
     return [b["g"]["value"] for b in bindings if "g" in b]
 
 
-async def _read_graph(adapter: TripleStoreAdapter, graph_uri: str) -> Graph:
-    # Controlled input: graph_uri comes from the store's own graph list, mirroring
-    # repository.get_graph's interpolation of server-owned graph URIs.
-    body = await adapter.query(
-        f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}",
-        accept="application/n-triples",
-    )
-    graph = Graph()
-    graph.parse(data=body, format="nt")
-    return graph
-
-
 async def rebase_identifiers(
     *,
     adapter: TripleStoreAdapter,
@@ -131,7 +119,7 @@ async def rebase_identifiers(
         report.moved.append((graph_uri, new_uri))
         if dry_run:
             continue
-        rewritten = _rewrite_graph(await _read_graph(adapter, graph_uri), old, new)
+        rewritten = _rewrite_graph(await construct_named_graph(adapter, graph_uri), old, new)
         await adapter.replace_graph(
             new_uri, rewritten.serialize(format="nt"), mime="application/n-triples"
         )
