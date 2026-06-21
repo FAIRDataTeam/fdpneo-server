@@ -53,8 +53,7 @@ def test_parse_extracts_from_clauses_as_default_graphs() -> None:
 @pytest.mark.unit
 def test_parse_extracts_from_named_clauses_as_named_graphs() -> None:
     result = parse(
-        f"SELECT * FROM NAMED <{G1}> FROM NAMED <{G2}> "
-        "WHERE { GRAPH ?g { ?s ?p ?o } }"
+        f"SELECT * FROM NAMED <{G1}> FROM NAMED <{G2}> WHERE {{ GRAPH ?g {{ ?s ?p ?o }} }}"
     )
     assert isinstance(result, ParsedRead)
     assert result.explicit_default_graphs == ()
@@ -82,10 +81,7 @@ def test_parse_ignores_variable_graph_pattern() -> None:
 
 @pytest.mark.unit
 def test_parse_distinguishes_from_named_from_inline_graph() -> None:
-    body = (
-        f"SELECT * FROM NAMED <{G1}> "
-        f"WHERE {{ GRAPH <{G1}> {{ ?s ?p ?o }} }}"
-    )
+    body = f"SELECT * FROM NAMED <{G1}> WHERE {{ GRAPH <{G1}> {{ ?s ?p ?o }} }}"
     result = parse(body)
     assert isinstance(result, ParsedRead)
     # FROM NAMED stays in its own bucket; the inline ref stays in its own.
@@ -96,10 +92,7 @@ def test_parse_distinguishes_from_named_from_inline_graph() -> None:
 
 @pytest.mark.unit
 def test_parse_deduplicates_repeated_inline_graph() -> None:
-    body = (
-        f"SELECT * WHERE {{ GRAPH <{G1}> {{ ?s ?p ?o }} . "
-        f"GRAPH <{G1}> {{ ?x ?y ?z }} }}"
-    )
+    body = f"SELECT * WHERE {{ GRAPH <{G1}> {{ ?s ?p ?o }} . GRAPH <{G1}> {{ ?x ?y ?z }} }}"
     result = parse(body)
     assert isinstance(result, ParsedRead)
     assert result.inline_graph_iris == (G1,)
@@ -169,12 +162,7 @@ def test_delete_where_with_graph_yields_target() -> None:
 
 @pytest.mark.unit
 def test_modify_with_with_clause_yields_target() -> None:
-    body = (
-        f"WITH <{G1}> "
-        'DELETE { <a> <b> ?o } '
-        'INSERT { <a> <b> "new" } '
-        "WHERE { <a> <b> ?o }"
-    )
+    body = f'WITH <{G1}> DELETE {{ <a> <b> ?o }} INSERT {{ <a> <b> "new" }} WHERE {{ <a> <b> ?o }}'
     result = parse(body)
     assert isinstance(result, ParsedUpdate)
     assert result.targets == (G1,)
@@ -188,10 +176,7 @@ def test_modify_without_with_or_inline_graph_is_rejected() -> None:
 
 @pytest.mark.unit
 def test_modify_with_inline_graph_in_templates_yields_targets() -> None:
-    body = (
-        f"INSERT {{ GRAPH <{G1}> {{ ?s ?p ?o }} }} "
-        f"WHERE {{ GRAPH <{G2}> {{ ?s ?p ?o }} }}"
-    )
+    body = f"INSERT {{ GRAPH <{G1}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{G2}> {{ ?s ?p ?o }} }}"
     result = parse(body)
     assert isinstance(result, ParsedUpdate)
     assert result.targets == (G1,)
@@ -265,10 +250,7 @@ def test_multi_operation_update_aggregates_targets_in_order() -> None:
 
 @pytest.mark.unit
 def test_multi_operation_update_rejects_any_ambiguous_op() -> None:
-    body = (
-        f"INSERT DATA {{ GRAPH <{G1}> {{ <a> <b> <c> }} }} ; "
-        "DELETE DATA { <a> <b> <c> }"
-    )
+    body = f"INSERT DATA {{ GRAPH <{G1}> {{ <a> <b> <c> }} }} ; DELETE DATA {{ <a> <b> <c> }}"
     with pytest.raises(BadRequest, match="DeleteData requires explicit graph targets"):
         parse(body)
 

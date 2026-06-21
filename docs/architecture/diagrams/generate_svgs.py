@@ -53,10 +53,10 @@ def write_svg(name: str, width: int, height: int, body: str) -> Path:
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">\n'
-        f'  {STYLE}\n'
+        f"  {STYLE}\n"
         f'  <rect class="bg" width="{width}" height="{height}"/>\n'
-        f'  {body}\n'
-        f'</svg>\n'
+        f"  {body}\n"
+        f"</svg>\n"
     )
     path.write_text(svg)
     return path

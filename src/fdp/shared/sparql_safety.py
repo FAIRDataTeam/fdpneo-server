@@ -27,8 +27,7 @@ from fdp.shared.errors import BadRequest
 
 SERVICE_REJECTED_MESSAGE = "SERVICE clauses are not supported (no federation in v1)"
 LOAD_REJECTED_MESSAGE = (
-    "LOAD is not permitted: its source URL would be fetched by the "
-    "triple store (SSRF risk)"
+    "LOAD is not permitted: its source URL would be fetched by the triple store (SSRF risk)"
 )
 
 

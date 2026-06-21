@@ -168,11 +168,26 @@ def _default_autocomplete_sources() -> AutocompleteSources:
                 kind="inline",
                 description="Common distribution media types",
                 items=[
-                    AutocompleteItem(iri="https://www.iana.org/assignments/media-types/text/csv", label="text/csv"),
-                    AutocompleteItem(iri="https://www.iana.org/assignments/media-types/application/json", label="application/json"),
-                    AutocompleteItem(iri="https://www.iana.org/assignments/media-types/text/turtle", label="text/turtle"),
-                    AutocompleteItem(iri="https://www.iana.org/assignments/media-types/application/ld+json", label="application/ld+json"),
-                    AutocompleteItem(iri="https://www.iana.org/assignments/media-types/application/x-parquet", label="application/x-parquet"),
+                    AutocompleteItem(
+                        iri="https://www.iana.org/assignments/media-types/text/csv",
+                        label="text/csv",
+                    ),
+                    AutocompleteItem(
+                        iri="https://www.iana.org/assignments/media-types/application/json",
+                        label="application/json",
+                    ),
+                    AutocompleteItem(
+                        iri="https://www.iana.org/assignments/media-types/text/turtle",
+                        label="text/turtle",
+                    ),
+                    AutocompleteItem(
+                        iri="https://www.iana.org/assignments/media-types/application/ld+json",
+                        label="application/ld+json",
+                    ),
+                    AutocompleteItem(
+                        iri="https://www.iana.org/assignments/media-types/application/x-parquet",
+                        label="application/x-parquet",
+                    ),
                 ],
             ),
             AutocompleteSource(
@@ -237,9 +252,7 @@ class _AwareDateTime(TypeDecorator[datetime]):
     impl = DateTime(timezone=True)
     cache_ok = True
 
-    def process_result_value(
-        self, value: datetime | None, dialect: Any
-    ) -> datetime | None:
+    def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
         del dialect
         if value is None:
             return None
@@ -277,9 +290,7 @@ class SettingsRepository:
     the "key has no override" branch.
     """
 
-    def __init__(
-        self, *, session_factory: async_sessionmaker[AsyncSession]
-    ) -> None:
+    def __init__(self, *, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
     @property
@@ -327,9 +338,7 @@ class SettingsRepository:
         async with self._session_factory() as session:
             stmt = select(RuntimeSettingRow)
             rows = (await session.execute(stmt)).scalars().all()
-        overrides: dict[str, dict[str, Any]] = {
-            row.key: row.value_json for row in rows
-        }
+        overrides: dict[str, dict[str, Any]] = {row.key: row.value_json for row in rows}
         result: dict[str, BaseModel] = {}
         for key, registered in SETTINGS_REGISTRY.items():
             raw = overrides.get(key)
@@ -347,9 +356,7 @@ class SettingsRepository:
                 result[key] = registered.default
         return result
 
-    async def write(
-        self, key: str, value: BaseModel, *, subject: str | None
-    ) -> None:
+    async def write(self, key: str, value: BaseModel, *, subject: str | None) -> None:
         """Upsert ``key`` with ``value``. ``value`` must match the registered schema.
 
         The repository accepts a *validated* model instance — the router
@@ -412,18 +419,14 @@ class SettingsRepository:
         override rows removed. Audit-logged via structlog.
         """
         async with self._session_factory() as session:
-            result = cast(
-                "CursorResult[Any]", await session.execute(delete(RuntimeSettingRow))
-            )
+            result = cast("CursorResult[Any]", await session.execute(delete(RuntimeSettingRow)))
             await session.commit()
         removed = result.rowcount or 0
         log.info("settings_cleared_all", removed=removed, subject=subject)
         return removed
 
     @staticmethod
-    async def _fetch(
-        session: AsyncSession, key: str
-    ) -> RuntimeSettingRow | None:
+    async def _fetch(session: AsyncSession, key: str) -> RuntimeSettingRow | None:
         stmt = select(RuntimeSettingRow).where(RuntimeSettingRow.key == key)
         return (await session.execute(stmt)).scalar_one_or_none()
 

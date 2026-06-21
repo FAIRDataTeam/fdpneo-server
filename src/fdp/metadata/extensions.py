@@ -157,15 +157,11 @@ def build_extensions_router(
 
     # --- /expanded (PDP-gated; record + ancestors via dct:isPartOf) -----
 
-    async def _read_authorised(
-        ctx: RequestContext, resource_iri: str
-    ) -> None:
+    async def _read_authorised(ctx: RequestContext, resource_iri: str) -> None:
         decision = await pdp.authorize(ctx, Action.READ, resource_iri)
         if decision.outcome is not Outcome.PERMIT:
             if ctx.is_anonymous:
-                raise Unauthenticated(
-                    f"authentication required for read on {resource_iri}"
-                )
+                raise Unauthenticated(f"authentication required for read on {resource_iri}")
             raise PolicyViolation(
                 f"policy denies read on {resource_iri}",
                 details={"action": "read", "resource": resource_iri},
@@ -235,9 +231,7 @@ def build_extensions_router(
         cache = cache_provider()
         if cache is None or cache.by_prefix(url_prefix) is None:
             raise NotFound(f"unknown resource type: {url_prefix}")
-        return await _serve_expanded(
-            f"{base}/{url_prefix}/{record_id}", ctx, request
-        )
+        return await _serve_expanded(f"{base}/{url_prefix}/{record_id}", ctx, request)
 
     # --- /page (PDP-gated; paginated children listing) ------------------
 
@@ -262,13 +256,10 @@ def build_extensions_router(
             None,
         )
         if link is None:
-            raise NotFound(
-                f"{parent_rd.name} has no child link to '{child_prefix}'"
-            )
+            raise NotFound(f"{parent_rd.name} has no child link to '{child_prefix}'")
         parent_graph = await repo.get_graph(parent_iri)
         children = sorted(
-            str(o)
-            for o in parent_graph.objects(URIRef(parent_iri), URIRef(link.relation_uri))
+            str(o) for o in parent_graph.objects(URIRef(parent_iri), URIRef(link.relation_uri))
         )
         total = len(children)
         page = children[offset : offset + limit]
@@ -312,9 +303,7 @@ def build_extensions_router(
             "X-FDP-Page-Offset": str(offset),
             "X-FDP-Page-Limit": str(limit),
         }
-        return Response(
-            content=body, status_code=200, media_type=media, headers=headers
-        )
+        return Response(content=body, status_code=200, media_type=media, headers=headers)
 
     @router.get("/page/{child_prefix}", name="ext_root_page")
     async def root_page(  # pyright: ignore[reportUnusedFunction]

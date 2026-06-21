@@ -216,9 +216,7 @@ def test_record_minted_under_identifier_base_resolves_via_serving_host(app_env: 
 
     with _make_client() as client:
         # Created on the serving host…
-        created = client.put(
-            "/catalog/c1", content=body, headers={"content-type": "text/turtle"}
-        )
+        created = client.put("/catalog/c1", content=body, headers={"content-type": "text/turtle"})
         assert created.status_code == 201
         # …but the canonical identity is the IDENTIFIER_BASE IRI.
         assert created.headers["location"] == canonical
@@ -243,9 +241,7 @@ def test_foreign_identifier_preserved_as_sameas(app_env: None) -> None:
     )
 
     with _make_client() as client:
-        created = client.put(
-            "/catalog/c2", content=body, headers={"content-type": "text/turtle"}
-        )
+        created = client.put("/catalog/c2", content=body, headers={"content-type": "text/turtle"})
         assert created.status_code == 201
         got = client.get("/catalog/c2", headers={"accept": "text/turtle"})
         assert got.status_code == 200

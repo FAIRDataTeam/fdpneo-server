@@ -24,7 +24,9 @@ class _FakeRepo:
         return self.graph
 
 
-def _graph(*, with_download: bool = True, with_access: bool = True, with_rights: bool = True) -> Graph:
+def _graph(
+    *, with_download: bool = True, with_access: bool = True, with_rights: bool = True
+) -> Graph:
     g = Graph()
     subject = URIRef(DIST)
     g.add((subject, DCAT.Distribution, URIRef("https://example.org/type")))  # marker triple
@@ -53,13 +55,15 @@ async def test_resolve_returns_all_three_properties() -> None:
 @pytest.mark.unit
 async def test_resolve_has_download_and_access_flags_track_presence() -> None:
     info = await resolve_distribution(
-        DIST, repository=_FakeRepo(_graph(with_download=False))  # type: ignore[arg-type]
+        DIST,
+        repository=_FakeRepo(_graph(with_download=False)),  # type: ignore[arg-type]
     )
     assert info.has_download is False
     assert info.has_access is True
 
     info = await resolve_distribution(
-        DIST, repository=_FakeRepo(_graph(with_access=False))  # type: ignore[arg-type]
+        DIST,
+        repository=_FakeRepo(_graph(with_access=False)),  # type: ignore[arg-type]
     )
     assert info.has_download is True
     assert info.has_access is False
@@ -95,9 +99,7 @@ async def test_resolve_raises_not_found_for_empty_graph() -> None:
 async def test_resolve_picks_one_object_when_multiple_present() -> None:
     """Multi-valued downloadURL is out of v1 scope; the resolver picks one."""
     g = _graph()
-    g.add(
-        (URIRef(DIST), DCAT.downloadURL, URIRef("https://files.example.org/alt.csv"))
-    )
+    g.add((URIRef(DIST), DCAT.downloadURL, URIRef("https://files.example.org/alt.csv")))
     info = await resolve_distribution(DIST, repository=_FakeRepo(g))  # type: ignore[arg-type]
     assert info.download_url in (
         "https://files.example.org/d1.csv",

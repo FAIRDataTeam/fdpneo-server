@@ -212,9 +212,7 @@ def test_instance_spec_returns_same_shape_as_type_spec() -> None:
 def test_spec_is_anonymous() -> None:
     """Anonymous callers must reach /spec — it's pre-login form data."""
     repo = _FakeRepo({CATALOG_SCHEMA: _shape_graph(CATALOG_SCHEMA)})
-    app = _build_app(
-        repo=repo, pdp=_FakePDP(), cache=_two_level_cache(), ctx=_ctx(anonymous=True)
-    )
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache(), ctx=_ctx(anonymous=True))
     response = TestClient(app).get("/catalog/spec")
     assert response.status_code == 200
 
@@ -248,9 +246,7 @@ def test_spec_returns_404_when_shape_graph_empty() -> None:
 def test_spec_negotiates_jsonld() -> None:
     repo = _FakeRepo({CATALOG_SCHEMA: _shape_graph(CATALOG_SCHEMA)})
     app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
-    response = TestClient(app).get(
-        "/catalog/spec", headers={"Accept": "application/ld+json"}
-    )
+    response = TestClient(app).get("/catalog/spec", headers={"Accept": "application/ld+json"})
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/ld+json")
 
@@ -263,9 +259,7 @@ def test_expanded_includes_record_and_parent_via_dct_ispartof() -> None:
     catalog_iri = f"{BASE_URL}/catalog/c-1"
     repo = _FakeRepo(
         {
-            catalog_iri: _record_graph(
-                catalog_iri, parent_iri=BASE_URL + "/", title="My Catalog"
-            ),
+            catalog_iri: _record_graph(catalog_iri, parent_iri=BASE_URL + "/", title="My Catalog"),
             BASE_URL + "/": _record_graph(BASE_URL + "/", title="My Repository"),
         }
     )
@@ -286,9 +280,7 @@ def test_expanded_drops_ancestors_the_caller_cannot_read() -> None:
     parent_iri = BASE_URL + "/"
     repo = _FakeRepo(
         {
-            catalog_iri: _record_graph(
-                catalog_iri, parent_iri=parent_iri, title="Visible"
-            ),
+            catalog_iri: _record_graph(catalog_iri, parent_iri=parent_iri, title="Visible"),
             parent_iri: _record_graph(parent_iri, title="Secret"),
         }
     )
@@ -388,9 +380,7 @@ def test_page_honours_limit_and_offset() -> None:
 def test_page_drops_children_the_caller_cannot_read() -> None:
     repo = _repo_with_catalogs(3)
     forbidden = f"{BASE_URL}/catalog/c-01"
-    app = _build_app(
-        repo=repo, pdp=_FakePDP(denied={forbidden}), cache=_two_level_cache()
-    )
+    app = _build_app(repo=repo, pdp=_FakePDP(denied={forbidden}), cache=_two_level_cache())
     response = TestClient(app).get("/page/catalog")
     assert response.status_code == 200
     g = Graph()

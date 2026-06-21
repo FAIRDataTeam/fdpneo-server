@@ -114,26 +114,9 @@ class PDP:
         )
         return {g for g in permitted if not is_internal_graph_uri(g)}
 
-    async def invalidate_resource(self, resource_iri: str) -> int:
-        """Drop every cached decision against ``resource_iri``."""
-        return await self._cache.invalidate_by_resource(resource_iri)
-
     async def invalidate_all(self) -> int:
         """Drop every cached decision — used when a managed policy changes (ADR-0012)."""
         return await self._cache.invalidate_all()
-
-    async def invalidate_subject(self, ctx: RequestContext) -> int:
-        """Drop every cached decision against the subject in ``ctx``.
-
-        Computes the subject key from the *current* role set; callers
-        whose role change has already produced a new key should pass the
-        old context instead (or call :meth:`invalidate_subject_key`).
-        """
-        return await self._cache.invalidate_by_subject(compute_subject_key(ctx))
-
-    async def invalidate_subject_key(self, subject_key: str) -> int:
-        """Lower-level variant of :meth:`invalidate_subject`."""
-        return await self._cache.invalidate_by_subject(subject_key)
 
 
 __all__ = ["PDP", "OfferResolver"]

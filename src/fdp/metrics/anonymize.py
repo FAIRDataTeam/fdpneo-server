@@ -47,9 +47,7 @@ def anonymize(
     visitor_hash: str | None = None
     if counting_enabled and raw.ip and raw.user_agent:
         digest = blake2b(
-            salt_rotator.current_salt()
-            + raw.ip.encode("utf-8")
-            + raw.user_agent.encode("utf-8"),
+            salt_rotator.current_salt() + raw.ip.encode("utf-8") + raw.user_agent.encode("utf-8"),
             digest_size=16,
         )
         visitor_hash = digest.hexdigest()

@@ -111,9 +111,7 @@ async def _record_graphs(adapter: TripleStoreAdapter) -> list[str]:
     )
     bindings = json.loads(body).get("results", {}).get("bindings", [])
     return [
-        b["g"]["value"]
-        for b in bindings
-        if "g" in b and not is_internal_graph_uri(b["g"]["value"])
+        b["g"]["value"] for b in bindings if "g" in b and not is_internal_graph_uri(b["g"]["value"])
     ]
 
 

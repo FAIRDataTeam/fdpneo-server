@@ -144,7 +144,7 @@ _KEYWORD_RE = re.compile(r"\s*(\w+)")
 _COMMENT_RE = re.compile(
     r'"""(?:[^"\\]|\\.|"(?!""))*"""'  # triple-quoted string
     r"|'''(?:[^'\\]|\\.|'(?!''))*'''"  # triple-quoted string (single)
-    r'|<[^>]*>'  # IRI
+    r"|<[^>]*>"  # IRI
     r'|"(?:[^"\\\n]|\\.)*"'  # short string
     r"|'(?:[^'\\\n]|\\.)*'"  # short string (single)
     r"|(#[^\n]*)",  # comment (the only captured group)
@@ -154,9 +154,10 @@ _COMMENT_RE = re.compile(
 def _strip_comments(text: str) -> str:
     """Remove SPARQL comments, leaving IRIs and quoted strings intact."""
     return _COMMENT_RE.sub(lambda m: "" if m.group(1) is not None else m.group(0), text)
+
+
 _AMBIGUOUS_HINT = (
-    "use WITH <graph> or place the triples inside GRAPH <graph> {…} "
-    "(see architecture §9.3)"
+    "use WITH <graph> or place the triples inside GRAPH <graph> {…} (see architecture §9.3)"
 )
 
 
@@ -236,9 +237,7 @@ def _parse_update(body: str) -> ParsedUpdate:
             raise BadRequest(LOAD_REJECTED_MESSAGE)
         op_targets = _explicit_targets(op)
         if op_targets is None:
-            raise BadRequest(
-                f"{op.name} requires explicit graph targets; {_AMBIGUOUS_HINT}"
-            )
+            raise BadRequest(f"{op.name} requires explicit graph targets; {_AMBIGUOUS_HINT}")
         targets.extend(op_targets)
     return ParsedUpdate(targets=tuple(targets))
 

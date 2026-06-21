@@ -24,15 +24,19 @@ The server is a **modular monolith** with four bounded contexts. Respect the bou
 | Module | Owns | Imports allowed |
 |---|---|---|
 | `identity/` | OIDC, request context | shared |
-| `metadata/` | LDP server, records, schemas, SHACL | shared, storage |
+| `metadata/` | LDP server, records, schemas, SHACL | shared, storage, identity, policy |
 | `policy/` | ODRL PDP, authorization cache | shared, storage |
-| `access/` | SPARQL endpoint, query rewriting | shared, policy, storage |
-| `data/` | Simple data provider | shared, policy, storage |
-| `metrics/` | Anonymous event pipeline, dashboard API | shared, storage |
+| `access/` | SPARQL endpoint, query rewriting | shared, storage, policy, identity |
+| `data/` | Simple data provider | shared, storage, policy |
+| `metrics/` | Anonymous event pipeline, dashboard API | shared, storage, identity |
 | `storage/` | Triple store adapter, Postgres repository | shared |
 | `shared/` | Cross-cutting utilities | nothing |
 
+The top-level composition root (`config.py`, `main.py`) is exempt from this table — it wires everything. Type-only imports of `config` settings are also fine anywhere.
+
 **Cross-module communication is explicit.** No reaching into another module's internals. The `policy` module's interface is the `authorize(subject, action, resource)` protocol — every PEP calls through that. Async events go on the in-process event bus in `shared`.
+
+**Why `metadata`/`access`/`metrics` may import `identity` and `policy`:** these modules host the HTTP handlers that act as Policy Enforcement Points. A PEP resolves the request `identity` (the `current_context`/`require_auth` deps) and asks `policy` for a decision through the `authorize` protocol and its `Action`/`Outcome` model types. This is the *only* sanctioned cross-context coupling — it goes through those public interfaces, never into a module's internals, and no module evaluates ODRL outside `policy`.
 
 **The shared kernel is for genuinely cross-cutting concerns only.** RDF utilities, namespace registry, event bus, identity context, error types, structured logging. If you're tempted to add something here, ask whether it really crosses contexts or whether it belongs inside one of them.
 

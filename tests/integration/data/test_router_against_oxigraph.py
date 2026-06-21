@@ -105,9 +105,7 @@ class _FakePDP:
         default_factory=lambda: Decision(outcome=Outcome.PERMIT, rule=None, reason="open")
     )
 
-    async def authorize(
-        self, ctx: RequestContext, action: Action, resource_iri: str
-    ) -> Decision:
+    async def authorize(self, ctx: RequestContext, action: Action, resource_iri: str) -> Decision:
         del ctx, action, resource_iri
         return self.decision
 

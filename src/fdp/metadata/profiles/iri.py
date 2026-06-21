@@ -10,10 +10,6 @@ The convention here is the one documented on
 * Schema / type CURIE: ``fdp:Repository`` → ``<fdp_namespace>Repository``;
   any prefix registered in :data:`fdp.shared.namespaces.PREFIXES`
   resolves through that namespace.
-* Offer slug: ``<base_url>/offers/<id>``. (Retained for callers that
-  still mint deployment-derived offer URIs; new code should let the
-  applier honor the file-declared offer IRI instead.)
-* Container slug: ``<base_url>/<id>``. (Legacy — see sub-task 15c.)
 * Seed-record slug: ``<base_url>/<seed_id>``.
 """
 
@@ -116,12 +112,6 @@ class IRIExpander:
         the graph stay the class IRI, so SHACL matching is unaffected.
         """
         return str(schema_graph_uri(self._base, schema_slug(curie_or_uri)))
-
-    def offer_iri(self, offer_id: str) -> str:
-        return f"{self._base}/offers/{offer_id}"
-
-    def container_iri(self, container_id: str) -> str:
-        return f"{self._base}/{container_id}"
 
     def seed_record_iri(self, seed_id: str) -> str:
         return f"{self._base}/{seed_id.lstrip('/')}"

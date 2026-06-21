@@ -79,7 +79,11 @@ _LDP_TYPES = frozenset(
     {LDP.Resource, LDP.RDFSource, LDP.Container, LDP.DirectContainer, LDP.BasicContainer}
 )
 # Predicates that make up a Direct Container's membership config (reset wholesale).
-_MEMBERSHIP_PREDICATES = (LDP.membershipResource, LDP.hasMemberRelation, LDP.insertedContentRelation)
+_MEMBERSHIP_PREDICATES = (
+    LDP.membershipResource,
+    LDP.hasMemberRelation,
+    LDP.insertedContentRelation,
+)
 
 
 @dataclass
@@ -143,9 +147,7 @@ async def migrate_to_modular_profile(
     #    root RDs in the store, and the startup cache rebuild
     #    (build_cache_from_repository) would see two empty-prefix definitions.
     if profile.manifest.resource_definitions:
-        records = records_from_manifest(
-            profile.manifest.resource_definitions, expander=expander
-        )
+        records = records_from_manifest(profile.manifest.resource_definitions, expander=expander)
         new_rd_iris: set[str] = set()
         for record in records:
             iri = str(

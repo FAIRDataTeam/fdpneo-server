@@ -55,9 +55,7 @@ def _ctx(*, roles: frozenset[str] = frozenset()) -> RequestContext:
     )
 
 
-def _build_app(
-    repository: SettingsRepository, *, ctx: RequestContext | None = None
-) -> FastAPI:
+def _build_app(repository: SettingsRepository, *, ctx: RequestContext | None = None) -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(build_settings_router(repository=repository))
@@ -117,9 +115,7 @@ async def test_write_then_read_round_trips_typed_value(session_factory: Any) -> 
             )
         ]
     )
-    await repo.write(
-        "forms.autocomplete-sources", override, subject="https://idp/admin"
-    )
+    await repo.write("forms.autocomplete-sources", override, subject="https://idp/admin")
     read_back = await repo.read("forms.autocomplete-sources")
     assert read_back == override
 
@@ -129,17 +125,13 @@ async def test_write_upserts_in_place(session_factory: Any) -> None:
     """Two writes to the same key must not produce two rows."""
     repo = SettingsRepository(session_factory=session_factory)
     first = AutocompleteSources(sources=[])
-    second = AutocompleteSources(
-        sources=[AutocompleteSource(name="x", kind="inline")]
-    )
+    second = AutocompleteSources(sources=[AutocompleteSource(name="x", kind="inline")])
     await repo.write("forms.autocomplete-sources", first, subject=None)
     await repo.write("forms.autocomplete-sources", second, subject=None)
     async with session_factory() as session:
         from sqlalchemy import select
 
-        rows = (
-            (await session.execute(select(RuntimeSettingRow))).scalars().all()
-        )
+        rows = (await session.execute(select(RuntimeSettingRow))).scalars().all()
     assert len(rows) == 1
 
 
@@ -174,9 +166,7 @@ async def test_read_all_merges_overrides_with_defaults(
     repo = SettingsRepository(session_factory=session_factory)
     # Override only the autocomplete key — search.filters should
     # surface the default.
-    override = AutocompleteSources(
-        sources=[AutocompleteSource(name="custom", kind="inline")]
-    )
+    override = AutocompleteSources(sources=[AutocompleteSource(name="custom", kind="inline")])
     await repo.write("forms.autocomplete-sources", override, subject=None)
     merged = await repo.read_all()
     assert isinstance(merged["forms.autocomplete-sources"], AutocompleteSources)
@@ -249,9 +239,7 @@ async def test_get_settings_key_404_for_unknown_key(
 async def test_put_settings_requires_admin_role(session_factory: Any) -> None:
     repo = SettingsRepository(session_factory=session_factory)
     app = _build_app(repo, ctx=_ctx(roles=frozenset({"steward"})))
-    response = TestClient(app).put(
-        "/settings/forms.autocomplete-sources", json={"sources": []}
-    )
+    response = TestClient(app).put("/settings/forms.autocomplete-sources", json={"sources": []})
     assert response.status_code == 403
     assert response.json()["code"] == "fdp.forbidden"
 
@@ -283,9 +271,7 @@ async def test_put_settings_writes_when_admin(session_factory: Any) -> None:
             }
         ]
     }
-    response = TestClient(app).put(
-        "/settings/forms.autocomplete-sources", json=override
-    )
+    response = TestClient(app).put("/settings/forms.autocomplete-sources", json=override)
     assert response.status_code == 200
     persisted = await repo.read("forms.autocomplete-sources")
     assert isinstance(persisted, AutocompleteSources)
@@ -313,12 +299,7 @@ async def test_delete_settings_reverts_to_default(session_factory: Any) -> None:
 async def test_delete_settings_requires_admin(session_factory: Any) -> None:
     repo = SettingsRepository(session_factory=session_factory)
     app = _build_app(repo, ctx=_ctx(roles=frozenset({"steward"})))
-    assert (
-        TestClient(app)
-        .delete("/settings/forms.autocomplete-sources")
-        .status_code
-        == 403
-    )
+    assert TestClient(app).delete("/settings/forms.autocomplete-sources").status_code == 403
 
 
 @pytest.mark.unit

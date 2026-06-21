@@ -58,9 +58,7 @@ def _row(iri: str, *, type_: str | None = None, title: str | None = None) -> dic
 
 @pytest.mark.unit
 def test_select_to_items_parses_basic_row() -> None:
-    body = _sparql_response(
-        [_row("urn:a", type_="urn:type", title="Alpha")]
-    )
+    body = _sparql_response([_row("urn:a", type_="urn:type", title="Alpha")])
     items = _select_to_items(body)
     assert items == [
         DashboardItem(record_iri="urn:a", type_iri="urn:type", title="Alpha"),
@@ -78,9 +76,7 @@ def test_select_to_items_collapses_duplicate_iris() -> None:
     )
     items = _select_to_items(body)
     assert len(items) == 1
-    assert items[0] == DashboardItem(
-        record_iri="urn:a", type_iri="urn:type", title="Alpha"
-    )
+    assert items[0] == DashboardItem(record_iri="urn:a", type_iri="urn:type", title="Alpha")
 
 
 @pytest.mark.unit
@@ -144,7 +140,9 @@ class _FakePDP:
         return set(self._authorized)
 
 
-def _ctx(*, subject: str = "https://idp/alice", roles: frozenset[str] = frozenset()) -> RequestContext:
+def _ctx(
+    *, subject: str = "https://idp/alice", roles: frozenset[str] = frozenset()
+) -> RequestContext:
     return RequestContext(
         subject=subject,
         roles=roles,
@@ -162,9 +160,7 @@ async def test_for_subject_returns_owned_recent_and_editable(
 ) -> None:
     # Owned SPARQL returns one record; enrichment for the recent+editable
     # passes returns titles for known IRIs.
-    owned_body = _sparql_response(
-        [_row("urn:owned", type_="urn:Catalog", title="Mine")]
-    )
+    owned_body = _sparql_response([_row("urn:owned", type_="urn:Catalog", title="Mine")])
     recent_enrich_body = _sparql_response(
         [_row("urn:recent", type_="urn:Catalog", title="Touched")]
     )
@@ -344,9 +340,7 @@ class _StubService:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    async def for_subject(
-        self, ctx: Any, **kwargs: Any
-    ) -> Any:
+    async def for_subject(self, ctx: Any, **kwargs: Any) -> Any:
         from fdp.metadata.dashboard import DashboardResponse
 
         self.calls.append({"ctx": ctx, **kwargs})
