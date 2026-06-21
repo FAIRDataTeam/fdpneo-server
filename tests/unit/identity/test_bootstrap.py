@@ -11,9 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -22,45 +19,18 @@ from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 
 from fdp.config import MetricsSettings, OIDCSettings, Settings
-from fdp.identity.bootstrap import build_bootstrap_router
-from fdp.metadata.profiles.state import ProfileAppliedRow
+from fdp.identity.bootstrap import ProfileBootstrap, ProfileReader, build_bootstrap_router
 
 # --- fakes -----------------------------------------------------------------
 
 
-class _FakeSession:
-    """Minimal AsyncSession stand-in.
+def _reader(profile: ProfileBootstrap | None) -> ProfileReader:
+    """An injected profile-reader that always reports ``profile``."""
 
-    The real ProfileStateRepository only calls ``execute(stmt)``; we
-    intercept that and return a result whose ``scalar_one_or_none`` is
-    whatever the test configured.
-    """
+    async def _read() -> ProfileBootstrap | None:
+        return profile
 
-    def __init__(self, row: ProfileAppliedRow | None) -> None:
-        self._row = row
-
-    async def execute(self, stmt: Any) -> Any:
-        del stmt
-        row = self._row
-
-        class _Result:
-            def scalar_one_or_none(self) -> ProfileAppliedRow | None:
-                return row
-
-        return _Result()
-
-
-def _fake_session_factory(row: ProfileAppliedRow | None) -> Any:
-    """Return an async_sessionmaker-shaped callable that yields ``_FakeSession``."""
-
-    @asynccontextmanager
-    async def _session() -> AsyncGenerator[_FakeSession, None]:
-        yield _FakeSession(row)
-
-    def _factory() -> Any:
-        return _session()
-
-    return _factory
+    return _read
 
 
 def _settings(*, metrics_enabled: bool = True, identifier_base: str | None = None) -> Settings:
@@ -81,12 +51,12 @@ def _settings(*, metrics_enabled: bool = True, identifier_base: str | None = Non
     )
 
 
-def _build_app(*, row: ProfileAppliedRow | None, identifier_base: str | None = None) -> FastAPI:
+def _build_app(*, profile: ProfileBootstrap | None, identifier_base: str | None = None) -> FastAPI:
     app = FastAPI()
     app.include_router(
         build_bootstrap_router(
             settings=_settings(identifier_base=identifier_base),
-            session_factory=_fake_session_factory(row),
+            profile_reader=_reader(profile),
         )
     )
     return app
@@ -97,7 +67,7 @@ def _build_app(*, row: ProfileAppliedRow | None, identifier_base: str | None = N
 
 @pytest.mark.unit
 def test_returns_minimum_payload_when_no_profile_applied() -> None:
-    app = _build_app(row=None)
+    app = _build_app(profile=None)
     response = TestClient(app).get("/config")
     assert response.status_code == 200
     body = response.json()
@@ -111,7 +81,7 @@ def test_returns_minimum_payload_when_no_profile_applied() -> None:
 def test_fdp_url_equals_serving_url_in_dev() -> None:
     # No identifier_base configured → the persistent base falls back to the
     # serving origin, so the two coincide (localhost-friendly default).
-    body = TestClient(_build_app(row=None)).get("/config").json()
+    body = TestClient(_build_app(profile=None)).get("/config").json()
     assert body["fdp_url"] == body["serving_url"] == "http://localhost:8000"
 
 
@@ -120,7 +90,7 @@ def test_pid_base_decoupled_from_serving_url() -> None:
     # With a PID namespace configured, fdp_url is the persistent identifier base
     # while serving_url stays the deployment origin (ADR-0014).
     body = (
-        TestClient(_build_app(row=None, identifier_base="https://w3id.org/myfdp"))
+        TestClient(_build_app(profile=None, identifier_base="https://w3id.org/myfdp"))
         .get("/config")
         .json()
     )
@@ -130,7 +100,7 @@ def test_pid_base_decoupled_from_serving_url() -> None:
 
 @pytest.mark.unit
 def test_oidc_block_reflects_settings() -> None:
-    app = _build_app(row=None)
+    app = _build_app(profile=None)
     body = TestClient(app).get("/config").json()
     oidc = body["oidc"]
     # Trailing slash is stripped so client-side URL composition is unambiguous.
@@ -141,21 +111,14 @@ def test_oidc_block_reflects_settings() -> None:
 
 @pytest.mark.unit
 def test_profile_block_populated_when_applied() -> None:
-    row = ProfileAppliedRow(
-        id=1,
-        name="default",
-        version="0.1.0",
-        applied_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
-        manifest_checksum="a" * 64,
-    )
-    app = _build_app(row=row)
+    app = _build_app(profile=ProfileBootstrap(name="default", version="0.1.0"))
     body = TestClient(app).get("/config").json()
     assert body["profile"] == {"name": "default", "version": "0.1.0"}
 
 
 @pytest.mark.unit
 def test_features_reflect_settings() -> None:
-    app = _build_app(row=None)
+    app = _build_app(profile=None)
     body = TestClient(app).get("/config").json()
     features = body["features"]
     # Metrics tracks the setting; sparql + data_provider are always on
@@ -175,7 +138,7 @@ def test_metrics_flag_follows_disabled_setting() -> None:
     app.include_router(
         build_bootstrap_router(
             settings=_settings(metrics_enabled=False),
-            session_factory=_fake_session_factory(None),
+            profile_reader=_reader(None),
         )
     )
     body = TestClient(app).get("/config").json()
@@ -188,7 +151,7 @@ def test_client_id_hint_is_configurable() -> None:
     app.include_router(
         build_bootstrap_router(
             settings=_settings(),
-            session_factory=_fake_session_factory(None),
+            profile_reader=_reader(None),
             client_id_hint="custom-client-id",
         )
     )
@@ -202,7 +165,7 @@ def test_client_id_hint_can_be_null() -> None:
     app.include_router(
         build_bootstrap_router(
             settings=_settings(),
-            session_factory=_fake_session_factory(None),
+            profile_reader=_reader(None),
             client_id_hint=None,
         )
     )
@@ -218,7 +181,7 @@ def test_endpoint_is_anonymous_friendly() -> None:
     can discover the IdP. The test app does not install the auth
     middleware; this assertion documents the contract.
     """
-    app = _build_app(row=None)
+    app = _build_app(profile=None)
     response = TestClient(app).get("/config")
     assert response.status_code == 200
 
@@ -231,14 +194,7 @@ def test_no_secrets_in_payload() -> None:
     ``signing_key`` to the response, this test will fail loudly. It is
     a structural guard, not a comprehensive security review.
     """
-    row = ProfileAppliedRow(
-        id=1,
-        name="default",
-        version="0.1.0",
-        applied_at=datetime(2026, 5, 29, 12, 0, tzinfo=UTC),
-        manifest_checksum="a" * 64,
-    )
-    app = _build_app(row=row)
+    app = _build_app(profile=ProfileBootstrap(name="default", version="0.1.0"))
     body = TestClient(app).get("/config").json()
     flat_keys = _all_keys(body)
     forbidden = {"secret", "password", "private_key", "signing_key", "client_secret"}
