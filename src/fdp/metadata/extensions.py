@@ -46,7 +46,6 @@ from rdflib import Graph, URIRef
 from rdflib.namespace import DCTERMS
 
 from fdp.identity.deps import current_context
-from fdp.metadata.ldp.negotiation import SUPPORTED_TYPES, select_media_type, serialize
 from fdp.metadata.shacl import UnknownShapeError
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
@@ -57,6 +56,7 @@ from fdp.shared.errors import (
     PolicyViolation,
     Unauthenticated,
 )
+from fdp.shared.negotiation import SUPPORTED_TYPES, select_media_type, serialize
 
 if TYPE_CHECKING:
     from fdp.metadata.lifecycle import StateGate

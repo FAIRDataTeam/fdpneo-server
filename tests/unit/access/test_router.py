@@ -21,10 +21,10 @@ from fdp.access.results import (
 from fdp.access.router import build_sparql_router
 from fdp.config import TripleStoreSettings
 from fdp.identity.deps import current_context
-from fdp.metadata.ldp.negotiation import TURTLE
 from fdp.policy.model import Action, Decision, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
+from fdp.shared.negotiation import TURTLE
 from fdp.storage.triplestore import TripleStoreAdapter
 
 QUERY_URL = "http://triplestore.local/query"

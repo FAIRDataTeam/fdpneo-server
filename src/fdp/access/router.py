@@ -62,8 +62,8 @@ from fdp.shared.errors import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from fdp.metadata.lifecycle import StateGate
     from fdp.policy.pdp import PDP
+    from fdp.shared.visibility import StateVisibility
     from fdp.storage.triplestore import TripleStoreAdapter
 
 log = structlog.get_logger(__name__)
@@ -78,7 +78,7 @@ def build_sparql_router(
     *,
     pdp: PDP,
     adapter: TripleStoreAdapter,
-    state_gate: StateGate | None = None,
+    state_gate: StateVisibility | None = None,
     multigraph_safe_provider: Callable[[], bool] = lambda: True,
     prefix: str = "/sparql",
 ) -> APIRouter:

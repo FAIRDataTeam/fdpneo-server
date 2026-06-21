@@ -11,17 +11,15 @@ content, raw policy text) must not be added to :class:`BootstrapConfig`.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from fdp import __version__
-from fdp.metadata.profiles.state import ProfileStateRepository
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
     from fdp.config import Settings
 
 
@@ -46,6 +44,14 @@ class ProfileBootstrap(BaseModel):
 
     name: str
     version: str
+
+
+ProfileReader = Callable[[], Awaitable[ProfileBootstrap | None]]
+"""Async callable returning the currently-applied profile, or ``None``.
+
+Injected by the composition root (``main.py``) so this endpoint stays free of
+any ``metadata``/``storage`` dependency — the ``profile_applied`` state table is
+owned by the ``metadata`` context."""
 
 
 class FeatureFlags(BaseModel):
@@ -87,25 +93,21 @@ class BootstrapConfig(BaseModel):
 def build_bootstrap_router(
     *,
     settings: Settings,
-    session_factory: async_sessionmaker[AsyncSession],
+    profile_reader: ProfileReader,
     client_id_hint: str | None = "fdp-client",
 ) -> APIRouter:
     """Construct a router that serves ``GET /config``.
 
-    The session-factory dep is opened on every request so the response
-    reflects the current profile state (e.g. when an admin re-applies a
-    profile while the server is running).
+    ``profile_reader`` is awaited on every request so the response reflects the
+    current profile state (e.g. when an admin re-applies a profile while the
+    server is running).
     """
     router = APIRouter(tags=["config"])
 
     @router.get("/config", response_model=BootstrapConfig, name="bootstrap_config")
     async def get_bootstrap_config() -> BootstrapConfig:  # pyright: ignore[reportUnusedFunction]
         """Self-describing config payload. Unauthenticated. No secrets."""
-        profile: ProfileBootstrap | None = None
-        async with session_factory() as session:
-            row = await ProfileStateRepository(session).current()
-            if row is not None:
-                profile = ProfileBootstrap(name=row.name, version=row.version)
+        profile = await profile_reader()
 
         return BootstrapConfig(
             fdp_url=settings.resolved_identifier_base,
@@ -136,5 +138,6 @@ __all__ = [
     "FeatureFlags",
     "OIDCBootstrap",
     "ProfileBootstrap",
+    "ProfileReader",
     "build_bootstrap_router",
 ]

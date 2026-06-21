@@ -16,13 +16,6 @@ from fdp.metadata.etag import compute_etag
 from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.metadata.graphs import meta_graph_uri
 from fdp.metadata.ldp import ContainerRegistry, build_ldp_router
-from fdp.metadata.ldp.negotiation import (
-    JSON_LD,
-    N_TRIPLES,
-    RDF_XML,
-    SPARQL_UPDATE,
-    TURTLE,
-)
 from fdp.metadata.repository import MetadataRepository
 from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
 from fdp.policy.model import Action, Decision, Outcome
@@ -30,6 +23,13 @@ from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.events import EventBus
 from fdp.shared.namespaces import DCT, LDP
+from fdp.shared.negotiation import (
+    JSON_LD,
+    N_TRIPLES,
+    RDF_XML,
+    SPARQL_UPDATE,
+    TURTLE,
+)
 
 RECORD_PATH = "/ldp/catalogs/c1"
 CONTAINER_PATH = "/ldp/catalogs"

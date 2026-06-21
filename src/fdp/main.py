@@ -30,7 +30,7 @@ from fdp.config import get_settings
 from fdp.data.router import build_data_router
 from fdp.identity import AuthenticationMiddleware, build_jwks_client
 from fdp.identity.api_keys import ApiKeyRepository, ApiKeyService, build_api_keys_router
-from fdp.identity.bootstrap import build_bootstrap_router
+from fdp.identity.bootstrap import ProfileBootstrap, build_bootstrap_router
 from fdp.identity.keycloak_admin import KeycloakUserDirectory
 from fdp.identity.principal import SubjectPrincipalRepository
 from fdp.identity.users import build_users_router
@@ -518,11 +518,17 @@ def create_app() -> FastAPI:
         ),
         prefix=RESERVED_API_PATH,
     )
+
+    # The bootstrap endpoint reports the applied profile but must not import the
+    # metadata context (boundary rules). The composition root injects the read:
+    # it owns the session factory and may touch metadata's ProfileStateRepository.
+    async def read_active_profile() -> ProfileBootstrap | None:
+        async with app.state.session_factory() as session:
+            row = await ProfileStateRepository(session).current()
+            return ProfileBootstrap(name=row.name, version=row.version) if row else None
+
     app.include_router(
-        build_bootstrap_router(
-            settings=settings,
-            session_factory=app.state.session_factory,
-        ),
+        build_bootstrap_router(settings=settings, profile_reader=read_active_profile),
         prefix=RESERVED_API_PATH,
     )
     app.include_router(
