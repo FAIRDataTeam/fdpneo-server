@@ -1,0 +1,205 @@
+"""Content negotiation for LDP RDF Sources.
+
+Supports Turtle (default), JSON-LD, RDF/XML and N-Triples. The order of
+:data:`SUPPORTED_TYPES` is the server's preference when the client sends a
+wildcard ``*/*``.
+
+The helpers are pure: no I/O, no exceptions outside ``ValueError`` for
+unknown media types. The router decides what HTTP status to return.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from types import MappingProxyType
+
+from rdflib import Graph
+
+# JSON-LD keys whose *string* values are document references the parser would
+# fetch over the network (the @context document, or an @import inside one).
+_JSONLD_REF_KEYS = ("@context", "@import")
+
+TURTLE = "text/turtle"
+JSON_LD = "application/ld+json"
+RDF_XML = "application/rdf+xml"
+N_TRIPLES = "application/n-triples"
+SPARQL_UPDATE = "application/sparql-update"
+
+SUPPORTED_TYPES: tuple[str, ...] = (TURTLE, JSON_LD, RDF_XML, N_TRIPLES)
+"""Server-preferred order used when the client sends a wildcard."""
+
+_RDFLIB_FORMAT = MappingProxyType(
+    {
+        TURTLE: "turtle",
+        JSON_LD: "json-ld",
+        RDF_XML: "xml",
+        N_TRIPLES: "nt",
+    }
+)
+
+
+@dataclass(frozen=True)
+class MediaRange:
+    """One parsed entry from an ``Accept`` header."""
+
+    media_type: str
+    quality: float
+
+
+def parse_accept(header: str | None) -> tuple[MediaRange, ...]:
+    """Parse an ``Accept`` header into ranges. Missing header is treated as ``*/*``."""
+    if not header:
+        return (MediaRange("*/*", 1.0),)
+    ranges: list[MediaRange] = []
+    for raw in header.split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        parts = token.split(";")
+        media = parts[0].strip().lower()
+        quality = 1.0
+        for param in parts[1:]:
+            cleaned = param.strip().lower()
+            if cleaned.startswith("q="):
+                try:
+                    quality = float(cleaned[2:])
+                except ValueError:
+                    quality = 0.0
+        ranges.append(MediaRange(media, quality))
+    return tuple(ranges)
+
+
+def select_media_type(accept: str | None) -> str | None:
+    """Return the best supported media type for ``accept``, or ``None`` if none."""
+    ranges = parse_accept(accept)
+    candidates = sorted(
+        (r for r in ranges if r.quality > 0.0),
+        key=lambda r: r.quality,
+        reverse=True,
+    )
+    for r in candidates:
+        match = _match(r.media_type)
+        if match is not None:
+            return match
+    return None
+
+
+def _match(media_type: str) -> str | None:
+    if media_type == "*/*":
+        return SUPPORTED_TYPES[0]
+    if media_type.endswith("/*"):
+        type_prefix = media_type[:-1]  # keep the trailing slash
+        for supported in SUPPORTED_TYPES:
+            if supported.startswith(type_prefix):
+                return supported
+        return None
+    if media_type in _RDFLIB_FORMAT:
+        return media_type
+    return None
+
+
+def serialize(graph: Graph, media_type: str) -> bytes:
+    """Serialize ``graph`` to bytes in ``media_type``.
+
+    Raises :class:`ValueError` if ``media_type`` is outside the supported set.
+    """
+    fmt = _RDFLIB_FORMAT.get(media_type)
+    if fmt is None:
+        raise ValueError(f"unsupported media type: {media_type}")
+    output = graph.serialize(format=fmt)
+    if isinstance(output, bytes):
+        return output
+    return output.encode("utf-8")
+
+
+def parse(body: bytes, media_type: str, *, base: str | None = None) -> Graph:
+    """Parse ``body`` as RDF in ``media_type``.
+
+    ``base`` is the document base against which relative IRIs (notably the
+    empty ``<>``, meaning "this resource") resolve — per LDP it is the target
+    resource's URI. Without it rdflib invents a ``file://`` base and the
+    record's own triples end up under a bogus subject, invisible to any
+    subject-keyed read (search, dashboard, ``/expanded``).
+
+    Raises :class:`ValueError` for unsupported media types; the rdflib
+    parser raises its own exceptions for malformed input.
+    """
+    fmt = _RDFLIB_FORMAT.get(media_type)
+    if fmt is None:
+        raise ValueError(f"unsupported media type: {media_type}")
+    if media_type == JSON_LD:
+        _reject_remote_jsonld_context(body)
+    graph = Graph()
+    graph.parse(data=body.decode("utf-8"), format=fmt, publicID=base)
+    return graph
+
+
+def _reject_remote_jsonld_context(body: bytes) -> None:
+    """Reject JSON-LD whose ``@context``/``@import`` references a remote document.
+
+    A *string*-valued ``@context`` (or ``@import``) is a reference rdflib's JSON-LD
+    parser would dereference over the network — an SSRF vector: an authenticated
+    writer could make the server issue GETs to arbitrary internal/loopback/cloud-
+    metadata URLs (security audit 2026-06-07, finding F-01). Inline (object)
+    contexts don't fetch and are allowed. Runs *before* ``graph.parse`` so no
+    network request is ever made. Malformed JSON is left to rdflib to report.
+    """
+    try:
+        document = json.loads(body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return
+    if _has_remote_jsonld_ref(document):
+        raise ValueError(
+            "remote JSON-LD @context/@import is not permitted (SSRF risk); use an inline context"
+        )
+
+
+def _has_remote_jsonld_ref(node: object) -> bool:
+    """True if any ``@context``/``@import`` anywhere in ``node`` is a string reference."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _JSONLD_REF_KEYS and _is_string_ref(value):
+                return True
+            if _has_remote_jsonld_ref(value):
+                return True
+        return False
+    if isinstance(node, list):
+        return any(_has_remote_jsonld_ref(item) for item in node)
+    return False
+
+
+def _is_string_ref(value: object) -> bool:
+    if isinstance(value, str):
+        return True
+    if isinstance(value, list):
+        return any(isinstance(item, str) for item in value)
+    return False
+
+
+def normalize_content_type(header: str | None) -> str | None:
+    """Strip parameters from a ``Content-Type`` header.
+
+    Returns ``None`` when the header is missing so the router can decide a
+    default. Returns the lowercased base media type otherwise (e.g.
+    ``"text/turtle; charset=utf-8"`` becomes ``"text/turtle"``).
+    """
+    if header is None:
+        return None
+    return header.split(";", 1)[0].strip().lower()
+
+
+__all__ = [
+    "JSON_LD",
+    "N_TRIPLES",
+    "RDF_XML",
+    "SPARQL_UPDATE",
+    "SUPPORTED_TYPES",
+    "TURTLE",
+    "MediaRange",
+    "normalize_content_type",
+    "parse",
+    "parse_accept",
+    "select_media_type",
+    "serialize",
+]
