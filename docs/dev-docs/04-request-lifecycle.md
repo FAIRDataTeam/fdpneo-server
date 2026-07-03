@@ -81,6 +81,17 @@ The consequence, restated because it trips up everyone once:
 
 The reserved prefix is `RESERVED_API_PATH` in [shared/reserved.py](../../src/fdp/shared/reserved.py) (value `/fdp-api`). OpenAPI/docs are themselves mounted under it: `/fdp-api/openapi.json`, `/fdp-api/docs`. The LDP router is registered last precisely so its `/{path:path}` doesn't shadow the API routes.
 
+### 4.3.1 Write-path invariants (v0.4.0, ADR-0016 §1)
+
+A record write (`PUT`/`POST`) must resolve to an unambiguous canonical subject, and `POST` never overwrites:
+
+- **Canonical subject required → `400 fdp.ambiguous_subject`.** When a persistent-identifier base is configured, `reconcile_identifiers` requires the body to address the record as `<>` / its canonical IRI, or to carry exactly one typed IRI subject (rebound to the canonical IRI; a foreign one is recorded as a cross-reference). Zero typed subjects, several, or a blank-node-only body is rejected — there is no "store as authored" escape hatch, so a graph is never keyed under an IRI it does not mention.
+- **`POST` `Slug` collision → `409 fdp.conflict`.** Before writing a new member, the LDP router checks whether the slug-derived IRI already exists (record graph non-empty, or its meta graph carries `dct:created`). If so it refuses, so migration scripts get a predictable error instead of silent data loss; use `PUT` + `If-Match` to replace deliberately.
+
+### 4.3.2 Publication state for reserved-namespace resources
+
+Server-managed resources — policies, licenses, schemas, resource definitions — have canonical IRIs under `<base>/fdp-api/<segment>/<id>`, but the publication-state router is itself mounted under `/fdp-api`. `state_record_iri` ([shared/graphs.py](../../src/fdp/shared/graphs.py)) re-adds the reserved prefix when the state path's leading segment is a managed one, and passes root-level LDP records (`/catalog/x`) straight through — so `POST /fdp-api/policies/{id}/state` targets the graph the policy is actually stored under rather than a non-existent root IRI.
+
 ## 4.4 Startup and shutdown (lifespan)
 
 The FastAPI `lifespan` handler ([main.py](../../src/fdp/main.py) `lifespan`) runs once at boot and once at teardown. Startup binds the event-bus subscribers and runs first-boot setup:

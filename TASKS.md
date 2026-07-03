@@ -1696,7 +1696,16 @@ Implements [ADR-0017](docs/adr/0017-alternative-identifiers-and-signposting.md)
 two LDP contract fixes decided in
 [ADR-0016 §1](docs/adr/0016-backup-restore-migration.md). Read both ADRs before
 starting — they record the decisions and the rejected alternatives; do not
-improvise around them. Target version: v0.4.0.
+improvise around them.
+
+> **Release status.** **v0.4.0** shipped task 17.1 (write-path hardening: `400`
+> ambiguous body, `409` `Slug` collision) plus two fixes uncovered while
+> testing it — the shared publication-state router now resolves managed-resource
+> IRIs (policies/licenses/schemas/RDs could not be published via `/state`), and
+> the repository-root `/page` listing trailing-slash bug — and a repaired,
+> GraphDB-backed integration suite. See `CHANGELOG.md`. Tasks **17.2–17.5**
+> (`adms:identifier`, FAIR Signposting Level 1, their docs/release) remain open
+> and are **retargeted to v0.5.0**.
 
 ### 17.1 [x] Write-path hardening: ambiguous body → 400, POST Slug collision → 409
 
