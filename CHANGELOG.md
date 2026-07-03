@@ -5,13 +5,12 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [Unreleased]
+## [0.4.0] — 2026-07-03
 
-Changes staged for the next release (**v0.4.0**, which ships once Phase 17 is
-complete). So far: write-path hardening, the alternative-identifiers semantics
-change, and lifecycle/consistency fixes, plus a repaired and GraphDB-backed
-integration suite. FAIR Signposting (tasks 17.3–17.5) is still to come before the
-release is cut.
+Alternative identifiers and FAIR Signposting (Phase 17): write-path hardening, the
+`owl:sameAs` → `adms:identifier` semantics change, FAIR Signposting Level 1 `Link`
+relations on reads, and lifecycle/consistency fixes — on a repaired and
+GraphDB-backed integration suite.
 
 ### Changed — LDP contract (⚠ behaviour changes)
 
@@ -55,6 +54,16 @@ authored", silent `POST` overwrite) must switch to the explicit forms above.
 
 ### Added
 
+- **FAIR Signposting (Level 1).** Every `GET`/`HEAD` of a record now carries typed
+  RFC 8288 `Link` relations — `cite-as`, `describedby` (per RDF media type),
+  `type`, `license`, `author`, `item`, `collection` — so an agent can navigate and
+  cite a record from headers alone. `cite-as` gives a client-supplied PID
+  (`owl:sameAs` / `adms:identifier` / IRI-valued `dct:identifier` under a
+  recognised resolver, or an `ark:` IRI) citation primacy over the canonical IRI.
+  Capped per response; the Level-2 `linkset` document is deferred. See
+  `docs/conformance/signposting-conformance.md`. (ADR-0017 §2)
+- **`adms:identifier`** joins the namespace registry and the resource SHACL shape
+  (optional), backing the alternative-identifier model above.
 - **Full-stack deployment** (`deploy/stack/`): one `docker compose` command
   brings up client + server + GraphDB + Postgres + Keycloak with automatic
   bootstrapping. Keycloak health is probed on the management port (9000); the
@@ -62,15 +71,17 @@ authored", silent `POST` overwrite) must switch to the explicit forms above.
   redirects); `EXPOSE_API_DOCS` serves the Swagger/ReDoc UIs in the evaluation
   stack. The OpenAPI spec is always served at `/fdp-api/openapi.json`.
 - **ADR-0016** (faithful backup/restore & instance migration) and **ADR-0017**
-  (structured alternative identifiers + FAIR Signposting) recorded as *proposed*.
-  Only ADR-0016 §1 (write-path hardening, above) is implemented in this release;
-  `fdp dump`/`restore`/`import`, `adms:identifier`, and FAIR Signposting are
-  planned for a subsequent release.
+  (structured alternative identifiers + FAIR Signposting) recorded. ADR-0016 §1
+  (write-path hardening) and all of ADR-0017 ship in this release; the remaining
+  ADR-0016 work (`fdp dump`/`restore`/`import`) is scheduled for a later phase.
 
 ### Documentation
 
 - README documents the one-command full-stack path, the always-on OpenAPI spec
   URL, and the `EXPOSE_API_DOCS` flag.
+- Dev docs: the request lifecycle now documents the `400`/`409` write-path
+  invariants and the signposting header stage; new FAIR Signposting conformance
+  note at `docs/conformance/signposting-conformance.md`.
 
 ### Tests / infrastructure
 

@@ -63,9 +63,7 @@ def test_etag_is_stable_across_blank_node_relabeling() -> None:
     # A graph with a blank node (e.g. an adms:Identifier node, ADR-0017) must
     # hash the same after a serialization round-trip relabels its _:bN — otherwise
     # If-Match breaks the moment the record is re-read and edited.
-    ttl = (
-        f'<{EX}rec> <{EX}identifier> [ <{EX}notation> "urn:x" ] .'
-    )
+    ttl = f'<{EX}rec> <{EX}identifier> [ <{EX}notation> "urn:x" ] .'
     g1 = Graph()
     g1.parse(data=ttl, format="turtle")
     g2 = Graph()

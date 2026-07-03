@@ -1698,14 +1698,14 @@ two LDP contract fixes decided in
 starting — they record the decisions and the rejected alternatives; do not
 improvise around them.
 
-> **Status.** Task 17.1 (write-path hardening: `400` ambiguous body, `409`
-> `Slug` collision) is complete, along with two fixes uncovered while testing it
-> — the shared publication-state router now resolves managed-resource IRIs
-> (policies/licenses/schemas/RDs could not be published via `/state`) and the
-> repository-root `/page` listing trailing-slash bug — and a repaired,
-> GraphDB-backed integration suite. These live on `main` as **unreleased**
-> changes (see `CHANGELOG.md` → Unreleased). Tasks **17.2–17.5** remain; the
-> **v0.4.0 release is cut only once all of Phase 17 is complete.**
+> **Status: complete — released as v0.4.0 (2026-07-03).** All of Phase 17 shipped:
+> write-path hardening (`400` ambiguous body, `409` `Slug` collision, 17.1), the
+> `owl:sameAs` → `adms:identifier` semantics change (17.2), the FAIR Signposting
+> Level-1 link builder (17.3) wired into `GET`/`HEAD` (17.4), and docs + release
+> (17.5) — plus two fixes uncovered while testing (managed-resource `/state`
+> resolution; the repository-root `/page` trailing-slash bug) on a repaired,
+> GraphDB-backed integration suite. See `CHANGELOG.md`. The remaining ADR-0016
+> work (`fdp dump`/`restore`/`import`) is deferred to a later phase.
 
 ### 17.1 [x] Write-path hardening: ambiguous body → 400, POST Slug collision → 409
 
@@ -1802,7 +1802,7 @@ RFC 8288.
 References: ADR-0017 §2; LDP §4.2.1 (existing Link discipline in
 `_response_headers`).
 
-### 17.5 [ ] Docs + release for v0.4.0 identifier work
+### 17.5 [x] Docs + release for v0.4.0 identifier work
 
 - `docs/dev-docs/04-request-lifecycle.md`: document the new 400/409 paths and
   the signposting header stage.

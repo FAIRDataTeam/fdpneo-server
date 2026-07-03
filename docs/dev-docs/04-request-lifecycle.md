@@ -92,6 +92,15 @@ A record write (`PUT`/`POST`) must resolve to an unambiguous canonical subject, 
 
 Server-managed resources — policies, licenses, schemas, resource definitions — have canonical IRIs under `<base>/fdp-api/<segment>/<id>`, but the publication-state router is itself mounted under `/fdp-api`. `state_record_iri` ([shared/graphs.py](../../src/fdp/shared/graphs.py)) re-adds the reserved prefix when the state path's leading segment is a managed one, and passes root-level LDP records (`/catalog/x`) straight through — so `POST /fdp-api/policies/{id}/state` targets the graph the policy is actually stored under rather than a non-existent root IRI.
 
+### 4.3.3 Signposting on read (v0.4.0, ADR-0017 §2)
+
+On a successful `GET`/`HEAD` of an existing record, the handlers append **FAIR Signposting** (Level 1) relations to the response `Link` header — the same header carrying the LDP `rel="type"` and `ldp:constrainedBy` links, which stay first. The relations ([metadata/signposting.py](../../src/fdp/metadata/signposting.py)) are built from the graph already in hand (no extra store round-trip) and *before* any `Prefer` minimisation, so they reflect the full record:
+
+- `cite-as` — the IRI a consumer should cite: a client-asserted `owl:sameAs` under a recognised PID resolver, else an `adms:identifier`/`dct:identifier` PID, else the **canonical** IRI (used even when the request arrived on a serving origin).
+- `describedby` (canonical IRI, once per supported RDF media type, with `type`), `type` (`rdf:type`), `license`, `author` (`dct:creator`/`dct:publisher`), `item` (`ldp:contains` + typed member relations), `collection` (`dct:isPartOf`).
+
+The total is capped (`signposting.MAX_LINKS`) so a large container cannot bloat the header; surplus `item` links are trimmed first (Level-2 `linkset` is deferred). `HEAD` carries the same `Link` header as `GET`.
+
 ## 4.4 Startup and shutdown (lifespan)
 
 The FastAPI `lifespan` handler ([main.py](../../src/fdp/main.py) `lifespan`) runs once at boot and once at teardown. Startup binds the event-bus subscribers and runs first-boot setup:
