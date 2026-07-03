@@ -1752,7 +1752,7 @@ References: ADR-0016 §1, ADR-0014 §3, `docs/dev-docs/04-request-lifecycle.md`.
 
 References: ADR-0017 §1; DCAT 3 `adms:identifier`.
 
-### 17.3 [ ] `metadata/signposting.py` — pure Link-relation builder
+### 17.3 [x] `metadata/signposting.py` — pure Link-relation builder
 
 New module, pure functions (no I/O), mirroring the discipline of
 `shared/identifiers.py`:
@@ -1820,4 +1820,3 @@ References: ADR-0016, ADR-0017, `docs/dev-docs/07-contributing.md`.
 **Out of scope (Phase 17):** `fdp dump`/`restore`/`import` (ADR-0016 §2–§5 —
 schedule as Phase 18 once this phase lands); Level-2 linkset endpoint;
 DOI/Handle minting.
-
