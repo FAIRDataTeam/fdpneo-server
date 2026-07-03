@@ -25,6 +25,7 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0015](0015-form-grouping-presentation-overlay.md) | Cross-schema form grouping via a presentation overlay | Proposed |
 | [0016](0016-backup-restore-migration.md) | Faithful backup/restore and instance migration | Proposed |
 | [0017](0017-alternative-identifiers-and-signposting.md) | Structured alternative identifiers and FAIR Signposting | Proposed |
+| [0018](0018-agent-consumption-mcp-server.md) | Agent consumption via a standalone MCP sidecar (`fdp-mcp`) | Proposed |
 
 ## Format
 

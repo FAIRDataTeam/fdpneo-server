@@ -1820,3 +1820,52 @@ References: ADR-0016, ADR-0017, `docs/dev-docs/07-contributing.md`.
 **Out of scope (Phase 17):** `fdp dump`/`restore`/`import` (ADR-0016 §2–§5 —
 schedule as Phase 18 once this phase lands); Level-2 linkset endpoint;
 DOI/Handle minting.
+
+---
+
+## Phase 19 — Agent consumption: server-side support for the `fdp-mcp` sidecar (ADR-0018)
+
+The MCP bridge itself is a separate repo (`../mcp`) with its own `TASKS.md` —
+per [ADR-0018](docs/adr/0018-agent-consumption-mcp-server.md), it consumes
+only the public FDP surface and works against any spec-compliant FDP. This
+phase covers what the **server** repo owes the programme. Motivation and
+phasing: [`docs/architecture/agent-consumption-vision.md`](docs/architecture/agent-consumption-vision.md).
+`(Phase 18 is reserved for ADR-0016 backup/restore.)`
+
+### 19.1 [ ] Wire `fdp-mcp` into the standard deploy profiles
+
+- Add the `fdp-mcp` service to the compose/deploy profiles (`deploy/`,
+  architecture §12), pointed at the FDP container's base URL, so a default
+  FDPneo deployment comes up agent-ready (ADR-0018 §6). Off switch documented.
+- Smoke test in the deploy checks: bridge answers an MCP `initialize` and a
+  `fdp_info` call against the running FDP.
+- Docs: one paragraph + link to `../mcp/docs/agent-quickstart.md` from the
+  server README and deployment docs.
+
+References: ADR-0018 §6, architecture §12.
+
+### 19.2 [ ] Gap-report triage loop
+
+- Adopt `../mcp/docs/fdp-api-gaps.md` as a standing input to this file:
+  each triaged gap becomes a task here (or an explicit won't-fix with
+  rationale), linked both ways.
+- First triage pass once mcp Phase 1 lands: expected early candidates —
+  search API discoverability for external clients, shape retrieval for
+  runtime-defined kinds, JSON-LD framing quality of record GETs, and any
+  place FDPneo and the Java reference implementation diverge on the same
+  request.
+
+References: ADR-0018 §4.
+
+### 19.3 [ ] "Agent-ready FDP" conformance note
+
+- `docs/conformance/`: a note recording which parts of the
+  `../mcp/docs/mcp-tool-surface.md` contract this server's public surface
+  supports (required vs optional tools), following the existing
+  conformance-note practice. Update as gaps close.
+
+References: ADR-0018 §5, vision doc §7.
+
+**Out of scope (Phase 19):** the bridge implementation (see `../mcp/TASKS.md`);
+Index-level MCP (vision increment C — needs Phase 8 and its own ADR);
+capability-profile schema package (increment B).
