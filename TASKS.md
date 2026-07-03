@@ -1698,7 +1698,7 @@ two LDP contract fixes decided in
 starting — they record the decisions and the rejected alternatives; do not
 improvise around them. Target version: v0.4.0.
 
-### 17.1 [ ] Write-path hardening: ambiguous body → 400, POST Slug collision → 409
+### 17.1 [x] Write-path hardening: ambiguous body → 400, POST Slug collision → 409
 
 - `metadata/identifiers.py` (`reconcile_identifiers`): remove the
   "store as authored" fallback. A write body must address the record as `<>` /

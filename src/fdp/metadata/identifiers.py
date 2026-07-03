@@ -30,6 +30,7 @@ from __future__ import annotations
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
+from fdp.shared.errors import AmbiguousSubject
 from fdp.shared.identifiers import is_under
 from fdp.shared.namespaces import OWL
 
@@ -51,6 +52,12 @@ def reconcile_identifiers(graph: Graph, *, canonical_iri: str, identifier_base: 
         (via ``<>`` or the canonical IRI). Otherwise a fresh graph whose single
         typed primary subject has been rebound to ``canonical_iri``, with an
         ``owl:sameAs`` back-link added when the original subject was foreign.
+
+    Raises:
+        AmbiguousSubject: when the body neither addresses the record canonically
+            nor carries exactly one typed IRI subject to rebind (ADR-0016 §1: the
+            canonical-subject invariant is unconditional — no "store as authored"
+            escape hatch that would key a graph under an IRI it never mentions).
     """
     canon = URIRef(str(canonical_iri).rstrip("/"))
     canon_slash = URIRef(str(canon) + "/")
@@ -62,16 +69,25 @@ def reconcile_identifiers(graph: Graph, *, canonical_iri: str, identifier_base: 
     if next(graph.triples((canon_slash, None, None)), None) is not None:
         return graph
 
-    # Conservative heuristic: a single typed URIRef subject is the record's
-    # primary subject. Zero or many → ambiguous (e.g. a record describing several
-    # resources); leave the graph as authored rather than guess.
+    # A single typed URIRef subject is the record's primary subject and is
+    # rebound to the canonical IRI. Zero, many, or a blank-node-only body is
+    # ambiguous — reject it rather than store the graph under a canonical key it
+    # never mentions (ADR-0016 §1; the canonical-subject invariant is unconditional).
     typed = {
         s
         for s in graph.subjects(RDF.type, None)
         if isinstance(s, URIRef) and s != canon and s != canon_slash
     }
     if len(typed) != 1:
-        return graph
+        raise AmbiguousSubject(
+            "request body must address the record as <> or its canonical IRI, or "
+            "contain exactly one typed IRI subject to rebind to the canonical IRI; "
+            f"found {len(typed)}",
+            details={
+                "canonical_iri": str(canon),
+                "typed_subjects": sorted(str(s) for s in typed),
+            },
+        )
     primary = next(iter(typed))
 
     out = Graph()

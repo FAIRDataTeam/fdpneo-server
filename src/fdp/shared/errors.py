@@ -128,6 +128,20 @@ class BadRequest(FDPError):
     docs_url = _DOCS_BASE + "fdp.bad_request"
 
 
+class AmbiguousSubject(BadRequest):
+    """Raised when a write body has no unambiguous primary subject.
+
+    ADR-0016 §1 / ADR-0014 §3: a write must address the record as ``<>`` / its
+    canonical IRI, or contain exactly one typed IRI subject (which is rebound to
+    the canonical IRI). Zero typed subjects, several, or a blank-node-only body
+    is rejected rather than stored under a canonical graph key it never mentions.
+    """
+
+    code = "fdp.ambiguous_subject"
+    http_status = 400
+    docs_url = _DOCS_BASE + "fdp.ambiguous_subject"
+
+
 class NotAcceptable(FDPError):
     """Raised when none of the client's Accept media types is supported."""
 
@@ -324,6 +338,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 
 __all__ = [
+    "AmbiguousSubject",
     "BadRequest",
     "CatchAllExceptionMiddleware",
     "Conflict",

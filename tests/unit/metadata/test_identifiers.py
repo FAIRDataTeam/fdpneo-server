@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from rdflib import Graph, Literal, URIRef
+import pytest
+from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.identifiers import reconcile_identifiers
+from fdp.shared.errors import AmbiguousSubject
 from fdp.shared.namespaces import DCAT, DCT, OWL, SKOS
 
 ID_BASE = "https://w3id.org/myfdp"
@@ -70,14 +72,32 @@ class TestReconcile:
         assert (canon, DCT.identifier, Literal("ACME-2024-001")) in out
         assert (canon, SKOS.exactMatch, URIRef("https://doi.org/10.1234/foo")) in out
 
-    def test_ambiguous_multiple_typed_subjects_left_as_is(self) -> None:
+    def test_ambiguous_multiple_typed_subjects_raises(self) -> None:
+        # ADR-0016 §1: no "store as authored" fallback — a body with several
+        # typed IRI subjects has no unambiguous primary subject → 400.
         a = URIRef("https://example.org/a")
         b = URIRef("https://example.org/b")
         g = Graph()
         g.add((a, RDF.type, DCAT.Catalog))
         g.add((b, RDF.type, DCAT.Dataset))
-        out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
-        assert out is g  # too ambiguous to rebind — preserved verbatim
+        with pytest.raises(AmbiguousSubject):
+            reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+
+    def test_zero_typed_subjects_raises(self) -> None:
+        # A foreign subject without any rdf:type is not a valid primary subject.
+        g = Graph()
+        g.add((URIRef("https://example.org/a"), DCT.title, Literal("no type")))
+        with pytest.raises(AmbiguousSubject):
+            reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
+
+    def test_blank_node_only_body_raises(self) -> None:
+        # A blank-node-only body cannot be keyed under the canonical IRI.
+        g = Graph()
+        b = BNode()
+        g.add((b, RDF.type, DCAT.Catalog))
+        g.add((b, DCT.title, Literal("anon")))
+        with pytest.raises(AmbiguousSubject):
+            reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
 
     def test_canonical_trailing_slash_variant_is_noop(self) -> None:
         canon_slash = URIRef(CANON + "/")

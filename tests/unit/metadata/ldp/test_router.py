@@ -513,6 +513,25 @@ async def test_post_without_slug_generates_uuid_path_segment() -> None:
     assert len(location[len(CONTAINER_IRI) + 1 :]) == 36
 
 
+@pytest.mark.unit
+async def test_post_slug_collision_returns_409() -> None:
+    """POST never overwrites: a Slug matching an existing record → 409 (ADR-0016 §1)."""
+    repo, _ = _make_repo()
+    # A record already lives at the slug-derived member IRI.
+    await _seed_record(repo, f"{CONTAINER_IRI}/biobank-data", title="existing")
+    containers = FixedContainerRegistry(container_iris={CONTAINER_IRI})
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
+    body = b'<urn:_> <http://purl.org/dc/terms/title> "child" .'
+    with TestClient(app) as client:
+        response = client.post(
+            CONTAINER_PATH,
+            content=body,
+            headers={"content-type": N_TRIPLES, "slug": "biobank-data"},
+        )
+    assert response.status_code == 409
+    assert response.json()["code"] == "fdp.conflict"
+
+
 # --- PATCH ------------------------------------------------------------------
 
 

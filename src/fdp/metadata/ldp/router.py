@@ -52,6 +52,7 @@ from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
     BadRequest,
+    Conflict,
     MethodNotAllowed,
     NotAcceptable,
     NotFound,
@@ -63,7 +64,7 @@ from fdp.shared.errors import (
     UnsupportedMediaType,
 )
 from fdp.shared.identifiers import canonicalize
-from fdp.shared.namespaces import LDP as LDP_NS
+from fdp.shared.namespaces import DCT, LDP as LDP_NS
 from fdp.shared.negotiation import (
     SPARQL_UPDATE,
     SUPPORTED_TYPES,
@@ -193,6 +194,20 @@ def build_ldp_router(
         if event_bus is None:
             return
         await event_bus.publish(event)
+
+    async def _record_exists(iri: str) -> bool:
+        """Whether a record already lives at ``iri``.
+
+        Matches the GET 404 convention (see :meth:`MetadataRepository.get_graph`):
+        a record exists when its own graph holds triples, or its meta sibling
+        carries a ``dct:created`` stamp (a record whose body is momentarily empty
+        still counts). Used by ``POST`` so a ``Slug`` collision is a 409, never a
+        silent overwrite (ADR-0016 §1).
+        """
+        if len(await repo.get_graph(iri)) > 0:
+            return True
+        meta = await repo.get_meta(iri)
+        return (record_graph_uri(iri), DCT.created, None) in meta
 
     async def _enforce(ctx: RequestContext, action: Action, resource_iri: str) -> None:
         # Authorize against the canonical resource IRI. Storage normalizes the
@@ -419,6 +434,14 @@ def build_ldp_router(
         # Mint the member IRI first so a relative ``<>`` in the body resolves to
         # the new member's URI (LDP), not to the container or a file:// base.
         member_iri = _mint_member_iri(container_iri, request.headers.get("slug"))
+        # POST never overwrites: a Slug-derived collision is a 409 so the client
+        # picks another Slug or uses PUT + If-Match deliberately (ADR-0016 §1).
+        if await _record_exists(member_iri):
+            raise Conflict(
+                f"a record already exists at {member_iri}; choose a different Slug "
+                "or use PUT with If-Match to update it deliberately",
+                details={"member_iri": member_iri},
+            )
         try:
             member_graph = _parse_body(request, await request.body(), base=member_iri)
         except UnsupportedMediaType as exc:

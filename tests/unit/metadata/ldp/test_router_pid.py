@@ -93,3 +93,21 @@ async def test_foreign_subject_rebound_with_sameas() -> None:
     assert (canon, RDF.type, DCAT.Dataset) in stored
     assert (canon, OWL.sameAs, URIRef(foreign)) in stored
     assert (URIRef(foreign), RDF.type, DCAT.Dataset) not in stored
+
+
+@pytest.mark.unit
+async def test_put_ambiguous_multiple_subjects_returns_400() -> None:
+    """A body with several typed IRI subjects has no primary subject → 400 (ADR-0016 §1)."""
+    adapter = FakeAdapter()
+    repo = MetadataRepository(adapter)  # type: ignore[arg-type]
+    app = _app(repo, FakePDP())
+
+    body = (
+        f"<https://example.org/a> a <{DCAT.Dataset}> . <https://example.org/b> a <{DCAT.Catalog}> ."
+    )
+    with TestClient(app) as client:
+        resp = client.put("/ldp/catalogs/c1", content=body, headers={"content-type": "text/turtle"})
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "fdp.ambiguous_subject"
+    # Nothing persisted for the rejected write.
+    assert f"{ID_BASE}/ldp/catalogs/c1" not in adapter.graphs
