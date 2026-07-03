@@ -27,6 +27,8 @@ downstream code calls them rather than building URIs by hand.
 
 from __future__ import annotations
 
+from typing import Final
+
 from rdflib import URIRef
 
 from fdp.shared.reserved import RESERVED_API_PREFIX
@@ -48,6 +50,20 @@ _RESOURCE_DEFINITIONS_SEGMENT = f"{RESERVED_API_PREFIX}/resource-definitions"
 _POLICIES_SEGMENT = f"{RESERVED_API_PREFIX}/policies"
 _LICENSES_SEGMENT = f"{RESERVED_API_PREFIX}/licenses"
 _SCHEMAS_SEGMENT = f"{RESERVED_API_PREFIX}/schemas"
+
+# The leaf names of the server-managed record namespaces (the part after the
+# reserved prefix). Records under these live at ``<base>/fdp-api/<segment>/…``;
+# user-defined LDP records live at the root. ``state_record_iri`` uses this to
+# resolve a state-transition target from its (prefix-stripped) request sub-path.
+_MANAGED_SEGMENTS: Final = frozenset(
+    segment.split("/", 1)[1]
+    for segment in (
+        _RESOURCE_DEFINITIONS_SEGMENT,
+        _POLICIES_SEGMENT,
+        _LICENSES_SEGMENT,
+        _SCHEMAS_SEGMENT,
+    )
+)
 
 
 def _as_uri(record_uri: str | URIRef) -> URIRef:
@@ -208,6 +224,24 @@ def record_uri_from_sibling(uri: str | URIRef) -> URIRef | None:
     return None
 
 
+def state_record_iri(base_url: str | URIRef, path: str) -> URIRef:
+    """Canonical IRI of the record a ``…/{path}/state`` transition targets.
+
+    The publication-state router is mounted under the reserved API prefix, so
+    ``path`` is the request sub-path with that prefix already stripped.
+    User-defined LDP records live at the root (``<base>/<path>``); server-managed
+    resources — policies / licenses / schemas / resource-definitions
+    (ADR-0012/0009) — live under ``<base>/fdp-api/<path>``. Re-add the prefix for
+    the latter so the transition targets the graph the resource is stored under,
+    rather than a non-existent root IRI (which would 404).
+    """
+    base = str(base_url).rstrip("/")
+    first = path.split("/", 1)[0]
+    if first in _MANAGED_SEGMENTS:
+        return URIRef(f"{base}/{RESERVED_API_PREFIX}/{path}")
+    return URIRef(f"{base}/{path}")
+
+
 __all__ = [
     "audit_graph_uri",
     "data_graph_uri",
@@ -229,4 +263,5 @@ __all__ = [
     "resource_definition_graph_uri",
     "schema_graph_uri",
     "schema_namespace",
+    "state_record_iri",
 ]

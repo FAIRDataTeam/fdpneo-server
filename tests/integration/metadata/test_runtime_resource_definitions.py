@@ -40,7 +40,10 @@ from fdp.shared.context import RequestContext
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
-ONTOLOGY_SHAPE_IRI = f"{BASE_URL}/shapes/Ontology"
+# A runtime schema is stored (and referenced by resource definitions) at its
+# storage IRI under the reserved schemas namespace — the same place PUT
+# /fdp-api/schemas/{id} writes and where the RD's `schema` must point.
+ONTOLOGY_SHAPE_IRI = f"{BASE_URL}/fdp-api/schemas/ontology"
 
 pytestmark = pytest.mark.integration
 
@@ -238,7 +241,7 @@ def _ontology_definition() -> dict[str, Any]:
 
 def _publish_ontology_shape(c: _Client) -> None:
     resp = c.as_admin().put(
-        "/shapes/Ontology",
+        "/fdp-api/schemas/ontology",
         content=ONTOLOGY_SHAPE_TTL,
         headers={"Content-Type": "text/turtle"},
     )
@@ -274,7 +277,7 @@ def test_runtime_definition_lights_up_endpoints_and_openapi(app_env: None) -> No
             json={
                 "urlPrefix": "catalog",
                 "name": "Catalog",
-                "schema": "http://www.w3.org/ns/dcat#Catalog",
+                "schema": f"{BASE_URL}/fdp-api/schemas/catalog",
                 "children": [
                     {
                         "relationUri": "http://www.w3.org/ns/dcat#dataset",

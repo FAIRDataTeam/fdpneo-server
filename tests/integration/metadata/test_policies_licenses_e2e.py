@@ -32,14 +32,12 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from testcontainers.core.container import DockerContainer
-from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
 from fdp.shared.context import RequestContext
+from tests.integration.conftest import GraphDBStore
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
 
 pytestmark = pytest.mark.integration
@@ -181,18 +179,6 @@ def postgres_container() -> Iterator[PostgresContainer]:
 
 
 @pytest.fixture
-def oxigraph_container() -> Iterator[DockerContainer]:
-    container = (
-        DockerContainer("oxigraph/oxigraph:latest")
-        .with_exposed_ports(OXIGRAPH_PORT)
-        .with_command("serve --bind 0.0.0.0:7878 --location /data")
-        .waiting_for(LogMessageWaitStrategy("Listening").with_startup_timeout(60))
-    )
-    with container:
-        yield container
-
-
-@pytest.fixture
 def bundle(tmp_path: Path) -> Path:
     root = tmp_path / "profile"
     root.mkdir()
@@ -207,19 +193,16 @@ def bundle(tmp_path: Path) -> Path:
 @pytest.fixture
 def app_env(
     postgres_container: PostgresContainer,
-    oxigraph_container: DockerContainer,
+    graphdb_store: GraphDBStore,
     bundle: Path,
 ) -> Iterator[None]:
     from fdp.config import get_settings
 
-    host = oxigraph_container.get_container_host_ip()
-    port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
-    oxi = f"http://{host}:{port}"
     env = {
         "POSTGRES_DSN": _async_dsn(postgres_container),
-        "FDP_TRIPLESTORE_QUERY_ENDPOINT": f"{oxi}/query",
-        "FDP_TRIPLESTORE_UPDATE_ENDPOINT": f"{oxi}/update",
-        "FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT": f"{oxi}/store",
+        "FDP_TRIPLESTORE_QUERY_ENDPOINT": graphdb_store.query,
+        "FDP_TRIPLESTORE_UPDATE_ENDPOINT": graphdb_store.update,
+        "FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT": graphdb_store.graph_store,
         "FDP_OIDC_ISSUER": "http://idp.local/realms/fdp",
         "FDP_OIDC_AUDIENCE": "fdp",
         "BASE_URL": BASE_URL,
@@ -283,7 +266,11 @@ _TTL = {"Content-Type": "text/turtle"}
 
 
 def _publish(c: _Client, path: str) -> None:
-    resp = c.as_admin().post(path + "/state", json={"to": "PUBLISHED"})
+    # State transitions live under the reserved API prefix; ``path`` may be a
+    # bare LDP record path (``/catalog/x``) or an already-prefixed managed
+    # resource (``/fdp-api/policies/x``).
+    state_path = path if path.startswith("/fdp-api/") else f"/fdp-api{path}"
+    resp = c.as_admin().post(state_path + "/state", json={"to": "PUBLISHED"})
     assert resp.status_code == 200, resp.text
 
 

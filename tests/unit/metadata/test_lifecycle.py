@@ -399,3 +399,23 @@ def test_router_rejects_unknown_state_value() -> None:
     client = _build_client(_service(adapter, _FakePDP(modify_permit={REC})), ctx=_ctx())
     resp = client.post("/catalog/x/state", json={"to": "BOGUS"})
     assert resp.status_code == 422
+
+
+@pytest.mark.unit
+def test_router_managed_resource_resolves_under_reserved_prefix() -> None:
+    """A policy/license lives at <base>/fdp-api/…; the state router must target it.
+
+    Mounted under /fdp-api in the app, the handler receives the prefix-stripped
+    sub-path (``policies/p1``); ``state_record_iri`` re-adds the reserved prefix
+    so the transition hits the stored graph rather than a non-existent root IRI.
+    """
+    managed = f"{BASE}/fdp-api/policies/p1"
+    adapter = _DatasetAdapter()
+    adapter.seed(managed, MetadataState.DRAFT)
+    client = _build_client(
+        _service(adapter, _FakePDP(modify_permit={managed})),
+        ctx=_ctx(roles=frozenset({"admin"})),
+    )
+    resp = client.post("/policies/p1/state", json={"to": "PUBLISHED"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["record"] == managed

@@ -30,14 +30,12 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from testcontainers.core.container import DockerContainer
-from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
 from fdp.shared.context import RequestContext
+from tests.integration.conftest import GraphDBStore
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
 
 pytestmark = pytest.mark.integration
@@ -111,18 +109,6 @@ def postgres_container() -> Iterator[PostgresContainer]:
 
 
 @pytest.fixture
-def oxigraph_container() -> Iterator[DockerContainer]:
-    container = (
-        DockerContainer("oxigraph/oxigraph:latest")
-        .with_exposed_ports(OXIGRAPH_PORT)
-        .with_command("serve --bind 0.0.0.0:7878 --location /data")
-        .waiting_for(LogMessageWaitStrategy("Listening").with_startup_timeout(60))
-    )
-    with container:
-        yield container
-
-
-@pytest.fixture
 def bundle(tmp_path: Path) -> Path:
     root = tmp_path / "profile"
     root.mkdir()
@@ -137,19 +123,16 @@ def bundle(tmp_path: Path) -> Path:
 @pytest.fixture
 def app_env(
     postgres_container: PostgresContainer,
-    oxigraph_container: DockerContainer,
+    graphdb_store: GraphDBStore,
     bundle: Path,
 ) -> Iterator[None]:
     from fdp.config import get_settings
 
-    host = oxigraph_container.get_container_host_ip()
-    port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
-    oxi = f"http://{host}:{port}"
     env = {
         "POSTGRES_DSN": _async_dsn(postgres_container),
-        "FDP_TRIPLESTORE_QUERY_ENDPOINT": f"{oxi}/query",
-        "FDP_TRIPLESTORE_UPDATE_ENDPOINT": f"{oxi}/update",
-        "FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT": f"{oxi}/store",
+        "FDP_TRIPLESTORE_QUERY_ENDPOINT": graphdb_store.query,
+        "FDP_TRIPLESTORE_UPDATE_ENDPOINT": graphdb_store.update,
+        "FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT": graphdb_store.graph_store,
         "FDP_OIDC_ISSUER": "http://idp.local/realms/fdp",
         "FDP_OIDC_AUDIENCE": "fdp",
         "BASE_URL": BASE_URL,
@@ -230,7 +213,7 @@ def _put_catalog(c: _Client, slug: str, title: str) -> str:
 def _sparql_titles_anon(c: _Client) -> set[str]:
     q = "SELECT ?t WHERE { GRAPH ?g { ?s <http://purl.org/dc/terms/title> ?t } }"
     resp = c.as_anonymous().get(
-        "/sparql",
+        "/fdp-api/sparql",
         params={"query": q},
         headers={"Accept": "application/sparql-results+json"},
     )
@@ -265,7 +248,7 @@ def test_draft_hidden_then_published_then_archived(app_env: None) -> None:
         )
 
         # Publish (owner-authorized).
-        pub = c.as_user().post("/catalog/cat1/state", json={"to": "PUBLISHED"})
+        pub = c.as_user().post("/fdp-api/catalog/cat1/state", json={"to": "PUBLISHED"})
         assert pub.status_code == 200, pub.text
         assert pub.json()["to_state"] == "PUBLISHED"
 
@@ -276,7 +259,7 @@ def test_draft_hidden_then_published_then_archived(app_env: None) -> None:
         )
 
         # Archive → hidden from anonymous again.
-        arch = c.as_user().post("/catalog/cat1/state", json={"to": "ARCHIVED"})
+        arch = c.as_user().post("/fdp-api/catalog/cat1/state", json={"to": "ARCHIVED"})
         assert arch.status_code == 200, arch.text
         assert (
             c.as_anonymous().get("/catalog/cat1", headers={"Accept": "text/turtle"}).status_code
@@ -288,7 +271,7 @@ def test_anonymous_transition_is_unauthenticated(app_env: None) -> None:
     c = _make_client()
     with c.http:
         _put_catalog(c, "cat2", "Cat Two")
-        resp = c.as_anonymous().post("/catalog/cat2/state", json={"to": "PUBLISHED"})
+        resp = c.as_anonymous().post("/fdp-api/catalog/cat2/state", json={"to": "PUBLISHED"})
         assert resp.status_code == 401
 
 
@@ -297,7 +280,7 @@ def test_disallowed_transition_conflicts(app_env: None) -> None:
     with c.http:
         _put_catalog(c, "cat3", "Cat Three")
         # DRAFT -> ARCHIVED is not in the state machine.
-        resp = c.as_user().post("/catalog/cat3/state", json={"to": "ARCHIVED"})
+        resp = c.as_user().post("/fdp-api/catalog/cat3/state", json={"to": "ARCHIVED"})
         assert resp.status_code == 409, resp.text
 
 
@@ -308,7 +291,8 @@ def test_sparql_projection_excludes_drafts_for_anonymous(app_env: None) -> None:
         _put_catalog(c, "draftcat", "Secret Draft Cat")
         # Publish only the first.
         assert (
-            c.as_user().post("/catalog/pubcat/state", json={"to": "PUBLISHED"}).status_code == 200
+            c.as_user().post("/fdp-api/catalog/pubcat/state", json={"to": "PUBLISHED"}).status_code
+            == 200
         )
 
         # Touch both as anonymous so the ODRL read decision is cached for each

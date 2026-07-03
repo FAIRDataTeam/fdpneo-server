@@ -28,6 +28,7 @@ from fdp.metadata.profiles import (
     apply_profile,
     load_profile,
 )
+from fdp.metadata.profiles.licenses import default_license_graphs
 from fdp.metadata.repository import MetadataRepository
 from fdp.shared.errors import Conflict
 from fdp.storage.triplestore.adapter import TripleStoreAdapter
@@ -201,13 +202,25 @@ async def test_apply_writes_graphs_and_marker(
             settings=settings,
         )
 
-    # schema + offer + RD shape + 1 RD record + Repository seed (ADR-0009).
-    assert report.total_written == 5
+    # schema + offer + license shape + RD shape + RD record + Repository seed
+    # (ADR-0009) + the built-in default licenses (ADR-0012). This bundle declares
+    # no meta-metadata schema, so no meta shape is written.
+    n_default_licenses = len(list(default_license_graphs(str(settings.base_url).rstrip("/"))))
+    assert report.license_shape_iri is not None
+    assert report.meta_shape_iri is None
+    assert len(report.licenses_written) == n_default_licenses
+    assert report.total_written == 6 + n_default_licenses
 
     # Triple store: each named graph has triples.
-    schema_iri = "http://www.w3.org/ns/dcat#Catalog"
-    # Offer IRI is the one declared inside the TTL file (intrinsic).
-    offer_iri = "http://example.org/offers/public"
+    # Schemas are stored under the reserved namespace ({base}/fdp-api/schemas/{slug},
+    # task 10.5) keyed by storage IRI, not the class IRI — use the reported IRI.
+    assert report.schemas_written
+    schema_iri = report.schemas_written[0]
+    # Offers are seeded as managed policy documents (ADR-0012): the intrinsic TTL
+    # subject is rewritten to the deployment-local {base}/fdp-api/policies/{id}
+    # and stored there, so assert the graph exists at that managed IRI.
+    offer_iri = report.system_default_offer_iri
+    assert offer_iri is not None
     # Repository seed lives at the API root (the configured base_url).
     repo_iri = str(settings.base_url).rstrip("/")
     # The predefined RD shape and the root RD record were written too.
@@ -297,5 +310,11 @@ async def test_force_clear_then_apply_succeeds(
             settings=settings,
             force=True,
         )
-    # schema + offer + RD shape + 1 RD record + Repository seed (ADR-0009).
-    assert report.total_written == 5
+    # schema + offer + license shape + RD shape + RD record + Repository seed
+    # (ADR-0009) + the built-in default licenses (ADR-0012). This bundle declares
+    # no meta-metadata schema, so no meta shape is written.
+    n_default_licenses = len(list(default_license_graphs(str(settings.base_url).rstrip("/"))))
+    assert report.license_shape_iri is not None
+    assert report.meta_shape_iri is None
+    assert len(report.licenses_written) == n_default_licenses
+    assert report.total_written == 6 + n_default_licenses

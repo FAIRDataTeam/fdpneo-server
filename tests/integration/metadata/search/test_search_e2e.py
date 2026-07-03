@@ -185,7 +185,7 @@ _BODY = (
 
 
 def _search_anon(c: _Client, term: str) -> set[str]:
-    resp = c.as_anonymous().post("/search", json={"query": term})
+    resp = c.as_anonymous().post("/fdp-api/search", json={"query": term})
     assert resp.status_code == 200, resp.text
     return {item["recordIri"] for item in resp.json()["items"]}
 
@@ -207,7 +207,7 @@ def test_create_indexes_draft_hidden_then_published_visible(app_env: None) -> No
         assert iri not in _search_anon(c, "zebrafish")
 
         # Publish → RecordStateChanged → re-index → now anonymously searchable.
-        pub = c.as_user().post("/catalog/zf/state", json={"to": "PUBLISHED"})
+        pub = c.as_user().post("/fdp-api/catalog/zf/state", json={"to": "PUBLISHED"})
         assert pub.status_code == 200, pub.text
         assert iri in _search_anon(c, "zebrafish")
 
@@ -216,8 +216,8 @@ def test_facets_returned_for_published(app_env: None) -> None:
     c = _make_client()
     with c.http:
         c.as_user().put("/catalog/zf", content=_BODY, headers={"Content-Type": "text/turtle"})
-        c.as_user().post("/catalog/zf/state", json={"to": "PUBLISHED"})
-        resp = c.as_anonymous().post("/search", json={})
+        c.as_user().post("/fdp-api/catalog/zf/state", json={"to": "PUBLISHED"})
+        resp = c.as_anonymous().post("/fdp-api/search", json={})
         assert resp.status_code == 200
         facets = resp.json()["facets"]
         # Built-in dimensions present (no 9.4 filters configured in this bundle).

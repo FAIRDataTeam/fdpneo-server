@@ -22,6 +22,7 @@ from fdp.shared.graphs import (
     record_graph_uri,
     record_uri_from_sibling,
     resource_definition_graph_uri,
+    state_record_iri,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "record_graph_uri",
     "record_uri_from_sibling",
     "resource_definition_graph_uri",
+    "state_record_iri",
 ]
