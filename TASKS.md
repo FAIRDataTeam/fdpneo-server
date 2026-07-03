@@ -1687,3 +1687,128 @@ merge; coordinate `fdp-client` (see below).
 **Out of scope (v0.3.0):** backup/restore (enabled by this work, built later);
 honoring *foreign* IRIs as the dereferenceable subject; DOI/Handle minting.
 
+---
+
+## Phase 17 — Alternative identifiers + FAIR Signposting (ADR-0017) and write-path hardening (ADR-0016 §1)
+
+Implements [ADR-0017](docs/adr/0017-alternative-identifiers-and-signposting.md)
+(amends ADR-0014's dual identifier model; adds FAIR Signposting Level 1) and the
+two LDP contract fixes decided in
+[ADR-0016 §1](docs/adr/0016-backup-restore-migration.md). Read both ADRs before
+starting — they record the decisions and the rejected alternatives; do not
+improvise around them. Target version: v0.4.0.
+
+### 17.1 [ ] Write-path hardening: ambiguous body → 400, POST Slug collision → 409
+
+- `metadata/identifiers.py` (`reconcile_identifiers`): remove the
+  "store as authored" fallback. A write body must address the record as `<>` /
+  the canonical IRI, or contain exactly one typed IRI primary subject. Zero
+  typed subjects, multiple typed subjects, or blank-node-only bodies raise a
+  new `AmbiguousSubject` error (→ HTTP 400 via the shared error envelope) whose
+  message states the requirement. Signature change: the function may now raise;
+  update the router call sites (PUT + POST).
+- `metadata/ldp/router.py` (`http_post`): before `put_graph`, check whether the
+  minted member IRI already exists (`repo.get_graph` non-empty **or** meta graph
+  has `dct:created` — match the 404 convention). If it exists → `409 Conflict`
+  (add a `Conflict` error to `shared/errors.py` if the mapping is missing),
+  telling the client to pick another Slug or use `PUT` + `If-Match`. POST must
+  never overwrite.
+- Update existing tests that relied on the lenient behaviours
+  (`tests/unit/metadata/test_identifiers.py::test_ambiguous_multiple_typed_subjects_left_as_is`
+  now expects a raise); add router-level cases for both new status codes.
+
+References: ADR-0016 §1, ADR-0014 §3, `docs/dev-docs/04-request-lifecycle.md`.
+
+### 17.2 [ ] `reconcile_identifiers`: foreign subject → adms:identifier, never server-minted sameAs
+
+- `shared/namespaces.py`: add `ADMS = Namespace("http://www.w3.org/ns/adms#")`.
+- `metadata/identifiers.py`: when rebinding a foreign primary subject, replace
+  the automatic `owl:sameAs` with:
+  `<canonical> dct:identifier "<foreign-iri>"` (plain literal) **and**
+  `<canonical> adms:identifier [ a adms:Identifier ; skos:notation
+  "<foreign-iri>"^^xsd:anyURI ]`. Within-base mis-addressing keeps getting
+  silently corrected with no cross-reference (unchanged). Client-authored
+  `owl:sameAs` / `skos:exactMatch` / `dct:identifier` / `adms:identifier` on
+  `<>` still pass through untouched. Update the module docstring — it documents
+  the old sameAs behaviour.
+- `profiles/default/schemas/resource.ttl`: add optional `adms:identifier`
+  (additive/lenient, same posture as the v0.3.0 `owl:sameAs` addition).
+- No data migration: existing server-minted `sameAs` triples are
+  indistinguishable from client-authored ones (ADR-0017 §1); note the
+  semantics change in release notes.
+- Tests: rewrite the foreign-subject cases in
+  `tests/unit/metadata/test_identifiers.py`; update the integration assertion
+  in `tests/integration/metadata/test_persistent_identifiers.py` (currently
+  expects `owl:sameAs`).
+
+References: ADR-0017 §1; DCAT 3 `adms:identifier`.
+
+### 17.3 [ ] `metadata/signposting.py` — pure Link-relation builder
+
+New module, pure functions (no I/O), mirroring the discipline of
+`shared/identifiers.py`:
+
+- `PID_RESOLVERS`: frozen set/predicate for recognised PID resolvers —
+  `doi.org`, `dx.doi.org`, `hdl.handle.net`, `w3id.org`, `purl.org`,
+  `identifiers.org`, plus `ark:` scheme IRIs.
+- `select_cite_as(record_graph, canonical_iri) -> str`: ADR-0017 §2 order —
+  client-asserted `owl:sameAs` under a PID resolver → IRI-valued
+  `adms:identifier`(`skos:notation`)/`dct:identifier` under a PID resolver →
+  the canonical IRI. Deterministic tie-break (lexicographic) when several
+  qualify.
+- `signposting_links(record_graph, canonical_iri, media_types) -> list[Link]`
+  producing typed relations: `cite-as`; `describedby` (canonical IRI once per
+  supported RDF media type, with `type` attribute — reuse
+  `shared/negotiation.SUPPORTED_TYPES`); `type` (each `rdf:type` of the
+  canonical subject); `license` (`dct:license`); `author` (IRI-valued
+  `dct:creator`/`dct:publisher`); `item` (objects of the container's typed
+  member relations + `ldp:contains`); `collection` (`dct:isPartOf`).
+- Cap total signposting links per response (e.g. 30, constant) so a huge
+  container cannot blow up the header block; when the cap trims `item` links,
+  that is acceptable Level-1 degradation (Level-2 linkset is deferred —
+  ADR-0017 §2).
+- Serialization helper to RFC 8288 header syntax; unit tests
+  (`tests/unit/metadata/test_signposting.py`) cover selection order, PID
+  recognition (incl. `ark:`), attribute quoting, and the cap.
+
+References: ADR-0017 §2; FAIR Signposting Profile (signposting.org/FAIR/);
+RFC 8288.
+
+### 17.4 [ ] Wire signposting into LDP GET/HEAD
+
+- `metadata/ldp/router.py`: in `http_get` and `http_head` (existing records
+  only — after the 404 check), extend the `Link` header via the 17.3 builder.
+  Keep the LDP `rel="type"` + `constrainedBy` links first; signposting links
+  append to the same comma-joined header. The graph is already in hand — no
+  extra store round-trip.
+- `cite-as` must use the **canonical** IRI as default even when the request
+  arrived on a serving origin (pass the canonicalized IRI, which the handlers
+  already have).
+- Router-level tests: record with a client-asserted DOI `sameAs` → `cite-as`
+  is the DOI; plain record → `cite-as` is the canonical IRI; container GET
+  carries `item` links; HEAD carries the same links as GET.
+- Contract test: `tests/contract/` asserts a published record's response
+  headers parse as valid RFC 8288 and include exactly one `cite-as`.
+
+References: ADR-0017 §2; LDP §4.2.1 (existing Link discipline in
+`_response_headers`).
+
+### 17.5 [ ] Docs + release for v0.4.0 identifier work
+
+- `docs/dev-docs/04-request-lifecycle.md`: document the new 400/409 paths and
+  the signposting header stage.
+- `docs/conformance/`: add a FAIR Signposting Level 1 conformance note (which
+  relations are emitted, the cap, the Level-2 deferral).
+- Release notes: the two LDP contract changes (400 ambiguous body, 409 Slug
+  collision), the sameAs → adms:identifier semantics change, new headers.
+- Quality gate: `ruff` clean, `pyright` 0 errors, full unit + integration
+  suites green. Coordinate `fdp-client`: render `adms:identifier` in record
+  detail; surface `cite-as` as the "Cite this" URI; add
+  `<link rel="cite-as">` to the record page head.
+
+References: ADR-0016, ADR-0017, `docs/dev-docs/07-contributing.md`.
+
+**Out of scope (Phase 17):** `fdp dump`/`restore`/`import` (ADR-0016 §2–§5 —
+schedule as Phase 18 once this phase lands); Level-2 linkset endpoint;
+DOI/Handle minting.
+

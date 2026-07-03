@@ -23,6 +23,8 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0013](0013-user-management-facade.md) | User-management facade over the IdP Admin API | Accepted |
 | [0014](0014-persistent-identifiers.md) | Persistent identifiers — base/serving split, dual model, W3ID | Accepted |
 | [0015](0015-form-grouping-presentation-overlay.md) | Cross-schema form grouping via a presentation overlay | Proposed |
+| [0016](0016-backup-restore-migration.md) | Faithful backup/restore and instance migration | Proposed |
+| [0017](0017-alternative-identifiers-and-signposting.md) | Structured alternative identifiers and FAIR Signposting | Proposed |
 
 ## Format
 
