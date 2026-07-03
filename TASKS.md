@@ -1698,14 +1698,14 @@ two LDP contract fixes decided in
 starting — they record the decisions and the rejected alternatives; do not
 improvise around them.
 
-> **Release status.** **v0.4.0** shipped task 17.1 (write-path hardening: `400`
-> ambiguous body, `409` `Slug` collision) plus two fixes uncovered while
-> testing it — the shared publication-state router now resolves managed-resource
-> IRIs (policies/licenses/schemas/RDs could not be published via `/state`), and
-> the repository-root `/page` listing trailing-slash bug — and a repaired,
-> GraphDB-backed integration suite. See `CHANGELOG.md`. Tasks **17.2–17.5**
-> (`adms:identifier`, FAIR Signposting Level 1, their docs/release) remain open
-> and are **retargeted to v0.5.0**.
+> **Status.** Task 17.1 (write-path hardening: `400` ambiguous body, `409`
+> `Slug` collision) is complete, along with two fixes uncovered while testing it
+> — the shared publication-state router now resolves managed-resource IRIs
+> (policies/licenses/schemas/RDs could not be published via `/state`) and the
+> repository-root `/page` listing trailing-slash bug — and a repaired,
+> GraphDB-backed integration suite. These live on `main` as **unreleased**
+> changes (see `CHANGELOG.md` → Unreleased). Tasks **17.2–17.5** remain; the
+> **v0.4.0 release is cut only once all of Phase 17 is complete.**
 
 ### 17.1 [x] Write-path hardening: ambiguous body → 400, POST Slug collision → 409
 

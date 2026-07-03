@@ -5,10 +5,12 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [0.4.0] — 2026-07-03
+## [Unreleased]
 
-Write-path hardening and lifecycle/consistency fixes, plus a repaired and
-GraphDB-backed integration suite.
+Changes staged for the next release (**v0.4.0**, which ships once Phase 17 is
+complete). So far: write-path hardening and lifecycle/consistency fixes, plus a
+repaired and GraphDB-backed integration suite. FAIR Signposting and
+`adms:identifier` (tasks 17.2–17.5) are still to come before the release is cut.
 
 ### Changed — LDP contract (⚠ behaviour changes)
 
