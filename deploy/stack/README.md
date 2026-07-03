@@ -20,9 +20,13 @@ cp deploy/stack/.env.example deploy/stack/.env      # edit PUBLIC_HOST / secrets
 docker compose -f deploy/stack/compose.yaml --env-file deploy/stack/.env up -d
 ```
 
-Then open the UI at **http://localhost:8080**. The API is at
-**http://localhost:8000** (`/fdp-api/healthz`, `/fdp-api/config`, `/fdp-api/docs`
-when `ENVIRONMENT=development`), and Keycloak at **http://localhost:8081**.
+Then open the UI at **http://localhost:5173**. The API is at
+**http://localhost:8000** (`/fdp-api/healthz`, `/fdp-api/config`), and Keycloak at
+**http://localhost:8081**.
+
+The OpenAPI spec is always served at `/fdp-api/openapi.json`. The interactive docs
+(Swagger `/fdp-api/docs`, ReDoc `/fdp-api/redoc`) are on by default in this stack
+via `EXPOSE_API_DOCS=true`; they are otherwise served only when `ENVIRONMENT=development`.
 
 Log in with a bundled realm user (e.g. `alice` / `alice`, admin `admin` / `admin`
 — see `deploy/keycloak/realm-fdp-dev.json`).

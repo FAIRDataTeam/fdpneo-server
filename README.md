@@ -7,7 +7,7 @@ A FAIR-aligned metadata repository implementing the [FAIR Data Point specificati
 
 This repository contains the **server** implementation. The reference web client lives in a separate repository: `fdp-client` (URL to be set at repo creation).
 
-> **Status: design phase.** This README describes the target architecture. Code in this repository is in active development and not yet ready for production deployment. 
+> **Status: active development.** The core stack runs — you can bring up the full client + server + services with one command (see [Getting started](#getting-started)). This README still describes some target-state features that are in progress, and the bundled deployment is dev-credentialed, so it is not yet hardened for production. 
 
 
 ## What the FDP does
@@ -69,7 +69,8 @@ fdp-server/
 │   ├── contract/                   ← OpenAPI conformance
 │   └── conformance/                ← FDP specs and LDP test suite
 ├── deploy/
-│   ├── compose.yaml                ← dev stack: API + GraphDB + Postgres + Keycloak
+│   ├── compose.yaml                ← dev stack: GraphDB + Postgres + Keycloak (server runs on host)
+│   ├── stack/                      ← full stack: client + server + services, one command
 │   └── helm/
 └── pyproject.toml
 ```
@@ -92,18 +93,41 @@ fdp-server/
 | Package management | uv |
 | Testing | pytest, pytest-asyncio, testcontainers |
 
-## Getting started (planned)
+## Getting started
+
+There are two ways to run the FDP, depending on whether you are developing the server or just want a running instance.
+
+### Full stack, one command (client + server + services)
+
+The `deploy/stack/` compose brings up everything — the Vue client, the FastAPI server, and the backing services (GraphDB, PostgreSQL, Keycloak) — with the GraphDB repository, database schema, and default metadata profile bootstrapped automatically on first boot.
+
+```bash
+cd server
+cp deploy/stack/.env.example deploy/stack/.env      # then edit PUBLIC_HOST / secrets
+docker compose -f deploy/stack/compose.yaml --env-file deploy/stack/.env up -d
+```
+
+Then open the UI at **http://localhost:5173**, the API at **http://localhost:8000**, and Keycloak at **http://localhost:8081**. Images are pulled from GHCR by default; add `--build` to build from source (the client builds from a sibling `../client` checkout). See [`deploy/stack/README.md`](deploy/stack/README.md) for details and production-hardening notes.
+
+**API documentation.** The OpenAPI spec is always served at **http://localhost:8000/fdp-api/openapi.json** (in every environment — point client codegen and tooling here). The interactive docs UIs — Swagger at **/fdp-api/docs** and ReDoc at **/fdp-api/redoc** — are served only in `development` mode or when `EXPOSE_API_DOCS=true`; the full-stack `.env` enables them by default for evaluation.
+
+> [!WARNING]
+> The bundled Keycloak realm and credentials are **development-only**. Rotate every secret and harden Keycloak before any real deployment.
+
+### Development stack (backing services only)
+
+For working on the server itself, run only the backing services in Docker and run the server on the host so you get hot-reload and a debugger:
 
 ```bash
 # clone, then:
-docker compose -f deploy/compose.yaml up -d
+docker compose -f deploy/compose.yaml up -d       # GraphDB + PostgreSQL + Keycloak
 uv sync
 uv run alembic upgrade head
 uv run fdp profile apply ./profiles/default
 uv run fastapi dev src/fdp/main.py
 ```
 
-The compose stack starts GraphDB, PostgreSQL, and a Keycloak instance pre-configured for local development. The default profile bootstraps a minimal FDP/DCAT setup; replace it with a community profile to bootstrap a custom deployment.
+This compose starts GraphDB, PostgreSQL, and a Keycloak instance pre-configured for local development, but not the server or client. The default profile bootstraps a minimal FDP/DCAT setup; replace it with a community profile to bootstrap a custom deployment.
 
 ## License
 
