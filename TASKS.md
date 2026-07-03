@@ -1728,7 +1728,7 @@ improvise around them.
 
 References: ADR-0016 §1, ADR-0014 §3, `docs/dev-docs/04-request-lifecycle.md`.
 
-### 17.2 [ ] `reconcile_identifiers`: foreign subject → adms:identifier, never server-minted sameAs
+### 17.2 [x] `reconcile_identifiers`: foreign subject → adms:identifier, never server-minted sameAs
 
 - `shared/namespaces.py`: add `ADMS = Namespace("http://www.w3.org/ns/adms#")`.
 - `metadata/identifiers.py`: when rebinding a foreign primary subject, replace

@@ -47,6 +47,7 @@ def test_namespace_resolves_terms() -> None:
 @pytest.mark.unit
 def test_prefixes_mapping_is_lowercase_and_immutable() -> None:
     assert set(PREFIXES) == {
+        "adms",
         "dcat",
         "dct",
         "fdp-o",

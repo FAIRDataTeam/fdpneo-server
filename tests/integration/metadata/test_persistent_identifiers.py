@@ -8,7 +8,9 @@ TestClient talks to). Proves:
    ``IDENTIFIER_BASE`` IRI (not the serving host), and resolves back through the
    serving path — i.e. in-server canonicalization works against a real store.
 2. The dual identifier model: a foreign subject in the body is rebound to the
-   canonical IRI and preserved as ``owl:sameAs``.
+   canonical IRI and preserved as structured alternative identifiers
+   (``dct:identifier`` + ``adms:identifier``), never server-minted ``owl:sameAs``
+   (ADR-0017 §1).
 
 Requires Docker (testcontainers). Marked ``integration``.
 """
@@ -23,14 +25,14 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from rdflib import Graph, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
 from fdp.shared.context import RequestContext
-from fdp.shared.namespaces import DCAT, DCT, OWL
+from fdp.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OXIGRAPH_PORT = 7878
@@ -232,7 +234,7 @@ def test_record_minted_under_identifier_base_resolves_via_serving_host(app_env: 
     assert URIRef(serving_iri) not in set(g.subjects())
 
 
-def test_foreign_identifier_preserved_as_sameas(app_env: None) -> None:
+def test_foreign_identifier_preserved_as_alternative_identifier(app_env: None) -> None:
     canonical = f"{IDENTIFIER_BASE}/catalog/c2"
     foreign = "https://doi.org/10.1234/brought-along"
     body = (
@@ -248,10 +250,16 @@ def test_foreign_identifier_preserved_as_sameas(app_env: None) -> None:
 
     g = _graph(got.text)
     canon = URIRef(canonical)
-    # Rebound to canonical; foreign kept as a cross-reference, never the subject.
+    # Rebound to canonical; the foreign IRI is never the subject.
     assert (canon, RDF.type, DCAT.Catalog) in g
-    assert (canon, OWL.sameAs, URIRef(foreign)) in g
     assert URIRef(foreign) not in set(g.subjects())
+    # Preserved as structured alternative identifiers, never server-minted sameAs.
+    assert not list(g.triples((None, OWL.sameAs, None)))
+    assert (canon, DCT.identifier, Literal(foreign)) in g
+    node = g.value(canon, ADMS.identifier)
+    assert node is not None
+    assert (node, RDF.type, ADMS.Identifier) in g
+    assert (node, SKOS.notation, Literal(foreign, datatype=XSD.anyURI)) in g
 
 
 def test_identifier_is_immutable_across_a_content_edit(app_env: None) -> None:
@@ -292,8 +300,8 @@ def test_identifier_is_immutable_across_a_content_edit(app_env: None) -> None:
     assert URIRef(serving_iri) not in set(g.subjects())
 
 
-def test_sameas_survives_a_content_edit(app_env: None) -> None:
-    """The dual-identifier ``owl:sameAs`` link is preserved across a re-edit."""
+def test_alternative_identifier_survives_a_content_edit(app_env: None) -> None:
+    """The structured alternative identifier is preserved across a re-edit."""
     canonical = f"{IDENTIFIER_BASE}/catalog/c4"
     foreign = "https://doi.org/10.1234/kept"
     create = (
@@ -321,5 +329,10 @@ def test_sameas_survives_a_content_edit(app_env: None) -> None:
     g = _graph(got.text)
     canon = URIRef(canonical)
     assert {str(o) for o in g.objects(canon, DCT.title)} == {"v2"}
-    assert (canon, OWL.sameAs, URIRef(foreign)) in g
+    # The structured alternative identifier persists; still no server sameAs.
+    assert not list(g.triples((None, OWL.sameAs, None)))
+    assert (canon, DCT.identifier, Literal(foreign)) in g
+    node = g.value(canon, ADMS.identifier)
+    assert node is not None
+    assert (node, SKOS.notation, Literal(foreign, datatype=XSD.anyURI)) in g
     assert URIRef(foreign) not in set(g.subjects())

@@ -6,14 +6,14 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from rdflib import Graph, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.identity.deps import current_context
 from fdp.metadata.ldp import build_ldp_router
 from fdp.metadata.repository import MetadataRepository
 from fdp.shared.errors import register_exception_handlers
-from fdp.shared.namespaces import DCAT, DCT, OWL
+from fdp.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
 from tests.unit.metadata.ldp.test_router import (
     FakeAdapter,
     FakePDP,
@@ -76,7 +76,7 @@ async def test_get_resolves_canonical_record_from_serving_host() -> None:
 
 
 @pytest.mark.unit
-async def test_foreign_subject_rebound_with_sameas() -> None:
+async def test_foreign_subject_rebound_as_alternative_identifier() -> None:
     adapter = FakeAdapter()
     repo = MetadataRepository(adapter)  # type: ignore[arg-type]
     app = _app(repo, FakePDP())
@@ -89,10 +89,16 @@ async def test_foreign_subject_rebound_with_sameas() -> None:
     canonical = f"{ID_BASE}/ldp/catalogs/c1"
     stored = adapter.graphs[canonical]
     canon = URIRef(canonical)
-    # Subject rebound to canonical; foreign kept as owl:sameAs cross-reference.
+    # Subject rebound to canonical; foreign preserved as structured alternative
+    # identifiers (ADR-0017 §1), never as a server-minted owl:sameAs.
     assert (canon, RDF.type, DCAT.Dataset) in stored
-    assert (canon, OWL.sameAs, URIRef(foreign)) in stored
     assert (URIRef(foreign), RDF.type, DCAT.Dataset) not in stored
+    assert not list(stored.triples((None, OWL.sameAs, None)))
+    assert (canon, DCT.identifier, Literal(foreign)) in stored
+    node = stored.value(canon, ADMS.identifier)
+    assert node is not None
+    assert (node, RDF.type, ADMS.Identifier) in stored
+    assert (node, SKOS.notation, Literal(foreign, datatype=XSD.anyURI)) in stored
 
 
 @pytest.mark.unit

@@ -1,4 +1,4 @@
-"""Tests for ``fdp.metadata.identifiers`` — dual identifier model (ADR-0014)."""
+"""Tests for ``fdp.metadata.identifiers`` — dual identifier model (ADR-0014/0017)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from rdflib.namespace import RDF
 
 from fdp.metadata.identifiers import reconcile_identifiers
 from fdp.shared.errors import AmbiguousSubject
-from fdp.shared.namespaces import DCAT, DCT, OWL, SKOS
+from fdp.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
 
 ID_BASE = "https://w3id.org/myfdp"
 CANON = f"{ID_BASE}/catalog/c1"
@@ -25,18 +25,28 @@ class TestReconcile:
         assert out is g  # unchanged, same object
         assert (canon, DCT.title, Literal("My catalog")) in out
 
-    def test_foreign_primary_subject_rebound_with_sameas(self) -> None:
+    def test_foreign_primary_subject_rebound_as_alternative_identifier(self) -> None:
+        # ADR-0017 §1: a foreign subject is rebound and preserved as structured
+        # alternative identifiers (dct:identifier + adms:identifier), never sameAs.
         foreign = URIRef("https://doi.org/10.1234/foo")
         g = Graph()
         g.add((foreign, RDF.type, DCAT.Catalog))
         g.add((foreign, DCT.title, Literal("Brought-along ID")))
         out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
         canon = URIRef(CANON)
-        # Triples rebound to canonical; foreign kept only as a cross-reference.
+        # Triples rebound to canonical; the foreign IRI is no longer a subject.
         assert (canon, DCT.title, Literal("Brought-along ID")) in out
         assert (canon, RDF.type, DCAT.Catalog) in out
-        assert (canon, OWL.sameAs, foreign) in out
         assert (foreign, RDF.type, DCAT.Catalog) not in out
+        # The server never mints owl:sameAs.
+        assert not list(out.triples((None, OWL.sameAs, None)))
+        # dct:identifier literal (DCAT 3 lightweight form).
+        assert (canon, DCT.identifier, Literal(str(foreign))) in out
+        # adms:identifier node: typed adms:Identifier with skos:notation ^^xsd:anyURI.
+        node = out.value(canon, ADMS.identifier)
+        assert node is not None
+        assert (node, RDF.type, ADMS.Identifier) in out
+        assert (node, SKOS.notation, Literal(str(foreign), datatype=XSD.anyURI)) in out
 
     def test_self_reference_object_is_rebound(self) -> None:
         foreign = URIRef("https://example.org/thing")
@@ -60,7 +70,11 @@ class TestReconcile:
         out = reconcile_identifiers(g, canonical_iri=CANON, identifier_base=ID_BASE)
         canon = URIRef(CANON)
         assert (canon, DCT.title, Literal("x")) in out
+        # A within-base mis-addressing is silently corrected: no cross-reference
+        # of any kind (sameAs, dct:identifier, adms:identifier) is fabricated.
         assert not list(out.triples((None, OWL.sameAs, None)))
+        assert not list(out.triples((None, ADMS.identifier, None)))
+        assert not list(out.triples((canon, DCT.identifier, None)))
 
     def test_explicit_external_ids_preserved(self) -> None:
         canon = URIRef(CANON)

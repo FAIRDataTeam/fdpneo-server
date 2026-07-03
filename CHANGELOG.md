@@ -8,9 +8,10 @@ out explicitly below).
 ## [Unreleased]
 
 Changes staged for the next release (**v0.4.0**, which ships once Phase 17 is
-complete). So far: write-path hardening and lifecycle/consistency fixes, plus a
-repaired and GraphDB-backed integration suite. FAIR Signposting and
-`adms:identifier` (tasks 17.2–17.5) are still to come before the release is cut.
+complete). So far: write-path hardening, the alternative-identifiers semantics
+change, and lifecycle/consistency fixes, plus a repaired and GraphDB-backed
+integration suite. FAIR Signposting (tasks 17.3–17.5) is still to come before the
+release is cut.
 
 ### Changed — LDP contract (⚠ behaviour changes)
 
@@ -24,6 +25,15 @@ repaired and GraphDB-backed integration suite. FAIR Signposting and
   the slug-derived member IRI already exists, the server responds
   `409 fdp.conflict` so the client picks another `Slug` or uses `PUT` + `If-Match`
   deliberately. (ADR-0016 §1)
+- **Foreign brought-along identifier → `adms:identifier`, not `owl:sameAs`.** When
+  a write rebinds a foreign primary subject to the canonical IRI, the original is
+  now recorded as a structured alternative identifier — `dct:identifier` (literal)
+  plus an `adms:identifier` node (`adms:Identifier` with `skos:notation`
+  `^^xsd:anyURI`). The server no longer mints `owl:sameAs` (it cannot know the two
+  resources are identical). Consumers that joined on the server-added `sameAs`
+  must switch to `adms:identifier`/`dct:identifier`. Existing server-minted
+  `sameAs` triples are **not** migrated (indistinguishable from client-authored
+  ones); the resource SHACL shape gains an optional `adms:identifier`. (ADR-0017 §1)
 
 Clients that relied on the previous lenient behaviours (silent "store as
 authored", silent `POST` overwrite) must switch to the explicit forms above.

@@ -53,6 +53,11 @@ fs:resource
         sh:datatype xsd:string ;
     ] ;
     sh:property [
+        sh:path adms:identifier ;
+        sh:name "alternativeIdentifier" ;
+        sh:description "A structured alternative/legacy identifier (an adms:Identifier node with skos:notation). The server records a brought-along foreign IRI here — plus a dct:identifier literal — instead of asserting owl:sameAs when it rebinds a foreign primary subject to the canonical IRI (ADR-0017)." ;
+    ] ;
+    sh:property [
         sh:path owl:sameAs ;
         sh:name "sameAs" ;
         sh:description "An equivalent IRI for this resource minted elsewhere (a foreign persistent identifier the FDP does not resolve)." ;

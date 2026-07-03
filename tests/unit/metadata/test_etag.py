@@ -56,3 +56,27 @@ def test_etag_distinguishes_literal_and_uri_objects() -> None:
     g_uri = _graph_with([(s, p, URIRef(EX + "x"))])
     g_lit = _graph_with([(s, p, Literal("x"))])
     assert compute_etag(g_uri) != compute_etag(g_lit)
+
+
+@pytest.mark.unit
+def test_etag_is_stable_across_blank_node_relabeling() -> None:
+    # A graph with a blank node (e.g. an adms:Identifier node, ADR-0017) must
+    # hash the same after a serialization round-trip relabels its _:bN — otherwise
+    # If-Match breaks the moment the record is re-read and edited.
+    ttl = (
+        f'<{EX}rec> <{EX}identifier> [ <{EX}notation> "urn:x" ] .'
+    )
+    g1 = Graph()
+    g1.parse(data=ttl, format="turtle")
+    g2 = Graph()
+    g2.parse(data=g1.serialize(format="nt"), format="nt")  # fresh _:bN labels
+    assert compute_etag(g1) == compute_etag(g2)
+
+
+@pytest.mark.unit
+def test_etag_distinguishes_different_blank_node_content() -> None:
+    g1 = Graph()
+    g1.parse(data=f'<{EX}rec> <{EX}identifier> [ <{EX}notation> "a" ] .', format="turtle")
+    g2 = Graph()
+    g2.parse(data=f'<{EX}rec> <{EX}identifier> [ <{EX}notation> "b" ] .', format="turtle")
+    assert compute_etag(g1) != compute_etag(g2)

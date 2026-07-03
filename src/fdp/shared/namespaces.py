@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from fdp.config import Settings
 
 
+ADMS = Namespace("http://www.w3.org/ns/adms#")
 DCAT = Namespace("http://www.w3.org/ns/dcat#")
 DCT = Namespace("http://purl.org/dc/terms/")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
@@ -86,6 +87,7 @@ record-content edit."""
 
 PREFIXES: Mapping[str, Namespace] = MappingProxyType(
     {
+        "adms": ADMS,
         "dcat": DCAT,
         "dct": DCT,
         "foaf": FOAF,
@@ -130,6 +132,7 @@ def bind_all(graph: Graph, *, settings: Settings | None = None) -> None:
 
 
 __all__ = [
+    "ADMS",
     "DCAT",
     "DCT",
     "FDP_CHILD_LINK",
