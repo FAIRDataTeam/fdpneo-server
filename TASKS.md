@@ -1869,3 +1869,109 @@ References: ADR-0018 §5, vision doc §7.
 **Out of scope (Phase 19):** the bridge implementation (see `../mcp/TASKS.md`);
 Index-level MCP (vision increment C — needs Phase 8 and its own ADR);
 capability-profile schema package (increment B).
+
+---
+
+## Phase 20 — Self-describing record–schema binding & versioning (ADR-0019)
+
+Implements [ADR-0019](docs/adr/0019-record-schema-binding-and-versioning.md): make
+records self-describing at rest by carrying `dct:conformsTo` → a `prof:Profile`
+(the server-stamped, authoritative validation binding), demote the
+ResourceDefinition to a type→profile index, and give schemas/profiles immutable
+versioned identity. Read the ADR first — it records the decisions (stable binding
+in the record + exact version in `/meta`; PROF minimal-but-growable; RD matches
+its type's profile in v1) and the rejected alternatives; don't improvise.
+
+This **amends ADR-0007/0009** and is the **prerequisite for Phase 18's `fdp import`
+step** (import brings profiles first, then validates each record against its own
+`conformsTo`). Target version: v0.5.0 (tentative; sequence vs Phases 18/19 TBD).
+
+### 20.1 [ ] PROF vocabulary + versioned profile/schema graph URIs (shared kernel)
+
+- `shared/namespaces.py`: add `PROF` (`http://www.w3.org/ns/dx/prof/`) and the
+  profile-role namespace (`role:validation`, …); register the `prof`/`role`
+  prefixes.
+- `shared/graphs.py`: `profile_graph_uri(base, slug)` →
+  `{base}/fdp-api/profiles/{slug}` (stable) and a versioned variant
+  `{base}/fdp-api/profiles/{slug}/{version}`; matching helpers for schema version
+  IRIs; `is_profile_graph_uri`; add `profiles` to the managed-segment set (so
+  `state_record_iri` / the quad dump treat it like schemas).
+- Fix the version-IRI scheme once here — it is load-bearing for §20.2–20.4.
+
+References: ADR-0019 §1/§4/§5; the existing `_*_SEGMENT` conventions.
+
+### 20.2 [ ] Immutable, versioned schema identity (schema service)
+
+- `metadata/schemas.py`: change `PUT /schemas/{id}` from mutate-in-place to
+  **snapshot** — write an immutable version graph, move `dcat:hasCurrentVersion`
+  on the stable IRI, retain prior versions, bump `dcat:version`. `GET` returns the
+  current version; add fetch-by-version. `schema_exists` resolves the current
+  shape.
+- Tests: version round-trip, current-pointer move, prior-version retention.
+
+References: ADR-0019 §4.
+
+### 20.3 [ ] Profile resource type (PROF) — service, router, RD wiring
+
+- New managed **Profile** resource: `prof:Profile` with
+  `prof:hasResource [ prof:hasRole role:validation ; prof:hasArtifact <shape
+  version> ]`. Service + router under `/fdp-api/profiles` mirroring
+  `schemas.py`/`licenses.py`, versioned like §20.2.
+- **Auto-provision:** publishing a schema creates/updates a profile wrapping its
+  current shape version (v1: one profile per schema, maintained by the schema
+  service).
+- `metadata/profiles/rd_records.py` + RD admin/applier + container registry: the
+  RD's default binding (`ldp:constrainedBy`) now references a **profile**, not a
+  bare schema.
+
+References: ADR-0019 §1/§2/§5.
+
+### 20.4 [ ] Write path: stamp `dct:conformsTo`, validate via profile, record `validatedAgainst`
+
+- `metadata/ldp/router.py` (+ a containment-style maintainer): resolve
+  type→RD→profile; inject/refresh `dct:conformsTo <stable profile>` in the record
+  graph; **enforce record profile == type default** (reject a conflicting
+  client-asserted validation `conformsTo`).
+- Shape resolution for validation goes through the record's `conformsTo` → profile
+  → `role:validation` artifact (adjust `ContainerRegistry.shape_for` /
+  `member_shape` or the validator).
+- `metadata/meta.py`: write `fdp-o:validatedAgainst <profile version>` into the
+  meta graph at write time.
+- Tests: `conformsTo` stamped/maintained; validation resolves via `conformsTo`;
+  `validatedAgainst` recorded; conflicting client `conformsTo` rejected.
+
+References: ADR-0019 §1/§2/§3.
+
+### 20.5 [ ] Resource shape, meta shape, docs
+
+- `profiles/default/schemas/resource.ttl`: annotate `dct:conformsTo` as
+  server-managed; `schemas/meta-metadata.ttl`: add optional
+  `fdp-o:validatedAgainst`.
+- `docs/dev-docs/04-request-lifecycle.md`: document the profile-driven validation
+  stage; `docs/conformance/`: a profile-binding note. (A Signposting profile link
+  relation is deferred — ADR-0017/0019.)
+
+References: ADR-0019 §1/§3.
+
+### 20.6 [ ] Migration: backfill `conformsTo` + wrap schemas as profiles
+
+- CLI command (adapter-level, idempotent, `--dry-run`, like `fdp pid rebase`):
+  wrap each existing schema in a profile and snapshot it as version 1; for each
+  record, resolve type→RD→profile, stamp `dct:conformsTo`, and write
+  `validatedAgainst` (the v1 IRI) into its meta graph. Reindex search if
+  `conformsTo` participates.
+
+References: ADR-0019 §6.
+
+### 20.7 [ ] Quality gate + release (v0.5.0)
+
+- `ruff` clean, `pyright` 0 errors, full unit + integration green. ADR-0019 status
+  → Accepted; CHANGELOG; version bump; coordinate `fdp-client` (render
+  `conformsTo`/profile; a validation view resolves the profile's shape).
+
+References: ADR-0019.
+
+**Out of scope (Phase 20):** per-record profile choice decoupled from the RD
+(deferred, ADR-0019 §2); rich multi-resource profiles beyond `role:validation`
+(the model is growable but v1 wraps a single shape); a Signposting profile link
+relation.

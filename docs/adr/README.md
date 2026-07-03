@@ -26,6 +26,7 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0016](0016-backup-restore-migration.md) | Faithful backup/restore and instance migration | Proposed |
 | [0017](0017-alternative-identifiers-and-signposting.md) | Structured alternative identifiers and FAIR Signposting | Proposed |
 | [0018](0018-agent-consumption-mcp-server.md) | Agent consumption via a standalone MCP sidecar (`fdp-mcp`) | Proposed |
+| [0019](0019-record-schema-binding-and-versioning.md) | Self-describing record–schema binding and schema versioning | Proposed |
 
 ## Format
 
