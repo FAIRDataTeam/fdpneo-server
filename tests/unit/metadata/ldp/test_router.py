@@ -22,7 +22,7 @@ from fdp.policy.model import Action, Decision, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.events import EventBus
-from fdp.shared.namespaces import DCT, LDP
+from fdp.shared.namespaces import DCT, LDP, OWL
 from fdp.shared.negotiation import (
     JSON_LD,
     N_TRIPLES,
@@ -339,6 +339,67 @@ async def test_head_returns_headers_without_body() -> None:
     assert response.content == b""
     assert "etag" in response.headers
     assert "link" in response.headers
+
+
+# --- Signposting (ADR-0017 §2) ---------------------------------------------
+
+
+@pytest.mark.unit
+async def test_get_signposting_cite_as_defaults_to_canonical() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    app = _build_app(repo=repo, pdp=FakePDP())
+    with TestClient(app) as client:
+        resp = client.get(RECORD_PATH, headers={"Accept": "text/turtle"})
+    assert resp.status_code == 200
+    link = resp.headers["link"]
+    assert f'<{RECORD_IRI}>; rel="cite-as"' in link
+    # LDP type links still come first; describedby is emitted per RDF media type.
+    assert f'<{LDP.Resource}>; rel="type"' in link
+    assert f'<{RECORD_IRI}>; rel="describedby"; type="text/turtle"' in link
+
+
+@pytest.mark.unit
+async def test_get_signposting_cite_as_prefers_client_doi_sameas() -> None:
+    repo, _ = _make_repo()
+    doi = "https://doi.org/10.1234/foo"
+    graph = Graph()
+    graph.add((URIRef(RECORD_IRI), DCT.title, Literal("titled")))
+    graph.add((URIRef(RECORD_IRI), OWL.sameAs, URIRef(doi)))
+    await repo.put_graph(RECORD_IRI, graph, subject=ALICE)
+    app = _build_app(repo=repo, pdp=FakePDP())
+    with TestClient(app) as client:
+        resp = client.get(RECORD_PATH, headers={"Accept": "text/turtle"})
+    link = resp.headers["link"]
+    assert f'<{doi}>; rel="cite-as"' in link
+    assert f'<{RECORD_IRI}>; rel="cite-as"' not in link
+
+
+@pytest.mark.unit
+async def test_get_container_carries_item_links() -> None:
+    repo, _ = _make_repo()
+    child = f"{CONTAINER_IRI}/child-1"
+    graph = Graph()
+    graph.add((URIRef(CONTAINER_IRI), DCT.title, Literal("container")))
+    graph.add((URIRef(CONTAINER_IRI), LDP.contains, URIRef(child)))
+    await repo.put_graph(CONTAINER_IRI, graph, subject=ALICE)
+    containers = FixedContainerRegistry(container_iris={CONTAINER_IRI})
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
+    with TestClient(app) as client:
+        resp = client.get(CONTAINER_PATH, headers={"Accept": "text/turtle"})
+    assert resp.status_code == 200
+    assert f'<{child}>; rel="item"' in resp.headers["link"]
+
+
+@pytest.mark.unit
+async def test_head_carries_the_same_link_header_as_get() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    app = _build_app(repo=repo, pdp=FakePDP())
+    with TestClient(app) as client:
+        get_link = client.get(RECORD_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+        head_link = client.head(RECORD_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+    assert head_link == get_link
 
 
 # --- PUT --------------------------------------------------------------------

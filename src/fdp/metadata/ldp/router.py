@@ -48,6 +48,7 @@ from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.identifiers import reconcile_identifiers
 from fdp.metadata.patch import simulate_update
 from fdp.metadata.profiles.applier import direct_container_config
+from fdp.metadata.signposting import render_link_header, signposting_links
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
@@ -321,13 +322,18 @@ def build_ldp_router(
         # before any Prefer-driven minimisation so a conditional write keyed off
         # a minimized GET still matches the stored resource.
         etag = compute_etag(graph)
+        # Signposting from the full graph (before any Prefer minimisation) so
+        # cite-as/type/… are always present and item links reflect real membership.
+        signposting = render_link_header(signposting_links(graph, iri, SUPPORTED_TYPES))
         omit_containment, omit_membership = (
             _parse_prefer(request.headers.get("prefer")) if is_container else (False, False)
         )
         if omit_containment or omit_membership:
             _minimize_container(graph, iri, omit_containment, omit_membership)
         body = serialize(graph, media)
-        headers = _response_headers(etag, is_container, constrained_by=registry.shape_for(iri))
+        headers = _response_headers(
+            etag, is_container, constrained_by=registry.shape_for(iri), extra_links=signposting
+        )
         headers["Content-Type"] = media
         if is_container:
             headers["Vary"] = "Prefer"
@@ -351,11 +357,15 @@ def build_ldp_router(
             await state_gate.ensure_visible(ctx, iri)
         is_container = registry.is_container(iri)
         etag = compute_etag(graph)
-        headers = _response_headers(etag, is_container, constrained_by=registry.shape_for(iri))
+        signposting = render_link_header(signposting_links(graph, iri, SUPPORTED_TYPES))
+        headers = _response_headers(
+            etag, is_container, constrained_by=registry.shape_for(iri), extra_links=signposting
+        )
         headers["Content-Type"] = media
         if is_container:
             # HEAD advertises that the representation varies by Prefer, even
-            # though there is no body to minimise.
+            # though there is no body to minimise. HEAD carries the same Link
+            # relations as GET (signposting included).
             headers["Vary"] = "Prefer"
         return Response(status_code=200, headers=headers)
 
@@ -683,7 +693,11 @@ def _mint_member_iri(container_iri: str, slug: str | None) -> str:
 
 
 def _response_headers(
-    etag: str | None, is_container: bool, *, constrained_by: str | None = None
+    etag: str | None,
+    is_container: bool,
+    *,
+    constrained_by: str | None = None,
+    extra_links: str | None = None,
 ) -> dict[str, str]:
     link_parts = [f'<{LDP_RESOURCE}>; rel="type"', f'<{LDP_RDF_SOURCE}>; rel="type"']
     allow = _ALLOWED_METHODS_RESOURCE
@@ -695,8 +709,13 @@ def _response_headers(
     if constrained_by is not None:
         # The SHACL shape governing this resource (LDP §4.2.1).
         link_parts.append(f'<{constrained_by}>; rel="{LDP_CONSTRAINED_BY}"')
+    link_header = ", ".join(link_parts)
+    # FAIR Signposting relations (ADR-0017 §2) append after the LDP links, sharing
+    # the one comma-joined Link header (GET/HEAD only).
+    if extra_links:
+        link_header = f"{link_header}, {extra_links}"
     headers: dict[str, str] = {
-        "Link": ", ".join(link_parts),
+        "Link": link_header,
         "Allow": allow,
         "Accept-Patch": _ACCEPT_PATCH,
     }

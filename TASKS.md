@@ -1783,7 +1783,7 @@ New module, pure functions (no I/O), mirroring the discipline of
 References: ADR-0017 §2; FAIR Signposting Profile (signposting.org/FAIR/);
 RFC 8288.
 
-### 17.4 [ ] Wire signposting into LDP GET/HEAD
+### 17.4 [x] Wire signposting into LDP GET/HEAD
 
 - `metadata/ldp/router.py`: in `http_get` and `http_head` (existing records
   only — after the 404 check), extend the `Link` header via the 17.3 builder.
