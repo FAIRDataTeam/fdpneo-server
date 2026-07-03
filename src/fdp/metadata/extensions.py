@@ -56,6 +56,7 @@ from fdp.shared.errors import (
     PolicyViolation,
     Unauthenticated,
 )
+from fdp.shared.graphs import record_graph_uri
 from fdp.shared.negotiation import SUPPORTED_TYPES, select_media_type, serialize
 
 if TYPE_CHECKING:
@@ -257,9 +258,14 @@ def build_extensions_router(
         )
         if link is None:
             raise NotFound(f"{parent_rd.name} has no child link to '{child_prefix}'")
-        parent_graph = await repo.get_graph(parent_iri)
+        # Normalize to the canonical record graph IRI: the repository root
+        # arrives here as ``base + "/"`` but its triples are stored under the
+        # slash-stripped subject (``record_graph_uri``), so querying the slashed
+        # URIRef would match no forward links and report zero children.
+        parent_subject = record_graph_uri(parent_iri)
+        parent_graph = await repo.get_graph(str(parent_subject))
         children = sorted(
-            str(o) for o in parent_graph.objects(URIRef(parent_iri), URIRef(link.relation_uri))
+            str(o) for o in parent_graph.objects(parent_subject, URIRef(link.relation_uri))
         )
         total = len(children)
         page = children[offset : offset + limit]
@@ -271,7 +277,7 @@ def build_extensions_router(
         # read are dropped from the page; the page may therefore be
         # shorter than ``limit``.
         result = Graph()
-        parent_ref = URIRef(parent_iri)
+        parent_ref = parent_subject
         relation_ref = URIRef(link.relation_uri)
         target_type_ref = URIRef(link.target_schema_iri)
         for child_iri in page:
