@@ -324,8 +324,14 @@ def test_expanded_returns_404_for_missing_record() -> None:
 
 
 def _repo_with_catalogs(n_catalogs: int) -> _FakeRepo:
-    """Build a repo with ``n_catalogs`` catalogs linked from the root."""
-    root_iri = BASE_URL + "/"
+    """Build a repo with ``n_catalogs`` catalogs linked from the root.
+
+    The root's triples are keyed under the *slash-stripped* subject (``BASE_URL``,
+    i.e. ``record_graph_uri`` — how the repository actually stores them), while
+    the root page handler receives ``BASE_URL + "/"``. These fixtures therefore
+    exercise the trailing-slash normalization the root listing depends on.
+    """
+    root_iri = BASE_URL  # canonical root subject, no trailing slash
     root_graph = Graph()
     root_ref = URIRef(root_iri)
     relation = URIRef(DCAT_CATALOG)
@@ -346,8 +352,8 @@ def test_page_returns_children_with_titles_and_types() -> None:
     assert response.status_code == 200
     g = Graph()
     g.parse(data=response.text, format="turtle")
-    # Three parent→child link triples.
-    children = list(g.objects(URIRef(BASE_URL + "/"), URIRef(DCAT_CATALOG)))
+    # Three parent→child link triples, keyed by the canonical (no-slash) root.
+    children = list(g.objects(URIRef(BASE_URL), URIRef(DCAT_CATALOG)))
     assert len(children) == 3
     # Each child has a dct:title and an rdf:type.
     for child in children:
@@ -363,7 +369,7 @@ def test_page_honours_limit_and_offset() -> None:
     assert response.status_code == 200
     g = Graph()
     g.parse(data=response.text, format="turtle")
-    children = sorted(str(o) for o in g.objects(URIRef(BASE_URL + "/"), URIRef(DCAT_CATALOG)))
+    children = sorted(str(o) for o in g.objects(URIRef(BASE_URL), URIRef(DCAT_CATALOG)))
     # We asked for 3 starting at offset 4. Catalogs are sorted by IRI,
     # so c-04, c-05, c-06.
     assert children == [
@@ -385,7 +391,7 @@ def test_page_drops_children_the_caller_cannot_read() -> None:
     assert response.status_code == 200
     g = Graph()
     g.parse(data=response.text, format="turtle")
-    children = sorted(str(o) for o in g.objects(URIRef(BASE_URL + "/"), URIRef(DCAT_CATALOG)))
+    children = sorted(str(o) for o in g.objects(URIRef(BASE_URL), URIRef(DCAT_CATALOG)))
     assert forbidden not in children
     # Total still reports 3 — the page shrunk, not the underlying count.
     assert response.headers["X-FDP-Page-Total"] == "3"
@@ -428,3 +434,23 @@ def test_instance_page_lists_grandchildren() -> None:
     g = Graph()
     g.parse(data=response.text, format="turtle")
     assert (URIRef(catalog_iri), URIRef(DCAT_DATASET), URIRef(dataset_iri)) in g
+
+
+@pytest.mark.unit
+def test_root_page_normalizes_trailing_slash_to_find_children() -> None:
+    """Regression: the root page must query the slash-stripped root subject.
+
+    The repository stores the root's triples under ``BASE_URL`` (no trailing
+    slash, via ``record_graph_uri``), but the ``/page`` handler receives the
+    root as ``BASE_URL + "/"``. Without normalizing the subject the forward-link
+    lookup matches nothing and reports zero children even though catalogs exist.
+    """
+    repo = _repo_with_catalogs(4)
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
+    response = TestClient(app).get("/page/catalog")
+    assert response.status_code == 200
+    assert response.headers["X-FDP-Page-Total"] == "4"
+    g = Graph()
+    g.parse(data=response.text, format="turtle")
+    children = list(g.objects(URIRef(BASE_URL), URIRef(DCAT_CATALOG)))
+    assert len(children) == 4
