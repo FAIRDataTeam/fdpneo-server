@@ -37,7 +37,7 @@ from fdp.metadata.states import (
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import Conflict, Forbidden, NotFound
-from fdp.shared.graphs import meta_graph_uri, record_graph_uri
+from fdp.shared.graphs import meta_graph_uri, record_graph_uri, state_record_iri
 from fdp.shared.namespaces import DCT, FDP_METADATA_STATE
 from fdp.storage.triplestore.adapter import construct_named_graph
 
@@ -333,7 +333,9 @@ def build_state_router(*, service: StateService, base_url: str) -> APIRouter:
         body: StateTransitionRequest,
         ctx: Annotated[RequestContext, Depends(require_auth)],
     ) -> StateTransitionResponse:
-        return await _transition(f"{base}/{path}", body, ctx)
+        # Managed resources (policies/licenses/…) live under the reserved prefix;
+        # LDP records live at the root. ``state_record_iri`` resolves either.
+        return await _transition(str(state_record_iri(base, path)), body, ctx)
 
     return router
 

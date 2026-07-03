@@ -16,6 +16,7 @@ from fdp.metadata.graphs import (
     record_graph_uri,
     record_uri_from_sibling,
     resource_definition_graph_uri,
+    state_record_iri,
 )
 
 RECORD = "https://example.org/records/abc"
@@ -75,6 +76,24 @@ def test_is_resource_definition_graph_uri() -> None:
     assert is_resource_definition_graph_uri(rd)
     assert is_resource_definition_graph_uri(meta_graph_uri(rd))  # its meta sibling too
     assert not is_resource_definition_graph_uri(f"{BASE}/catalog/c-1")
+
+
+@pytest.mark.unit
+def test_state_record_iri_root_vs_managed() -> None:
+    # User-defined LDP records live at the root: the path maps straight through.
+    assert state_record_iri(BASE, "catalog/c-1") == URIRef(f"{BASE}/catalog/c-1")
+    # Server-managed resources live under the reserved prefix, which the state
+    # router strips from the request path — state_record_iri re-adds it so the
+    # transition targets the stored graph (regression: policies/licenses 404'd).
+    assert state_record_iri(BASE, "policies/p1") == URIRef(f"{BASE}/fdp-api/policies/p1")
+    assert state_record_iri(BASE, "licenses/l1") == URIRef(f"{BASE}/fdp-api/licenses/l1")
+    assert state_record_iri(BASE, "schemas/s1") == URIRef(f"{BASE}/fdp-api/schemas/s1")
+    assert state_record_iri(f"{BASE}/", "resource-definitions/catalog") == URIRef(
+        f"{BASE}/fdp-api/resource-definitions/catalog"
+    )
+    # A record whose first path segment merely resembles a managed name is not
+    # treated as managed (exact leaf-segment match only).
+    assert state_record_iri(BASE, "policies-archive/x") == URIRef(f"{BASE}/policies-archive/x")
 
 
 @pytest.mark.unit
