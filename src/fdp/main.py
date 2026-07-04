@@ -60,6 +60,7 @@ from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.policies import PolicyService, build_policy_router
 from fdp.metadata.prof import ProfileService, build_profile_router
+from fdp.metadata.prof_backfill import backfill_conformance
 from fdp.metadata.profiles import (
     RD_SHAPE_IRI,
     ProfileStateRepository,
@@ -845,6 +846,15 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
             session=session,
             settings=settings,
             force=False,
+        )
+
+    # ADR-0019: make the seeded schemas + records self-describing on a fresh
+    # bootstrap — provision the 1:1 profiles and stamp conformsTo/validatedAgainst.
+    if report.resource_definitions is not None:
+        await backfill_conformance(
+            adapter=app.state.triplestore,
+            repository=app.state.metadata_repository,
+            cache=report.resource_definitions,
         )
 
     await _publish_runtime_state(app, report.system_default_offer_iri, report.resource_definitions)
