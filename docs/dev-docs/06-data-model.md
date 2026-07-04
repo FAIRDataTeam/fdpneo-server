@@ -47,8 +47,8 @@ flowchart TB
     REC -.sibling.- AUDIT
 ```
 
-- **Record graph** — the metadata itself (a DCAT Catalog, Dataset, etc.).
-- **`…/meta` graph** — FDP-managed provenance (who/when/version), governed by a SHACL meta-metadata schema the deployment can override. Refreshed automatically on every write — you don't author it by hand.
+- **Record graph** — the metadata itself (a DCAT Catalog, Dataset, etc.). The server stamps a `dct:conformsTo` → the type's **profile** here on write (ADR-0019), so the record is self-describing at rest — it names the validation binding it satisfies.
+- **`…/meta` graph** — FDP-managed provenance (who/when/version), governed by a SHACL meta-metadata schema the deployment can override. Refreshed automatically on every write — you don't author it by hand. Also carries `fdp-o:validatedAgainst` → the exact profile *version* the content was validated against (ADR-0019 §3), so a restore reproduces the original validation.
 - **`…/audit` graph** — ODRL Agreements materialized when access is granted, for an audit trail.
 
 Why one-graph-per-record? It makes the record the unit of replacement (PUT swaps the whole graph), the unit of access control (the named graph is what the SPARQL projection authorizes), and the unit of ETag/versioning — all at once. The full rationale and the alternatives weighed are in [ADR-0007](../adr/0007-one-graph-per-record.md).

@@ -45,6 +45,9 @@ fs:resource
     sh:property [ sh:path dct:language ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dct:license ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
     sh:property [ sh:path dct:accessRights ; sh:nodeKind sh:IRI ] ;
+    # dct:conformsTo — the validation-bearing binding is server-stamped to the
+    # record's type profile (ADR-0019); a record MAY additionally conform to
+    # other profiles. Multiple values are allowed (no sh:maxCount).
     sh:property [ sh:path dct:conformsTo ; sh:nodeKind sh:IRI ] ;
     sh:property [
         sh:path dct:identifier ;
