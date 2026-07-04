@@ -202,6 +202,7 @@ def _build_app(
     ctx: RequestContext | None = None,
     containers: ContainerRegistry | None = None,
     validator: ShaclValidator | None = None,
+    triplestore: FakeAdapter | None = None,
     event_bus: EventBus | None = None,
 ) -> FastAPI:
     app = FastAPI()
@@ -212,6 +213,7 @@ def _build_app(
             pdp=pdp,  # type: ignore[arg-type]
             validator=validator,
             containers=containers,
+            triplestore=triplestore,  # type: ignore[arg-type]
             event_bus=event_bus,
         )
     )
@@ -1042,3 +1044,52 @@ async def test_get_container_prefer_minimal_container_omits_both() -> None:
     s = URIRef(CONTAINER_IRI)
     assert (s, LDP.contains, URIRef(member)) not in g
     assert (s, URIRef(_DATASET_REL), URIRef(member)) not in g
+
+
+# --- ADR-0019: self-describing conformance binding on write -----------------
+
+_SCHEMA_IRI = "http://testserver/fdp-api/schemas/catalog"
+_PROFILE_IRI = "http://testserver/fdp-api/profiles/catalog"
+_PROFILE_V1 = "http://testserver/fdp-api/profiles/catalog/1"
+
+
+async def test_put_stamps_conformsto_and_records_validated_against() -> None:
+    from fdp.metadata.prof import provision_profile
+    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+
+    repo, adapter = _make_repo()
+    await provision_profile(adapter, base_url="http://testserver", slug="catalog", version=1)  # type: ignore[arg-type]
+    containers = FixedContainerRegistry(set(), resource_shapes={RECORD_IRI: _SCHEMA_IRI})
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers, triplestore=adapter)
+
+    body = f'<{RECORD_IRI}> <{DCT.title}> "C" .'
+    with TestClient(app) as client:
+        r = client.put(RECORD_PATH, content=body, headers={"Content-Type": TURTLE})
+    assert r.status_code == 201
+
+    record = adapter.graphs[RECORD_IRI]
+    assert (URIRef(RECORD_IRI), DCT.conformsTo, URIRef(_PROFILE_IRI)) in record
+    meta = adapter.graphs[RECORD_IRI + "/meta"]
+    assert (URIRef(RECORD_IRI), FDP_VALIDATED_AGAINST, URIRef(_PROFILE_V1)) in meta
+
+
+async def test_put_strips_client_profile_conformsto_keeps_external() -> None:
+    from fdp.metadata.prof import provision_profile
+
+    repo, adapter = _make_repo()
+    await provision_profile(adapter, base_url="http://testserver", slug="catalog", version=1)  # type: ignore[arg-type]
+    containers = FixedContainerRegistry(set(), resource_shapes={RECORD_IRI: _SCHEMA_IRI})
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers, triplestore=adapter)
+
+    bogus_profile = "http://testserver/fdp-api/profiles/dataset"  # wrong managed profile
+    external = "http://external.example/profile"  # a non-managed conformsTo the client may keep
+    body = (
+        f'<{RECORD_IRI}> <{DCT.title}> "C" ; <{DCT.conformsTo}> <{bogus_profile}>, <{external}> .'
+    )
+    with TestClient(app) as client:
+        r = client.put(RECORD_PATH, content=body, headers={"Content-Type": TURTLE})
+    assert r.status_code == 201
+
+    conforms = set(adapter.graphs[RECORD_IRI].objects(URIRef(RECORD_IRI), DCT.conformsTo))
+    # Server profile replaces the client's managed-namespace one; external stays.
+    assert conforms == {URIRef(_PROFILE_IRI), URIRef(external)}

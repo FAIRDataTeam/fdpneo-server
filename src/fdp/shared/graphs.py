@@ -193,6 +193,22 @@ def schema_namespace(base_url: str | URIRef) -> str:
     return f"{str(base_url).rstrip('/')}/{_SCHEMAS_SEGMENT}"
 
 
+def split_schema_iri(schema_iri: str | URIRef) -> tuple[str, str] | None:
+    """Split a managed schema IRI into ``(base, slug)``; ``None`` if not managed.
+
+    ``{base}/fdp-api/schemas/{slug}`` → ``(base, slug)``. Used to derive the 1:1
+    profile of a schema (ADR-0019 §2): an external shape IRI has no derived
+    profile, hence ``None``.
+    """
+    text = str(schema_iri)
+    infix = f"/{_SCHEMAS_SEGMENT}/"
+    if infix not in text:
+        return None
+    base, _, tail = text.rpartition(infix)
+    slug = tail.split("/", 1)[0]
+    return (base, slug) if slug else None
+
+
 def profile_namespace(base_url: str | URIRef) -> str:
     """The ``<base>/fdp-api/profiles`` prefix every managed-profile IRI starts with."""
     return f"{str(base_url).rstrip('/')}/{_PROFILES_SEGMENT}"
@@ -309,5 +325,6 @@ __all__ = [
     "schema_graph_uri",
     "schema_namespace",
     "schema_version_graph_uri",
+    "split_schema_iri",
     "state_record_iri",
 ]

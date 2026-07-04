@@ -94,6 +94,7 @@ class MetadataRepository:
         *,
         subject: str | None,
         initial_state: MetadataState = DEFAULT_STATE,
+        validated_against: str | None = None,
     ) -> str:
         """Replace the record graph; return the post-write ETag.
 
@@ -102,11 +103,21 @@ class MetadataRepository:
         builder preserves the prior state across content edits. The profile
         applier passes ``PUBLISHED`` for seeded records; the LDP layer leaves
         the ``DRAFT`` default.
+
+        ``validated_against`` (ADR-0019 §3) is the immutable profile version IRI
+        the record content was validated against; stamped into the meta graph as
+        ``fdp-o:validatedAgainst``. Omitted for writes that don't run record
+        validation (the meta builder preserves any prior binding).
         """
         graph_uri = record_graph_uri(record_uri)
         nt = graph.serialize(format="nt")
         await self._adapter.replace_graph(str(graph_uri), nt, mime="application/n-triples")
-        await self._refresh_meta(record_uri, subject=subject, initial_state=initial_state)
+        await self._refresh_meta(
+            record_uri,
+            subject=subject,
+            initial_state=initial_state,
+            validated_against=validated_against,
+        )
         return compute_etag(graph)
 
     async def delete_graph(self, record_uri: str | URIRef) -> None:
@@ -132,6 +143,7 @@ class MetadataRepository:
         *,
         subject: str | None,
         initial_state: MetadataState = DEFAULT_STATE,
+        validated_against: str | None = None,
     ) -> MetaResult:
         prior = await construct_named_graph(self._adapter, str(meta_graph_uri(record_uri)))
         return await self._meta.write(
@@ -141,6 +153,7 @@ class MetadataRepository:
             subject=subject,
             now=self._clock(),
             initial_state=initial_state,
+            validated_against=validated_against,
         )
 
 

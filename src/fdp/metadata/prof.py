@@ -37,8 +37,9 @@ from fdp.shared.graphs import (
     profile_namespace,
     profile_version_graph_uri,
     schema_version_graph_uri,
+    split_schema_iri,
 )
-from fdp.shared.namespaces import PROF, ROLE
+from fdp.shared.namespaces import OWL, PROF, ROLE
 
 if TYPE_CHECKING:
     from fdp.metadata.repository import MetadataRepository
@@ -110,6 +111,51 @@ async def provision_profile(
     )
     log.info("profile_provisioned", profile=stable, version=version, artifact=artifact)
     return stable
+
+
+async def ensure_conformance(
+    adapter: TripleStoreAdapter, repository: MetadataRepository, *, schema_iri: str
+) -> tuple[str, str] | None:
+    """Resolve ``(stable profile IRI, profile version IRI)`` for a record whose
+    validating schema is ``schema_iri`` (ADR-0019 §1/§3).
+
+    The stable profile IRI is the record's ``dct:conformsTo`` target; the version
+    IRI is its ``fdp-o:validatedAgainst`` target. The profile (and the schema
+    version snapshot it wraps) is provisioned **on demand** — so a schema seeded
+    at bootstrap, which never went through the schema service, self-heals on the
+    first record write of its type (the migration in 20.6 does this eagerly).
+
+    Returns ``None`` when ``schema_iri`` is not a managed schema (an external
+    shape has no derived profile) or has no stored shape to wrap.
+    """
+    split = split_schema_iri(schema_iri)
+    if split is None:
+        return None
+    base, slug = split
+    stable_profile = str(profile_graph_uri(base, slug))
+    existing = await repository.get_graph(stable_profile)
+    if len(existing) > 0:
+        artifact = next(iter(existing.objects(None, PROF.hasArtifact)), None)
+        if artifact is not None:
+            version = str(artifact).rsplit("/", 1)[-1]
+            return stable_profile, str(profile_version_graph_uri(base, slug, version))
+    # Lazy provision from the stable schema (bootstrap-seeded, or pre-feature).
+    version = await _current_schema_version(repository, schema_iri)
+    artifact_iri = str(schema_version_graph_uri(base, slug, version))
+    if len(await repository.get_graph(artifact_iri)) == 0:
+        shape = await repository.get_graph(schema_iri)
+        if len(shape) == 0:
+            return None
+        await adapter.replace_graph(artifact_iri, shape.serialize(format="nt"), mime=_NT)
+    await provision_profile(adapter, base_url=base, slug=slug, version=version)
+    return stable_profile, str(profile_version_graph_uri(base, slug, version))
+
+
+async def _current_schema_version(repository: MetadataRepository, schema_iri: str) -> str:
+    """The schema's current ``owl:versionInfo`` (from its meta graph), or ``"1"``."""
+    meta = await repository.get_meta(schema_iri)
+    value = next(iter(meta.objects(URIRef(schema_iri), OWL.versionInfo)), None)
+    return str(value) if value is not None else "1"
 
 
 # --- read-only service -----------------------------------------------------
@@ -203,5 +249,6 @@ __all__ = [
     "ProfileService",
     "build_profile_graph",
     "build_profile_router",
+    "ensure_conformance",
     "provision_profile",
 ]

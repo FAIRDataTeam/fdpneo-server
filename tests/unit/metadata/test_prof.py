@@ -8,23 +8,26 @@ from dataclasses import dataclass, field
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from rdflib import Graph, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.prof import (
     ProfileService,
     build_profile_graph,
     build_profile_router,
+    ensure_conformance,
     provision_profile,
 )
 from fdp.shared.errors import NotFound, register_exception_handlers
 from fdp.shared.graphs import (
+    meta_graph_uri,
     profile_graph_uri,
     profile_version_graph_uri,
     record_graph_uri,
+    schema_graph_uri,
     schema_version_graph_uri,
 )
-from fdp.shared.namespaces import PROF, ROLE
+from fdp.shared.namespaces import OWL, PROF, ROLE, SH
 
 BASE = "http://localhost:8000"
 
@@ -36,6 +39,9 @@ class _Store:
     # repository
     async def get_graph(self, record_uri: str) -> Graph:
         return self.graphs.get(str(record_graph_uri(record_uri)), Graph())
+
+    async def get_meta(self, record_uri: str) -> Graph:
+        return self.graphs.get(str(meta_graph_uri(record_uri)), Graph())
 
     # adapter
     async def replace_graph(self, graph_uri: str, data: str, *, mime: str = "") -> None:
@@ -129,6 +135,51 @@ async def test_service_list_excludes_version_snapshots() -> None:
     assert {p.id for p in infos} == {"catalog", "dataset"}  # no "1" snapshots
     dataset = next(p for p in infos if p.id == "dataset")
     assert dataset.validation_artifact == str(schema_version_graph_uri(BASE, "dataset", "1"))
+
+
+@pytest.mark.unit
+async def test_ensure_conformance_fast_path_reads_existing_profile() -> None:
+    store = _Store()
+    await provision_profile(store, base_url=BASE, slug="dataset", version=2)  # type: ignore[arg-type]
+    schema = str(schema_graph_uri(BASE, "dataset"))
+    resolved = await ensure_conformance(store, store, schema_iri=schema)  # type: ignore[arg-type]
+    assert resolved == (
+        str(profile_graph_uri(BASE, "dataset")),
+        str(profile_version_graph_uri(BASE, "dataset", "2")),
+    )
+
+
+@pytest.mark.unit
+async def test_ensure_conformance_lazy_provisions_from_bootstrap_schema() -> None:
+    store = _Store()
+    # A schema seeded at bootstrap: stable shape graph + meta versionInfo, no profile.
+    schema = str(schema_graph_uri(BASE, "catalog"))
+    shape = Graph()
+    shape.add((URIRef(schema), RDF.type, SH.NodeShape))
+    store.graphs[schema] = shape
+    meta = Graph()
+    meta.add((URIRef(schema), OWL.versionInfo, Literal(1)))
+    store.graphs[str(meta_graph_uri(schema))] = meta
+
+    resolved = await ensure_conformance(store, store, schema_iri=schema)  # type: ignore[arg-type]
+    assert resolved == (
+        str(profile_graph_uri(BASE, "catalog")),
+        str(profile_version_graph_uri(BASE, "catalog", "1")),
+    )
+    # It self-healed: snapshotted the schema version and provisioned the profile.
+    assert str(schema_version_graph_uri(BASE, "catalog", "1")) in store.graphs
+    assert str(profile_graph_uri(BASE, "catalog")) in store.graphs
+
+
+@pytest.mark.unit
+async def test_ensure_conformance_none_for_external_or_empty_schema() -> None:
+    store = _Store()
+    # External (non-managed) shape IRI → no derived profile.
+    assert await ensure_conformance(store, store, schema_iri="http://ex.org/shape") is None  # type: ignore[arg-type]
+    # Managed IRI but no stored shape → nothing to wrap.
+    ghost = str(schema_graph_uri(BASE, "ghost"))
+    store.graphs[str(meta_graph_uri(ghost))] = Graph()
+    assert await ensure_conformance(store, store, schema_iri=ghost) is None  # type: ignore[arg-type]
 
 
 @pytest.mark.unit

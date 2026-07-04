@@ -682,6 +682,9 @@ def create_app() -> FastAPI:
             pdp=app.state.pdp,
             validator=app.state.shacl_validator,
             containers=container_registry,
+            # ADR-0019: the adapter lets the write path provision/stamp the
+            # record's conformance profile (dct:conformsTo + validatedAgainst).
+            triplestore=app.state.triplestore,
             event_bus=app.state.event_bus,
             state_gate=app.state.state_gate,
             # Maintain the parent's forward containment links (ldp:contains +

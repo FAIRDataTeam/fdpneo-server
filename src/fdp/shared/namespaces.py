@@ -80,6 +80,14 @@ FDP_CHILD_TITLE = FDP_DEFAULT["childTitle"]
 FDP_CHILD_TAGS_URI = FDP_DEFAULT["childTagsUri"]
 """Optional predicate naming the tag vocabulary for a child listing."""
 
+FDP_VALIDATED_AGAINST = FDP_DEFAULT["validatedAgainst"]
+"""Meta-graph predicate recording the exact profile *version* a record was
+validated against at write time (ADR-0019 §3). Object is the immutable profile
+version IRI (``…/fdp-api/profiles/<slug>/<version>``); lives in ``<record>/meta``
+alongside ``owl:versionInfo``, and travels in the dump so a restore reproduces
+the original validation. The record graph itself carries the *stable* profile via
+``dct:conformsTo`` — current binding in the record, exact version in the meta."""
+
 FDP_METADATA_STATE = FDP_DEFAULT["metadataState"]
 """Publication-state predicate stamped on a record's meta graph (ADR-0010).
 
@@ -149,6 +157,7 @@ __all__ = [
     "FDP_RELATION_URI",
     "FDP_RESOURCE_DEFINITION",
     "FDP_URL_PREFIX",
+    "FDP_VALIDATED_AGAINST",
     "FOAF",
     "LDP",
     "ODRL",
