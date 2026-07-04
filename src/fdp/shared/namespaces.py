@@ -33,8 +33,11 @@ FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 LDP = Namespace("http://www.w3.org/ns/ldp#")
 ODRL = Namespace("http://www.w3.org/ns/odrl/2/")
 OWL = Namespace("http://www.w3.org/2002/07/owl#")
+PROF = Namespace("http://www.w3.org/ns/dx/prof/")
 PROV = Namespace("http://www.w3.org/ns/prov#")
 RDFS = Namespace("http://www.w3.org/2000/01/rdf-schema#")
+# The W3C profile-role registry (prof:hasRole values, e.g. role:validation).
+ROLE = Namespace("http://www.w3.org/ns/dx/prof/role/")
 SH = Namespace("http://www.w3.org/ns/shacl#")
 SKOS = Namespace("http://www.w3.org/2004/02/skos/core#")
 SPDX = Namespace("http://spdx.org/rdf/terms#")
@@ -100,8 +103,10 @@ PREFIXES: Mapping[str, Namespace] = MappingProxyType(
         "ldp": LDP,
         "odrl": ODRL,
         "owl": OWL,
+        "prof": PROF,
         "prov": PROV,
         "rdfs": RDFS,
+        "role": ROLE,
         "sh": SH,
         "skos": SKOS,
         "spdx": SPDX,
@@ -149,8 +154,10 @@ __all__ = [
     "ODRL",
     "OWL",
     "PREFIXES",
+    "PROF",
     "PROV",
     "RDFS",
+    "ROLE",
     "SH",
     "SKOS",
     "SPDX",

@@ -18,6 +18,13 @@ from fdp.metadata.graphs import (
     resource_definition_graph_uri,
     state_record_iri,
 )
+from fdp.shared.graphs import (
+    is_profile_graph_uri,
+    profile_graph_uri,
+    profile_version_graph_uri,
+    schema_graph_uri,
+    schema_version_graph_uri,
+)
 
 RECORD = "https://example.org/records/abc"
 RECORD_URI = URIRef(RECORD)
@@ -88,6 +95,7 @@ def test_state_record_iri_root_vs_managed() -> None:
     assert state_record_iri(BASE, "policies/p1") == URIRef(f"{BASE}/fdp-api/policies/p1")
     assert state_record_iri(BASE, "licenses/l1") == URIRef(f"{BASE}/fdp-api/licenses/l1")
     assert state_record_iri(BASE, "schemas/s1") == URIRef(f"{BASE}/fdp-api/schemas/s1")
+    assert state_record_iri(BASE, "profiles/dataset") == URIRef(f"{BASE}/fdp-api/profiles/dataset")
     assert state_record_iri(f"{BASE}/", "resource-definitions/catalog") == URIRef(
         f"{BASE}/fdp-api/resource-definitions/catalog"
     )
@@ -108,3 +116,29 @@ def test_is_internal_graph_uri_covers_all_machinery_classes() -> None:
     assert not is_internal_graph_uri(RECORD_URI)
     assert not is_internal_graph_uri(f"{BASE}/catalog/c-1")
     assert not is_internal_graph_uri(data_graph_uri(RECORD))
+    # Profiles and schemas are public reference documents, NOT internal (ADR-0019).
+    assert not is_internal_graph_uri(profile_graph_uri(BASE, "dataset"))
+
+
+@pytest.mark.unit
+def test_profile_and_versioned_graph_uris() -> None:
+    # Stable profile IRI — the target of a record's dct:conformsTo.
+    assert profile_graph_uri(BASE, "dataset") == URIRef(f"{BASE}/fdp-api/profiles/dataset")
+    assert profile_graph_uri(f"{BASE}/", "dataset") == URIRef(f"{BASE}/fdp-api/profiles/dataset")
+    # Immutable versioned snapshots build on the stable IRI (single scheme).
+    assert profile_version_graph_uri(BASE, "dataset", "1.2.0") == URIRef(
+        f"{BASE}/fdp-api/profiles/dataset/1.2.0"
+    )
+    assert schema_version_graph_uri(BASE, "dataset", "1.2.0") == URIRef(
+        f"{schema_graph_uri(BASE, 'dataset')}/1.2.0"
+    )
+
+
+@pytest.mark.unit
+def test_is_profile_graph_uri() -> None:
+    profile = profile_graph_uri(BASE, "dataset")
+    assert is_profile_graph_uri(profile)
+    assert is_profile_graph_uri(profile_version_graph_uri(BASE, "dataset", "1.2.0"))
+    assert is_profile_graph_uri(meta_graph_uri(profile))  # its meta sibling too
+    assert not is_profile_graph_uri(schema_graph_uri(BASE, "dataset"))
+    assert not is_profile_graph_uri(f"{BASE}/catalog/c-1")
