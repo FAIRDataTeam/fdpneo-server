@@ -54,6 +54,7 @@ from fdp.shared.graphs import (
     record_graph_uri,
     schema_graph_uri,
     schema_namespace,
+    schema_version_graph_uri,
 )
 from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, LDP, OWL, SH
 
@@ -146,11 +147,27 @@ class SchemaService:
         return iri == self._root_schema_iri_provider()
 
     async def put(self, schema_id: str, turtle: str, *, subject: str | None) -> SchemaInfo:
-        """Create or replace the shape ``schema_id`` and refresh the validator."""
+        """Create or replace the shape ``schema_id`` and refresh the validator.
+
+        The stable IRI (``iri``) always holds the *current* shape — validation,
+        ``schema_exists`` and remote-sync read it unchanged. In addition, each write
+        snapshots the shape as an **immutable, versioned** graph at
+        ``<iri>/<version>`` (ADR-0019 §4), where ``version`` is the meta writer's
+        just-bumped ``owl:versionInfo``. Prior snapshots are retained, so a record's
+        ``fdp-o:validatedAgainst`` resolves and a dump reproduces the exact shape.
+        """
         _check_slug(schema_id)
         iri = self.iri(schema_id)
         graph = _parse_shape(turtle)
         await self._repo.put_graph(iri, graph, subject=subject)
+        version = await self._version(iri)
+        if version is not None:
+            # Immutable snapshot: a bare shape graph (no meta lifecycle) at the
+            # versioned IRI, so validatedAgainst can dereference and validate it.
+            snapshot = str(schema_version_graph_uri(self._base, schema_id, str(version)))
+            await self._adapter.replace_graph(
+                snapshot, graph.serialize(format="nt"), mime="application/n-triples"
+            )
         # Drop any stale compiled shape, then re-warm so the first validation
         # (and the RD-create existence check) doesn't pay a refetch.
         self._validator.invalidate(iri)
@@ -161,7 +178,22 @@ class SchemaService:
         log.info("schema_published", iri=iri, subject=subject)
         return await self._info(schema_id, iri, graph=graph)
 
-    async def get_turtle(self, schema_id: str, *, composed: bool = False) -> str:
+    def version_iri(self, schema_id: str, version: int | str) -> str:
+        """The immutable versioned IRI for a shape snapshot (``<iri>/<version>``)."""
+        return str(schema_version_graph_uri(self._base, schema_id, str(version)))
+
+    async def current_version_iri(self, schema_id: str) -> str | None:
+        """The versioned IRI of the shape's current snapshot, or ``None`` if absent.
+
+        The stable IRI serves the current shape; this resolves to the immutable
+        snapshot of that version (the target of ``fdp-o:validatedAgainst``).
+        """
+        version = await self._version(self.iri(schema_id))
+        return None if version is None else self.version_iri(schema_id, version)
+
+    async def get_turtle(
+        self, schema_id: str, *, composed: bool = False, version: str | None = None
+    ) -> str:
         """Return the shape as Turtle.
 
         ``composed=False`` (default) returns the single modular shape as stored —
@@ -170,9 +202,18 @@ class SchemaService:
         plus every shape it transitively composes), the same effective shape
         ``GET /{type}/spec`` serves — so a client can render a record form
         directly from the schema id without mapping it to a resource type.
+
+        ``version`` fetches a specific immutable snapshot (``<iri>/<version>``,
+        ADR-0019 §4) rather than the current shape; incompatible with ``composed``.
         """
         _check_slug(schema_id)
         iri = self.iri(schema_id)
+        if version is not None:
+            snapshot = schema_version_graph_uri(self._base, schema_id, version)
+            graph = await self._repo.get_graph(snapshot)
+            if len(graph) == 0:
+                raise NotFound(f"no schema version: {schema_id}/{version}")
+            return graph.serialize(format="turtle")
         if composed:
             try:
                 graph = await self._validator.shape_closure(iri)
@@ -234,10 +275,15 @@ class SchemaService:
             f' FILTER(STRSTARTS(STR(?g), "{schema_namespace(self._base)}/")) }} GROUP BY ?g'
         )
         rows = await self._select(query)
+        prefix = f"{schema_namespace(self._base)}/"
         items: list[SchemaInfo] = []
         for row in rows:
             iri = row.get("g", {}).get("value")
             if not iri:
+                continue
+            # Skip immutable version snapshots (<stable>/<version>): only stable
+            # schemas are listed; their versions are reached via ?version=.
+            if "/" in iri[len(prefix) :]:
                 continue
             items.append(
                 SchemaInfo(
@@ -369,6 +415,15 @@ def build_schema_router(*, service: SchemaService, prefix: str = "/schemas") -> 
         ] = False,
     ) -> Response:
         turtle = await service.get_turtle(schema_id, composed=composed)
+        return Response(content=turtle, media_type=_TURTLE)
+
+    @router.get("/{schema_id}/{version}", name="schema_get_version")
+    async def get_schema_version(  # pyright: ignore[reportUnusedFunction]
+        schema_id: str,
+        version: str,
+    ) -> Response:
+        """Return an immutable versioned snapshot of the shape (ADR-0019 §4)."""
+        turtle = await service.get_turtle(schema_id, version=version)
         return Response(content=turtle, media_type=_TURTLE)
 
     @router.put("/{schema_id}", response_model=SchemaInfo, name="schema_put")
