@@ -134,6 +134,20 @@ async def test_put_stores_shape_and_reports_target_class() -> None:
 
 
 @pytest.mark.unit
+async def test_put_auto_provisions_conformance_profile() -> None:
+    from fdp.shared.namespaces import PROF
+
+    store = _Store()
+    await _service(store).put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    # The 1:1 profile is provisioned wrapping the schema's current version (ADR-0019 §3).
+    profile = f"{BASE}/fdp-api/profiles/ontology"
+    assert profile in store.graphs
+    g = store.graphs[profile]
+    schema_v1 = f"{BASE}/fdp-api/schemas/ontology/1"
+    assert schema_v1 in {str(o) for o in g.objects(None, PROF.hasArtifact)}
+
+
+@pytest.mark.unit
 async def test_put_snapshots_immutable_versions_and_retains_prior() -> None:
     store = _Store()
     svc = _service(store)

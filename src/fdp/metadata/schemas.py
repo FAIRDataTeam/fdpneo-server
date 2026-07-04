@@ -46,6 +46,7 @@ from rdflib import Graph
 from rdflib.namespace import RDF
 
 from fdp.identity.deps import require_auth
+from fdp.metadata.prof import provision_profile
 from fdp.metadata.shacl import UnknownShapeError
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import BadRequest, Conflict, Forbidden, NotFound
@@ -167,6 +168,12 @@ class SchemaService:
             snapshot = str(schema_version_graph_uri(self._base, schema_id, str(version)))
             await self._adapter.replace_graph(
                 snapshot, graph.serialize(format="nt"), mime="application/n-triples"
+            )
+            # Auto-provision the 1:1 conformance profile wrapping this schema
+            # version (ADR-0019 §3) — the dct:conformsTo target for records of
+            # this type. Profiles are derived from schemas, never edited directly.
+            await provision_profile(
+                self._adapter, base_url=self._base, slug=schema_id, version=version
             )
         # Drop any stale compiled shape, then re-warm so the first validation
         # (and the RD-create existence check) doesn't pay a refetch.
