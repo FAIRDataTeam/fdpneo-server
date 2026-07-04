@@ -176,7 +176,11 @@ from folklore into the command's docs and completion output.
   [ADR-0014](0014-persistent-identifiers.md) (base/serving split, dual
   identifier model, rebase). Refined by
   [ADR-0017](0017-alternative-identifiers-and-signposting.md) (foreign IRIs
-  recorded as structured alternative identifiers, not `owl:sameAs`).
+  recorded as structured alternative identifiers, not `owl:sameAs`) and
+  [ADR-0019](0019-record-schema-binding-and-versioning.md) (records are
+  self-describing via `dct:conformsTo` → a `prof:Profile`, so a quad dump carries
+  the record–schema binding and its versions; import validates each record against
+  its own `conformsTo`, and rebase rewrites those cross-references).
 - Code touched: `metadata/identifiers.py`, `metadata/ldp/router.py`
   (`_mint_member_iri` / `http_post`), `metadata/repository.py` +
   `metadata/meta.py` (privileged write path), new `metadata/backup/`

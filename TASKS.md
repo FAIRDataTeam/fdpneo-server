@@ -1817,9 +1817,110 @@ References: ADR-0017 §2; LDP §4.2.1 (existing Link discipline in
 
 References: ADR-0016, ADR-0017, `docs/dev-docs/07-contributing.md`.
 
-**Out of scope (Phase 17):** `fdp dump`/`restore`/`import` (ADR-0016 §2–§5 —
-schedule as Phase 18 once this phase lands); Level-2 linkset endpoint;
-DOI/Handle minting.
+**Out of scope (Phase 17):** Level-2 linkset endpoint; DOI/Handle minting.
+(`fdp dump`/`restore`/`import` are Phase 18, below.)
+
+---
+
+## Phase 18 — Backup / restore / migration (ADR-0016 §2–§6)
+
+Implements the storage-level backup/restore/import from
+[ADR-0016](docs/adr/0016-backup-restore-migration.md); §1 (write-path hardening)
+already shipped in v0.4.0 (task 17.1). Read the ADR first.
+
+**Binding-aware (ADR-0019).** Profiles, schemas, and their immutable version
+snapshots are ordinary named-graph records, and each record carries its own
+`dct:conformsTo` (+ `fdp-o:validatedAgainst` in `/meta`) — so a **quad dump
+captures the binding for free and is self-validating**. Two consequences: the
+manifest records a **data-model version** so `restore` can migrate across the
+ADR-0019 transition (keeping dump/restore independent of Phase 20); and
+**import-with-validation** and the **rebase rewrite** must understand the ADR-0019
+cross-references (`conformsTo`, `validatedAgainst`, `prof:hasArtifact`, profile /
+schema / version IRIs). Target version: v0.5.0+ (sequence vs Phases 19/20 TBD).
+
+### 18.1 [x] Close the write-path holes (`400` ambiguous body, `409` Slug collision)
+
+Shipped in v0.4.0 (task 17.1); listed here for ADR-0016 completeness.
+
+### 18.2 [ ] `fdp dump` — storage-level export
+
+- CLI (admin-operated, adapter-level like `fdp pid rebase`): `records.nq` = **every
+  named graph** in the store (record + `/meta` + `/audit` siblings, plus the
+  reserved profile / schema / resource-definition / policy / license graphs and
+  their immutable version snapshots — all captured because they are named graphs),
+  serialized as N-Quads. Nothing is interpreted on the way out.
+- `manifest.json`: dump-format version, `identifier_base`, application version,
+  **data-model version** (whether the ADR-0019 binding is present), graph count,
+  per-file checksums, timestamp.
+- `audit.jsonl` (optional): the Postgres `record_audit` rows.
+- Reads through the `TripleStoreAdapter` directly; the LDP layer is not involved.
+
+References: ADR-0016 §2; ADR-0019 §5 (profiles/versions are named graphs).
+
+### 18.3 [ ] `fdp restore` — faithful, verbatim import
+
+- Load the quads verbatim through the adapter — **no `MetaWriter` stamping**, so
+  `dct:created`/`dct:modified`/creator/state, `dct:conformsTo`/`validatedAgainst`,
+  and the audit graphs survive exactly.
+- **Precondition:** target `identifier_base` == the manifest's; on mismatch refuse
+  and point at `fdp import --rebase`.
+- Refuse a non-empty store unless `--merge` (skip existing graphs) or `--overwrite`.
+- **Cross-version restore:** if the manifest's data-model version predates ADR-0019,
+  run the Phase-20 migration after load (backfill `conformsTo`/`validatedAgainst`,
+  wrap schemas as profiles) so the restored instance is self-describing.
+- Afterwards: reindex `metadata_search`; insert `audit.jsonl` rows when present.
+  `--dry-run` reports what would change.
+
+References: ADR-0016 §3; ADR-0019 §6 (migration).
+
+### 18.4 [ ] `fdp import --rebase` — adoption from an FDPneo dump under a different base
+
+- Compose restore with `pid/rebase.py`'s term rewriting applied in-flight: re-root
+  every IRI under the old base to `identifier_base`, cross-record links included.
+- **Binding-aware rewrite:** the rewrite set must also cover the ADR-0019
+  cross-references — `dct:conformsTo` (→ profile stable IRI), `fdp-o:validatedAgainst`
+  (→ profile version IRI), `prof:hasArtifact` (→ shape version IRI), and the profile
+  / schema graph IRIs and their version children.
+- One-time, like `rebase`; reindex search after; `record_audit` intentionally keeps
+  the historical IRIs (document the Postgres boundary).
+
+References: ADR-0016 §4 (FDPneo dump), §6; `pid/rebase.py`.
+
+### 18.5 [ ] `fdp import` — migration from a reference-FDP instance (depends on Phase 20)
+
+- Walk the source LDP tree (or consume its export); map each host-bound IRI to
+  `identifier_base` + the same path; carry provenance (source
+  `dct:issued`/`dct:modified` → meta `dct:created`/`dct:modified`).
+- **Profiles first, then validate:** import the source's profiles/schemas, then for
+  each record resolve **its own** `dct:conformsTo` → profile → shape and validate —
+  as a **report**, not a hard reject (ADR-0016 §3 posture). Requires the ADR-0019
+  binding (**Phase 20**).
+- Preserve the old IRI as a structured alternative identifier (`adms:identifier` +
+  `dct:identifier`, ADR-0017); `owl:sameAs` only on explicit operator assertion.
+  When the old host will not keep resolving, record the mapping once in the import
+  report instead of on every record.
+
+References: ADR-0016 §4 (reference FDP); ADR-0017 §1; ADR-0019 §1. **Depends on Phase 20.**
+
+### 18.6 [ ] Privileged provenance write path (internal, CLI-only)
+
+- Restore/import must write meta graphs with *supplied* timestamps/creator/state
+  and write audit graphs. Add an internal repository path used **only** by these
+  CLI commands — never an LDP header or query flag. The HTTP contract stays
+  ADR-0014's: canonical subject always, server-stamped provenance always.
+
+References: ADR-0016 §5.
+
+### 18.7 [ ] Docs + release
+
+- Operator runbook: dump / restore / import, the mandatory search-reindex step,
+  and the `record_audit` IRI-history boundary (ADR-0016 §6). CHANGELOG; version
+  bump; quality gate green (`ruff`, `pyright`, full unit + integration).
+
+References: ADR-0016 §6.
+
+**Out of scope (Phase 18):** DOI/Handle minting; a hosted/scheduled backup service;
+partial or selective dumps (whole-store only for v1).
 
 ---
 
