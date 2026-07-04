@@ -1,6 +1,6 @@
 # ADR-0019: Self-describing record–schema binding and schema versioning
 
-**Status:** Proposed
+**Status:** Accepted (implemented in v0.5.0)
 **Date:** 2026-07-03
 **Amends:** [ADR-0007](0007-one-graph-per-record.md) (record graph gains `dct:conformsTo`),
 [ADR-0009](0009-runtime-resource-definitions.md) (resource definitions narrow to a type/profile index).

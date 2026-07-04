@@ -5,6 +5,48 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.5.0] — 2026-07-04
+
+Self-describing record–schema binding and schema versioning (Phase 20 / ADR-0019).
+Records now carry their validation binding at rest: a server-stamped
+`dct:conformsTo` → a `prof:Profile` (W3C Profiles Vocabulary), backed by immutable,
+versioned schema/profile identity and version provenance in the meta graph.
+
+### Added
+
+- **Self-describing `dct:conformsTo` on every record.** On `PUT`/`POST`/`PATCH`
+  the server stamps `dct:conformsTo` → the type's stable profile IRI into the
+  record graph. The binding is server-owned: a client-supplied `conformsTo` into
+  the managed profile namespace is replaced with the type default (ADR-0019 §2),
+  while a `conformsTo` to any other vocabulary is preserved. (ADR-0019 §1)
+- **`fdp-o:validatedAgainst` version provenance.** The exact profile *version* a
+  record was validated against is recorded in its `<record>/meta` graph, so a
+  restore/import can reproduce the original validation. (ADR-0019 §3)
+- **PROF conformance profiles.** A new read-only surface at `/fdp-api/profiles`
+  (`GET` list / `{id}` / `{id}/{version}`). A profile is the 1:1 wrapper of a
+  SHACL schema (`prof:hasResource` with `prof:hasRole role:validation` →
+  the schema's immutable version snapshot), auto-provisioned on schema publish.
+- **Immutable, versioned schemas.** Publishing a schema now snapshots an immutable
+  version graph at `…/fdp-api/schemas/{slug}/{version}` (retained across edits;
+  the stable IRI keeps serving the current shape). Fetch a snapshot via
+  `GET /fdp-api/schemas/{id}/{version}`. (ADR-0019 §4)
+- **`fdp profile backfill-conformance`.** One-shot, idempotent, non-destructive
+  migration: provisions the profile (+ version snapshot) for every managed schema
+  and stamps `dct:conformsTo`/`fdp-o:validatedAgainst` on existing records of a
+  known type — without bumping their version. A fresh bootstrap does this
+  automatically for seeded schemas and records. (ADR-0019 §6)
+
+### Changed
+
+- **`meta-metadata.ttl`** gains an optional `fdp-o:validatedAgainst` (IRI); the
+  base **`resource.ttl`** annotates `dct:conformsTo` as the server-managed binding
+  (multiple values allowed). No shape is `sh:closed`, so the stamped triples
+  validate cleanly.
+- **ResourceDefinition** is now a type→profile index (validation resolves through
+  the record's `conformsTo`). Implementation note: the RD's `ldp:constrainedBy`
+  stays on the schema and the profile is derived 1:1 from it — same self-describing
+  outcome, far less churn than flipping `constrainedBy` (ADR-0019 §2, amended).
+
 ## [0.4.0] — 2026-07-03
 
 Alternative identifiers and FAIR Signposting (Phase 17): write-path hardening, the
