@@ -33,7 +33,7 @@ from fdp.metadata.graphs import (
     meta_graph_uri,
     record_graph_uri,
 )
-from fdp.metadata.meta import MetaResult, MetaWriter
+from fdp.metadata.meta import MetaResult, MetaWriter, build_meta_graph
 from fdp.metadata.states import DEFAULT_STATE, MetadataState
 from fdp.storage.triplestore.adapter import construct_named_graph
 
@@ -117,6 +117,48 @@ class MetadataRepository:
             subject=subject,
             initial_state=initial_state,
             validated_against=validated_against,
+        )
+        return compute_etag(graph)
+
+    async def write_imported(
+        self,
+        record_uri: str | URIRef,
+        graph: Graph,
+        *,
+        subject: str | None,
+        created: datetime,
+        modified: datetime,
+        state: MetadataState = DEFAULT_STATE,
+        validated_against: str | None = None,
+    ) -> str:
+        """Privileged provenance write for restore/import (ADR-0016 §5).
+
+        Persists the record graph and a meta graph carrying **supplied** provenance
+        — ``dct:created`` / ``dct:modified`` from the source, plus ``creator`` /
+        ``state`` — instead of the server's ``now`` stamping. This capability is
+        **CLI-only** (``fdp backup import``); it is never wired to an HTTP header or
+        query flag, so the LDP contract's "server-stamped provenance always"
+        guarantee (ADR-0014) stays un-gameable by API clients.
+        """
+        graph_uri = record_graph_uri(record_uri)
+        await self._adapter.replace_graph(
+            str(graph_uri), graph.serialize(format="nt"), mime="application/n-triples"
+        )
+        prior = await construct_named_graph(self._adapter, str(meta_graph_uri(record_uri)))
+        result = build_meta_graph(
+            record_iri=record_uri,
+            prior=prior,
+            subject=subject,
+            now=self._clock(),
+            initial_state=state,
+            validated_against=validated_against,
+            created=created,
+            modified=modified,
+        )
+        await self._adapter.replace_graph(
+            str(meta_graph_uri(record_uri)),
+            result.graph.serialize(format="nt"),
+            mime="application/n-triples",
         )
         return compute_etag(graph)
 

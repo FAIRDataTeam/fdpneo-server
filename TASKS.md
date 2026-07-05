@@ -1900,7 +1900,9 @@ References: ADR-0016 §4 (FDPneo dump), §6; `pid/rebase.py`.
 
 References: ADR-0016 §4 (reference FDP); ADR-0017 §1; ADR-0019 §1. **Depends on Phase 20.**
 
-### 18.6 [ ] Privileged provenance write path (internal, CLI-only)
+### 18.6 [x] Privileged provenance write path (internal, CLI-only)
+
+_Done: `MetadataRepository.write_imported` + `build_meta_graph(created=…, modified=…)` write meta graphs with supplied provenance (dct:created/modified/creator/state), bypassing now-stamping. CLI-only; never on the HTTP surface (ADR-0016 §5). Consumed by 18.5._
 
 - Restore/import must write meta graphs with *supplied* timestamps/creator/state
   and write audit graphs. Add an internal repository path used **only** by these

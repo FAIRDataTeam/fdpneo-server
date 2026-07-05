@@ -188,3 +188,32 @@ async def test_put_with_no_creator_still_writes_meta() -> None:
     assert (RECORD_URI, OWL.versionInfo, Literal(1)) in meta
     # dct:creator omitted when no authenticated principal supplied
     assert not list(meta.objects(RECORD_URI, DCT.creator))
+
+
+@pytest.mark.unit
+async def test_write_imported_preserves_supplied_provenance() -> None:
+    from fdp.metadata.states import MetadataState
+    from fdp.shared.namespaces import FDP_METADATA_STATE
+
+    repo, adapter = _repo()  # server clock = 2026-06-01
+    src_created = datetime(2020, 1, 1, tzinfo=UTC)
+    src_modified = datetime(2021, 6, 1, tzinfo=UTC)
+
+    await repo.write_imported(
+        RECORD,
+        _record_graph(),
+        subject=ALICE,
+        created=src_created,
+        modified=src_modified,
+        state=MetadataState.PUBLISHED,
+        validated_against="https://example.org/fdp-api/profiles/catalog/1",
+    )
+
+    # Record content persisted verbatim.
+    assert (RECORD_URI, DCT.title, Literal("hello")) in adapter.graphs[RECORD]
+    # Meta carries SOURCE provenance, not the server's `now`.
+    meta = adapter.graphs[str(meta_graph_uri(RECORD))]
+    assert (RECORD_URI, DCT.created, Literal(src_created)) in meta
+    assert (RECORD_URI, DCT.modified, Literal(src_modified)) in meta
+    assert (RECORD_URI, FDP_METADATA_STATE, Literal("PUBLISHED")) in meta
+    assert (RECORD_URI, DCT.creator, URIRef(ALICE)) in meta

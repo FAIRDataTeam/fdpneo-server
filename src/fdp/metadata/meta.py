@@ -82,6 +82,8 @@ def build_meta_graph(
     now: datetime,
     initial_state: MetadataState = DEFAULT_STATE,
     validated_against: str | None = None,
+    created: datetime | None = None,
+    modified: datetime | None = None,
 ) -> MetaResult:
     """Build the next meta graph for ``record_iri``.
 
@@ -100,6 +102,11 @@ def build_meta_graph(
             ``fdp-o:validatedAgainst`` when supplied; preserved from ``prior``
             when not (so a state transition or an unbound write keeps the
             provenance a content write recorded).
+        created: **Privileged import only** (ADR-0016 §5) — an explicit
+            ``dct:created`` from the source instead of ``now``/prior. Never set on
+            the HTTP path; used by ``fdp backup import`` to carry source provenance.
+        modified: **Privileged import only** — an explicit ``dct:modified`` from
+            the source instead of ``now``.
 
     Returns:
         A :class:`MetaResult` whose ``graph`` is ready to replace whatever
@@ -111,7 +118,7 @@ def build_meta_graph(
 
     is_creation = created_at is None
     operation = Operation.CREATE if is_creation else Operation.MODIFY
-    effective_created = created_at or now
+    effective_created = created or created_at or now
     effective_creator = prior_creator if not is_creation else subject
     # State is server-managed lifecycle metadata: set it on create, preserve
     # it across content edits. Only the transition API (lifecycle.py) changes
@@ -124,7 +131,7 @@ def build_meta_graph(
     graph.add((record_subject, DCT.created, Literal(effective_created)))
     if effective_creator is not None:
         graph.add((record_subject, DCT.creator, URIRef(effective_creator)))
-    graph.add((record_subject, DCT.modified, Literal(now)))
+    graph.add((record_subject, DCT.modified, Literal(modified or now)))
     graph.add((record_subject, OWL.versionInfo, Literal(version)))
     graph.add((record_subject, FDP_METADATA_STATE, Literal(effective_state.value)))
 
