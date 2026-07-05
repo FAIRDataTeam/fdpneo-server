@@ -30,7 +30,8 @@ import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
-    from fdp.metadata.backup import DumpResult
+    from fdp.config import Settings
+    from fdp.metadata.backup import DumpResult, RestoreResult
     from fdp.metadata.pid.github import PublishResult
     from fdp.metadata.pid.rebase import RebaseReport
     from fdp.metadata.pid.verify import ResolutionReport
@@ -378,66 +379,36 @@ def search_reindex() -> None:
 
 async def _run_search_reindex() -> int:
     """Rebuild the search index; returns the number of records indexed."""
-    import json
-
     from fdp.config import get_settings
-    from fdp.metadata.repository import MetadataRepository
-    from fdp.metadata.search.indexer import SearchIndexer
-    from fdp.metadata.search.repository import SearchIndexRepository
-    from fdp.policy.resolver import GraphBackedOfferResolver
-    from fdp.policy.runtime import RequestScopedPDP
-    from fdp.shared.graphs import is_internal_graph_uri
+    from fdp.metadata.search.reindex import reindex_all
     from fdp.storage.postgres.engine import build_engine, build_session_factory
     from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
-
-    # Resolve the system-default offer so anon-read evaluation matches runtime
-    # (records that inherit the default must still be seen as public).
-    system_default: str | None = None
-    if settings.profile.path is not None:
-        from fdp.metadata.profiles import load_profile, resolve_runtime_state
-
-        system_default, _ = resolve_runtime_state(
-            load_profile(settings.profile.path), settings=settings
-        )
-
     try:
         async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
-            repository = MetadataRepository(adapter)
-            resolver = GraphBackedOfferResolver(
-                repository, system_default_provider=lambda: system_default
-            )
-            pdp = RequestScopedPDP(session_factory=session_factory, offer_resolver=resolver)
-            search_repo = SearchIndexRepository(session_factory=session_factory)
-            indexer = SearchIndexer(
-                records=repository,
-                search=search_repo,
-                pdp=pdp,
+            return await reindex_all(
+                adapter,
+                session_factory,
                 language=settings.search.default_language,
-                enabled=True,
+                system_default_offer_iri=_system_default_offer(settings),
             )
-            await search_repo.clear_all()
-            body = await adapter.query(
-                "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }",
-                accept="application/sparql-results+json",
-            )
-            graphs = [
-                b["g"]["value"]
-                for b in json.loads(body).get("results", {}).get("bindings", [])
-                if "g" in b
-            ]
-            count = 0
-            for graph_iri in graphs:
-                if is_internal_graph_uri(graph_iri):
-                    continue
-                if await indexer.index(graph_iri):
-                    count += 1
-            return count
     finally:
         await engine.dispose()
+
+
+def _system_default_offer(settings: Settings) -> str | None:
+    """The profile's system-default offer IRI (for anon-read during reindex)."""
+    if settings.profile.path is None:
+        return None
+    from fdp.metadata.profiles import load_profile, resolve_runtime_state
+
+    system_default, _ = resolve_runtime_state(
+        load_profile(settings.profile.path), settings=settings
+    )
+    return system_default
 
 
 # --- schema commands -----------------------------------------------------
@@ -930,6 +901,113 @@ def backup_dump(
         f"{result.audit_rows} audit row(s) → {result.out_dir} "
         f"(data model: {result.data_model_version})"
     )
+
+
+@backup_app.command("restore")
+def backup_restore(
+    path: Path = typer.Argument(..., exists=True, file_okay=False),
+    merge: bool = typer.Option(
+        False, "--merge", help="Into a non-empty store: skip graphs that already exist."
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Into a non-empty store: replace existing graphs."
+    ),
+    no_audit: bool = typer.Option(
+        False, "--no-audit", help="Skip inserting the dump's audit.jsonl rows."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would change; write nothing."
+    ),
+) -> None:
+    """Faithfully restore a dump into the triple store (ADR-0016 §3).
+
+    Loads quads verbatim (no re-stamped provenance). Refuses on an identifier_base
+    mismatch (use `fdp backup import --rebase`) or a non-empty store (unless
+    --merge/--overwrite). Afterwards it inserts audit rows, migrates a pre-ADR-0019
+    dump forward, and reindexes search.
+    """
+    if merge and overwrite:
+        console.print("[red]--merge and --overwrite are mutually exclusive[/]")
+        raise typer.Exit(code=1)
+    try:
+        result, audit_rows, profiles, indexed = asyncio.run(
+            _run_restore(
+                path, merge=merge, overwrite=overwrite, include_audit=not no_audit, dry_run=dry_run
+            )
+        )
+    except Exception as err:
+        console.print(f"[red]restore failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    verb = "would restore" if result.dry_run else "restored"
+    console.print(
+        f"[green]{verb}[/] {result.graphs_loaded} graph(s), {result.quad_count} quad(s) "
+        f"(skipped {result.graphs_skipped}) from {path}"
+    )
+    if not result.dry_run:
+        if result.needs_migration:
+            console.print(
+                f"  migrated pre-ADR-0019 dump forward: {profiles} profile(s) provisioned"
+            )
+        console.print(f"  inserted {audit_rows} audit row(s); reindexed {indexed} record(s)")
+
+
+async def _run_restore(
+    in_dir: Path, *, merge: bool, overwrite: bool, include_audit: bool, dry_run: bool
+) -> tuple[RestoreResult, int, int, int]:
+    """Load a dump, then (unless dry-run) insert audit, migrate, and reindex.
+
+    Returns (restore result, audit rows inserted, profiles provisioned, records indexed).
+    """
+    from fdp.config import get_settings
+    from fdp.metadata.backup import restore_audit, restore_store
+    from fdp.metadata.prof_backfill import backfill_conformance
+    from fdp.metadata.profiles import build_cache_from_repository
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.search.reindex import reindex_all
+    from fdp.storage.postgres.engine import build_engine, build_session_factory
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+    audit_rows = 0
+    profiles = 0
+    indexed = 0
+    try:
+        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+            result = await restore_store(
+                adapter,
+                in_dir,
+                target_identifier_base=settings.resolved_identifier_base,
+                merge=merge,
+                overwrite=overwrite,
+                dry_run=dry_run,
+            )
+            if result.dry_run:
+                return result, 0, 0, 0
+            if include_audit:
+                audit_rows = await restore_audit(session_factory, in_dir)
+            if result.needs_migration:
+                # Pre-ADR-0019 dump: backfill conformsTo/validatedAgainst + wrap
+                # schemas as profiles so the restored instance is self-describing.
+                repository = MetadataRepository(adapter)
+                cache = await build_cache_from_repository(
+                    adapter, base_url=settings.resolved_identifier_base
+                )
+                report = await backfill_conformance(
+                    adapter=adapter, repository=repository, cache=cache
+                )
+                profiles = len(report.profiles_provisioned)
+            indexed = await reindex_all(
+                adapter,
+                session_factory,
+                language=settings.search.default_language,
+                system_default_offer_iri=_system_default_offer(settings),
+            )
+        return result, audit_rows, profiles, indexed
+    finally:
+        await engine.dispose()
 
 
 async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:
