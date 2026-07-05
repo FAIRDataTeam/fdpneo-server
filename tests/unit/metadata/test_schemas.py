@@ -49,12 +49,16 @@ ONTOLOGY_SHAPE = """\
 @dataclass
 class _Store:
     graphs: dict[str, Graph] = field(default_factory=dict)
+    versions: dict[str, int] = field(default_factory=dict)
     referenced: bool = False
 
     # repository
     async def put_graph(self, record_uri: str, graph: Graph, *, subject: str | None) -> str:
         del subject
-        self.graphs[str(record_graph_uri(record_uri))] = graph
+        key = str(record_graph_uri(record_uri))
+        self.graphs[key] = graph
+        # Simulate the meta writer bumping owl:versionInfo on each write.
+        self.versions[key] = self.versions.get(key, 0) + 1
         return "etag"
 
     async def get_graph(self, record_uri: str) -> Graph:
@@ -64,6 +68,12 @@ class _Store:
         self.graphs.pop(str(record_graph_uri(record_uri)), None)
 
     # adapter
+    async def replace_graph(self, graph_uri: str, data: str, *, mime: str = "") -> None:
+        del mime
+        g = Graph()
+        g.parse(data=data, format="nt")
+        self.graphs[graph_uri] = g
+
     async def ask(self, sparql: str) -> bool:
         if "ResourceDefinition" in sparql:
             return self.referenced
@@ -76,6 +86,10 @@ class _Store:
     async def query(self, sparql: str, *, accept: str = "") -> bytes:
         del accept
         if "versionInfo" in sparql:
+            match = re.search(r"<([^>]+)>\s+<[^>]*versionInfo>", sparql)
+            if match is not None and match.group(1) in self.versions:
+                value = str(self.versions[match.group(1)])
+                return json.dumps({"results": {"bindings": [{"v": {"value": value}}]}}).encode()
             return json.dumps({"results": {"bindings": []}}).encode()
         # list query
         bindings = []
@@ -117,6 +131,54 @@ async def test_put_stores_shape_and_reports_target_class() -> None:
     assert info.iri == f"{BASE}/fdp-api/schemas/ontology"
     assert info.target_class == "http://www.w3.org/2002/07/owl#Ontology"
     assert f"{BASE}/fdp-api/schemas/ontology" in store.graphs
+
+
+@pytest.mark.unit
+async def test_put_auto_provisions_conformance_profile() -> None:
+    from fdp.shared.namespaces import PROF
+
+    store = _Store()
+    await _service(store).put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    # The 1:1 profile is provisioned wrapping the schema's current version (ADR-0019 §3).
+    profile = f"{BASE}/fdp-api/profiles/ontology"
+    assert profile in store.graphs
+    g = store.graphs[profile]
+    schema_v1 = f"{BASE}/fdp-api/schemas/ontology/1"
+    assert schema_v1 in {str(o) for o in g.objects(None, PROF.hasArtifact)}
+
+
+@pytest.mark.unit
+async def test_put_snapshots_immutable_versions_and_retains_prior() -> None:
+    store = _Store()
+    svc = _service(store)
+    await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    v1 = f"{BASE}/fdp-api/schemas/ontology/1"
+    assert v1 in store.graphs  # first immutable snapshot written
+    assert await svc.current_version_iri("ontology") == v1
+    # A second write snapshots v2 and RETAINS v1.
+    await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    v2 = f"{BASE}/fdp-api/schemas/ontology/2"
+    assert v1 in store.graphs and v2 in store.graphs
+    assert await svc.current_version_iri("ontology") == v2
+
+
+@pytest.mark.unit
+async def test_get_turtle_by_version_returns_snapshot() -> None:
+    store = _Store()
+    svc = _service(store)
+    await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    ttl = await svc.get_turtle("ontology", version="1")
+    assert "Ontology" in ttl  # the snapshot carries the shape (targetClass owl:Ontology)
+    with pytest.raises(NotFound):
+        await svc.get_turtle("ontology", version="99")
+
+
+@pytest.mark.unit
+async def test_list_excludes_version_snapshots() -> None:
+    store = _Store()
+    svc = _service(store)
+    await svc.put("ontology", ONTOLOGY_SHAPE, subject="admin")
+    assert {s.id for s in await svc.list_schemas()} == {"ontology"}  # not "1"
 
 
 @pytest.mark.unit

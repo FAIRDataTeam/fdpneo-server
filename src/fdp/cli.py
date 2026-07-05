@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from fdp.metadata.pid.github import PublishResult
     from fdp.metadata.pid.rebase import RebaseReport
     from fdp.metadata.pid.verify import ResolutionReport
+    from fdp.metadata.prof_backfill import ConformanceBackfillReport
     from fdp.metadata.profiles.applier import ApplyReport
     from fdp.metadata.profiles.backfill import MembershipBackfillReport
     from fdp.metadata.profiles.manifest import DeploymentProfile
@@ -244,6 +245,51 @@ async def _run_modular_migration(profile: DeploymentProfile) -> ModularMigration
             settings=settings,
             validator=validator,
         )
+
+
+@profile_app.command("backfill-conformance")
+def profile_backfill_conformance() -> None:
+    """Backfill the ADR-0019 self-describing binding on existing records + schemas.
+
+    Non-destructive, one-shot, idempotent. Provisions the 1:1 profile (+ immutable
+    schema version snapshot) for every managed schema, and stamps
+    ``dct:conformsTo`` + ``fdp-o:validatedAgainst`` on every existing record of a
+    known type that lacks it — **without** bumping the record's version. Derives
+    everything from the store; no profile bundle needed. A fresh bootstrap does
+    this automatically; run this for deployments created before the binding
+    shipped. A no-op on an already-bound deployment.
+    """
+    try:
+        report = asyncio.run(_run_conformance_backfill())
+    except Exception as err:
+        console.print(f"[red]conformance backfill failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if not report.changed:
+        console.print(f"[green]nothing to backfill[/] — {report.already} record(s) already bound")
+        return
+    console.print(
+        f"[green]backfilled[/] {len(report.profiles_provisioned)} profile(s), "
+        f"{len(report.records_stamped)} record(s) stamped "
+        f"({report.already} already bound)"
+    )
+
+
+async def _run_conformance_backfill() -> ConformanceBackfillReport:
+    """Build the runtime collaborators and run one conformance-backfill pass."""
+    from fdp.config import get_settings
+    from fdp.metadata.prof_backfill import backfill_conformance
+    from fdp.metadata.profiles import build_cache_from_repository
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        repository = MetadataRepository(adapter)
+        cache = await build_cache_from_repository(
+            adapter, base_url=settings.resolved_identifier_base
+        )
+        return await backfill_conformance(adapter=adapter, repository=repository, cache=cache)
 
 
 @db_app.command("migrate")

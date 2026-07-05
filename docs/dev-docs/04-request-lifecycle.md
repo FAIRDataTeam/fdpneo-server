@@ -101,6 +101,15 @@ On a successful `GET`/`HEAD` of an existing record, the handlers append **FAIR S
 
 The total is capped (`signposting.MAX_LINKS`) so a large container cannot bloat the header; surplus `item` links are trimmed first (Level-2 `linkset` is deferred). `HEAD` carries the same `Link` header as `GET`.
 
+### 4.3.4 Self-describing conformance binding (v0.5.0, ADR-0019)
+
+A record write (`PUT`/`POST`/`PATCH`) makes the stored record **self-describing at rest**. After SHACL validation and *before* the record graph is persisted, the LDP router ([ldp/router.py](../../src/fdp/metadata/ldp/router.py) `_stamp_conformance`) does two things:
+
+- **Stamps `dct:conformsTo` → the type's stable profile** into the record graph. The binding is server-owned: any client-supplied `dct:conformsTo` pointing into the managed profile namespace (`<base>/fdp-api/profiles/…`) is dropped first (enforcing "a record's profile equals its type default", ADR-0019 §2); a `conformsTo` to any *other* vocabulary/profile is left untouched. The stable profile IRI always resolves to the current version, so the public binding never goes stale.
+- **Records `fdp-o:validatedAgainst` → the exact profile *version*** in the sibling `<record>/meta` graph (threaded through `repo.put_graph(..., validated_against=…)` into the meta writer). This is the provenance that lets a restore/import reproduce the original validation; a write that doesn't re-validate preserves whatever the last content write recorded.
+
+The profile (a `prof:Profile` with a `role:validation` resource pointing at an immutable schema-version snapshot) is the **1:1 wrapper of the type's schema**, auto-provisioned on schema publish and, as a safety net, **lazily provisioned on first write** of a bootstrap-seeded type ([metadata/prof.py](../../src/fdp/metadata/prof.py) `ensure_conformance`). Validation still resolves the shape through the resource definition's `ldp:constrainedBy` (the stable schema == the pinned version's shape at write time, so the result is identical); ADR-0019 §2 records why `constrainedBy` stays on the schema rather than flipping to the profile.
+
 ## 4.4 Startup and shutdown (lifespan)
 
 The FastAPI `lifespan` handler ([main.py](../../src/fdp/main.py) `lifespan`) runs once at boot and once at teardown. Startup binds the event-bus subscribers and runs first-boot setup:

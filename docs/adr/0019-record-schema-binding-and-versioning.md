@@ -1,6 +1,6 @@
 # ADR-0019: Self-describing record–schema binding and schema versioning
 
-**Status:** Proposed
+**Status:** Accepted (implemented in v0.5.0)
 **Date:** 2026-07-03
 **Amends:** [ADR-0007](0007-one-graph-per-record.md) (record graph gains `dct:conformsTo`),
 [ADR-0009](0009-runtime-resource-definitions.md) (resource definitions narrow to a type/profile index).
@@ -67,9 +67,20 @@ it cannot drift.
 ### 2. ResourceDefinition becomes a type→profile index, not the validator
 
 RDs (ADR-0009) still own url prefixes, container configuration, the OpenAPI
-surface, and the **default profile for a type** (`ldp:constrainedBy` now
-references a profile). But *validation* resolves through the record's own
-`conformsTo`, not by walking the RD at read/import time.
+surface, and the **default profile for a type**. But *validation* resolves through
+the record's own `conformsTo`, not by walking the RD at read/import time.
+
+**Implementation note (amended v0.5.0).** The RD's `ldp:constrainedBy` stays on
+the **schema** IRI; the type's default profile is **derived 1:1** from it (the
+profile at `…/fdp-api/profiles/<slug>` wraps the schema at `…/fdp-api/schemas/<slug>`,
+same slug, auto-provisioned on every schema publish — §3). This reaches the same
+outcome — a record's `conformsTo` points at the profile, which points at the
+validating shape version — without churning `constrainedBy`, the container
+registry's shape resolution, the applier, and the RD API across a breaking change.
+The originally-drafted alternative (flip `constrainedBy` to reference the profile
+directly) was rejected as pure churn now that profiles are a deterministic
+projection of schemas; it can be revisited if per-type profiles ever diverge from
+their schema 1:1 (e.g. a profile composing multiple schemas).
 
 **Constraint (v1):** a record's profile must equal its type's RD default profile;
 the server enforces this on write. Per-record profile choice (a record conforming

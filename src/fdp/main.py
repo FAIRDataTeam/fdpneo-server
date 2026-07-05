@@ -59,6 +59,8 @@ from fdp.metadata.lifecycle import (
 from fdp.metadata.meta import META_SHAPE_IRI
 from fdp.metadata.openapi import inject_resource_definition_paths
 from fdp.metadata.policies import PolicyService, build_policy_router
+from fdp.metadata.prof import ProfileService, build_profile_router
+from fdp.metadata.prof_backfill import backfill_conformance
 from fdp.metadata.profiles import (
     RD_SHAPE_IRI,
     ProfileStateRepository,
@@ -263,6 +265,13 @@ def _build_shared_state(app: FastAPI) -> None:
         # is published after this point and swapped on every profile re-apply /
         # RD mutation.
         root_schema_iri_provider=lambda: _root_schema_iri(app),
+    )
+    # Read-only access to PROF profiles (ADR-0019); the schema service is the
+    # writer (auto-provisions a 1:1 profile on every schema publish).
+    app.state.profile_service = ProfileService(
+        repository=app.state.metadata_repository,
+        adapter=app.state.triplestore,
+        base_url=settings.resolved_identifier_base,
     )
 
     # First-class ODRL policy and license documents (Phase 14 / ADR-0012). Two
@@ -623,6 +632,12 @@ def create_app() -> FastAPI:
     app.include_router(
         build_schema_router(service=app.state.schema_service), prefix=RESERVED_API_PATH
     )
+    # PROF conformance profiles (ADR-0019) — read-only at /fdp-api/profiles.
+    # Profiles are the dct:conformsTo target for records; they are provisioned
+    # from schemas (1:1 wrapper), never edited directly, so no write surface.
+    app.include_router(
+        build_profile_router(service=app.state.profile_service), prefix=RESERVED_API_PATH
+    )
     # Dynamic class-instance / subclass lookup at /fdp-api/instances and
     # /fdp-api/subclasses — backs the client's DASH reference editors. Reads are
     # visibility-gated (ODRL read + publication state), like every other read.
@@ -668,6 +683,9 @@ def create_app() -> FastAPI:
             pdp=app.state.pdp,
             validator=app.state.shacl_validator,
             containers=container_registry,
+            # ADR-0019: the adapter lets the write path provision/stamp the
+            # record's conformance profile (dct:conformsTo + validatedAgainst).
+            triplestore=app.state.triplestore,
             event_bus=app.state.event_bus,
             state_gate=app.state.state_gate,
             # Maintain the parent's forward containment links (ldp:contains +
@@ -828,6 +846,15 @@ async def _maybe_auto_bootstrap(app: FastAPI) -> None:
             session=session,
             settings=settings,
             force=False,
+        )
+
+    # ADR-0019: make the seeded schemas + records self-describing on a fresh
+    # bootstrap — provision the 1:1 profiles and stamp conformsTo/validatedAgainst.
+    if report.resource_definitions is not None:
+        await backfill_conformance(
+            adapter=app.state.triplestore,
+            repository=app.state.metadata_repository,
+            cache=report.resource_definitions,
         )
 
     await _publish_runtime_state(app, report.system_default_offer_iri, report.resource_definitions)

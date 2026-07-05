@@ -34,7 +34,14 @@ from rdflib.namespace import RDF
 from fdp.metadata.graphs import meta_graph_uri, record_graph_uri
 from fdp.metadata.shacl import UnknownShapeError
 from fdp.metadata.states import DEFAULT_STATE, MetadataState
-from fdp.shared.namespaces import DCT, FDP_DEFAULT, FDP_METADATA_STATE, OWL, PROV
+from fdp.shared.namespaces import (
+    DCT,
+    FDP_DEFAULT,
+    FDP_METADATA_STATE,
+    FDP_VALIDATED_AGAINST,
+    OWL,
+    PROV,
+)
 
 if TYPE_CHECKING:
     from fdp.metadata.shacl import ShaclValidator
@@ -74,6 +81,7 @@ def build_meta_graph(
     subject: str | None,
     now: datetime,
     initial_state: MetadataState = DEFAULT_STATE,
+    validated_against: str | None = None,
 ) -> MetaResult:
     """Build the next meta graph for ``record_iri``.
 
@@ -87,6 +95,11 @@ def build_meta_graph(
             ``PUBLISHED`` for seeded records. On MODIFY the prior state is
             preserved and this argument is ignored — a content edit never
             changes publication state; only the transition API does.
+        validated_against: The immutable profile *version* IRI the record was
+            validated against at write time (ADR-0019 §3). Stamped as
+            ``fdp-o:validatedAgainst`` when supplied; preserved from ``prior``
+            when not (so a state transition or an unbound write keeps the
+            provenance a content write recorded).
 
     Returns:
         A :class:`MetaResult` whose ``graph`` is ready to replace whatever
@@ -114,6 +127,14 @@ def build_meta_graph(
     graph.add((record_subject, DCT.modified, Literal(now)))
     graph.add((record_subject, OWL.versionInfo, Literal(version)))
     graph.add((record_subject, FDP_METADATA_STATE, Literal(effective_state.value)))
+
+    # ADR-0019 §3: the exact profile version validated at write time. A content
+    # write supplies it; a bind-less write (or a state transition, which rebuilds
+    # the meta graph without re-validating) preserves whatever the last content
+    # write recorded, so the provenance never silently disappears.
+    effective_binding = validated_against or _extract_validated_against(prior, record_subject)
+    if effective_binding is not None:
+        graph.add((record_subject, FDP_VALIDATED_AGAINST, URIRef(effective_binding)))
 
     activity = BNode()
     graph.add((record_subject, PROV.wasGeneratedBy, activity))
@@ -160,6 +181,7 @@ class MetaWriter:
         subject: str | None,
         now: datetime,
         initial_state: MetadataState = DEFAULT_STATE,
+        validated_against: str | None = None,
     ) -> MetaResult:
         """Run the full build → validate → commit cycle."""
         result = build_meta_graph(
@@ -168,6 +190,7 @@ class MetaWriter:
             subject=subject,
             now=now,
             initial_state=initial_state,
+            validated_against=validated_against,
         )
         if self._validator is not None and self._shape_iri is not None:
             try:
@@ -235,6 +258,14 @@ def _extract_creation(
             creator = str(value)
             break
     return created, creator
+
+
+def _extract_validated_against(prior: Graph, record_subject: URIRef) -> str | None:
+    """Return the profile version IRI the record was last validated against."""
+    for value in prior.objects(record_subject, FDP_VALIDATED_AGAINST):
+        if isinstance(value, URIRef):
+            return str(value)
+    return None
 
 
 def _extract_state(prior: Graph, record_subject: URIRef) -> MetadataState | None:

@@ -1987,7 +1987,15 @@ This **amends ADR-0007/0009** and is the **prerequisite for Phase 18's `fdp impo
 step** (import brings profiles first, then validates each record against its own
 `conformsTo`). Target version: v0.5.0 (tentative; sequence vs Phases 18/19 TBD).
 
-### 20.1 [ ] PROF vocabulary + versioned profile/schema graph URIs (shared kernel)
+**Status: complete** (branch `feature/adr-0019-binding`, for v0.5.0). Implementation
+notes: 20.3/20.4 landed with a decision refinement — the RD's `ldp:constrainedBy`
+**stays on the schema**; the type's profile is **derived 1:1** from it (same slug,
+auto-provisioned on schema publish), reaching the same self-describing outcome
+without the churn of flipping `constrainedBy` everywhere. ADR-0019 §2 was amended
+to record this. Commits: 20.1 `d1b2919`, 20.2 `e112506`, 20.3 `f719ee8`,
+20.4 `95fcbac`, 20.5 `06846c9`, 20.6 `465e764`.
+
+### 20.1 [x] PROF vocabulary + versioned profile/schema graph URIs (shared kernel)
 
 - `shared/namespaces.py`: add `PROF` (`http://www.w3.org/ns/dx/prof/`) and the
   profile-role namespace (`role:validation`, …); register the `prof`/`role`
@@ -2001,7 +2009,7 @@ step** (import brings profiles first, then validates each record against its own
 
 References: ADR-0019 §1/§4/§5; the existing `_*_SEGMENT` conventions.
 
-### 20.2 [ ] Immutable, versioned schema identity (schema service)
+### 20.2 [x] Immutable, versioned schema identity (schema service)
 
 - `metadata/schemas.py`: change `PUT /schemas/{id}` from mutate-in-place to
   **snapshot** — write an immutable version graph, move `dcat:hasCurrentVersion`
@@ -2012,7 +2020,7 @@ References: ADR-0019 §1/§4/§5; the existing `_*_SEGMENT` conventions.
 
 References: ADR-0019 §4.
 
-### 20.3 [ ] Profile resource type (PROF) — service, router, RD wiring
+### 20.3 [x] Profile resource type (PROF) — service, router, RD wiring
 
 - New managed **Profile** resource: `prof:Profile` with
   `prof:hasResource [ prof:hasRole role:validation ; prof:hasArtifact <shape
@@ -2027,7 +2035,7 @@ References: ADR-0019 §4.
 
 References: ADR-0019 §1/§2/§5.
 
-### 20.4 [ ] Write path: stamp `dct:conformsTo`, validate via profile, record `validatedAgainst`
+### 20.4 [x] Write path: stamp `dct:conformsTo`, validate via profile, record `validatedAgainst`
 
 - `metadata/ldp/router.py` (+ a containment-style maintainer): resolve
   type→RD→profile; inject/refresh `dct:conformsTo <stable profile>` in the record
@@ -2043,7 +2051,7 @@ References: ADR-0019 §1/§2/§5.
 
 References: ADR-0019 §1/§2/§3.
 
-### 20.5 [ ] Resource shape, meta shape, docs
+### 20.5 [x] Resource shape, meta shape, docs
 
 - `profiles/default/schemas/resource.ttl`: annotate `dct:conformsTo` as
   server-managed; `schemas/meta-metadata.ttl`: add optional
@@ -2054,7 +2062,7 @@ References: ADR-0019 §1/§2/§3.
 
 References: ADR-0019 §1/§3.
 
-### 20.6 [ ] Migration: backfill `conformsTo` + wrap schemas as profiles
+### 20.6 [x] Migration: backfill `conformsTo` + wrap schemas as profiles
 
 - CLI command (adapter-level, idempotent, `--dry-run`, like `fdp pid rebase`):
   wrap each existing schema in a profile and snapshot it as version 1; for each
@@ -2064,7 +2072,7 @@ References: ADR-0019 §1/§3.
 
 References: ADR-0019 §6.
 
-### 20.7 [ ] Quality gate + release (v0.5.0)
+### 20.7 [x] Quality gate + release (v0.5.0)
 
 - `ruff` clean, `pyright` 0 errors, full unit + integration green. ADR-0019 status
   → Accepted; CHANGELOG; version bump; coordinate `fdp-client` (render

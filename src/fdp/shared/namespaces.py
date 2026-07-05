@@ -33,8 +33,11 @@ FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 LDP = Namespace("http://www.w3.org/ns/ldp#")
 ODRL = Namespace("http://www.w3.org/ns/odrl/2/")
 OWL = Namespace("http://www.w3.org/2002/07/owl#")
+PROF = Namespace("http://www.w3.org/ns/dx/prof/")
 PROV = Namespace("http://www.w3.org/ns/prov#")
 RDFS = Namespace("http://www.w3.org/2000/01/rdf-schema#")
+# The W3C profile-role registry (prof:hasRole values, e.g. role:validation).
+ROLE = Namespace("http://www.w3.org/ns/dx/prof/role/")
 SH = Namespace("http://www.w3.org/ns/shacl#")
 SKOS = Namespace("http://www.w3.org/2004/02/skos/core#")
 SPDX = Namespace("http://spdx.org/rdf/terms#")
@@ -77,6 +80,14 @@ FDP_CHILD_TITLE = FDP_DEFAULT["childTitle"]
 FDP_CHILD_TAGS_URI = FDP_DEFAULT["childTagsUri"]
 """Optional predicate naming the tag vocabulary for a child listing."""
 
+FDP_VALIDATED_AGAINST = FDP_DEFAULT["validatedAgainst"]
+"""Meta-graph predicate recording the exact profile *version* a record was
+validated against at write time (ADR-0019 §3). Object is the immutable profile
+version IRI (``…/fdp-api/profiles/<slug>/<version>``); lives in ``<record>/meta``
+alongside ``owl:versionInfo``, and travels in the dump so a restore reproduces
+the original validation. The record graph itself carries the *stable* profile via
+``dct:conformsTo`` — current binding in the record, exact version in the meta."""
+
 FDP_METADATA_STATE = FDP_DEFAULT["metadataState"]
 """Publication-state predicate stamped on a record's meta graph (ADR-0010).
 
@@ -100,8 +111,10 @@ PREFIXES: Mapping[str, Namespace] = MappingProxyType(
         "ldp": LDP,
         "odrl": ODRL,
         "owl": OWL,
+        "prof": PROF,
         "prov": PROV,
         "rdfs": RDFS,
+        "role": ROLE,
         "sh": SH,
         "skos": SKOS,
         "spdx": SPDX,
@@ -144,13 +157,16 @@ __all__ = [
     "FDP_RELATION_URI",
     "FDP_RESOURCE_DEFINITION",
     "FDP_URL_PREFIX",
+    "FDP_VALIDATED_AGAINST",
     "FOAF",
     "LDP",
     "ODRL",
     "OWL",
     "PREFIXES",
+    "PROF",
     "PROV",
     "RDFS",
+    "ROLE",
     "SH",
     "SKOS",
     "SPDX",

@@ -53,4 +53,14 @@ fdp:MetaMetadataShape
         sh:path dct:creator ;
         sh:maxCount 1 ;
         sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        # ADR-0019 §3: the exact profile *version* the record content was
+        # validated against at write time. Server-stamped (fdp-o:validatedAgainst),
+        # it is the provenance that lets a restore/import reproduce the original
+        # validation. Optional — records written before the binding, or writes
+        # that don't re-validate, may lack it.
+        sh:path fdp:validatedAgainst ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
     ] .

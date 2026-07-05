@@ -38,7 +38,48 @@ def _empty() -> Graph:
     return Graph()
 
 
+_PROFILE_V1 = "https://example.org/fdp-api/profiles/dataset/1"
+_PROFILE_V2 = "https://example.org/fdp-api/profiles/dataset/2"
+
+
 # --- builder ----------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_validated_against_is_stamped_when_supplied() -> None:
+    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+
+    result = build_meta_graph(
+        record_iri=RECORD, prior=_empty(), subject=ALICE, now=NOW, validated_against=_PROFILE_V1
+    )
+    assert (RECORD_URI, FDP_VALIDATED_AGAINST, URIRef(_PROFILE_V1)) in result.graph
+
+
+@pytest.mark.unit
+def test_validated_against_preserved_from_prior_when_omitted() -> None:
+    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+
+    # A content write recorded v1; a later write that doesn't re-validate (e.g. a
+    # state rebuild) must keep the provenance rather than drop it.
+    prior = build_meta_graph(
+        record_iri=RECORD, prior=_empty(), subject=ALICE, now=NOW, validated_against=_PROFILE_V1
+    ).graph
+    result = build_meta_graph(record_iri=RECORD, prior=prior, subject=ALICE, now=LATER)
+    assert (RECORD_URI, FDP_VALIDATED_AGAINST, URIRef(_PROFILE_V1)) in result.graph
+
+
+@pytest.mark.unit
+def test_validated_against_supplied_overrides_prior() -> None:
+    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+
+    prior = build_meta_graph(
+        record_iri=RECORD, prior=_empty(), subject=ALICE, now=NOW, validated_against=_PROFILE_V1
+    ).graph
+    result = build_meta_graph(
+        record_iri=RECORD, prior=prior, subject=ALICE, now=LATER, validated_against=_PROFILE_V2
+    )
+    bindings = set(result.graph.objects(RECORD_URI, FDP_VALIDATED_AGAINST))
+    assert bindings == {URIRef(_PROFILE_V2)}  # exactly one — the new version
 
 
 @pytest.mark.unit

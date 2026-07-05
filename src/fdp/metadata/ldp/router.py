@@ -47,6 +47,7 @@ from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.identifiers import reconcile_identifiers
 from fdp.metadata.patch import simulate_update
+from fdp.metadata.prof import ensure_conformance
 from fdp.metadata.profiles.applier import direct_container_config
 from fdp.metadata.signposting import render_link_header, signposting_links
 from fdp.policy.model import Action, Outcome
@@ -64,6 +65,7 @@ from fdp.shared.errors import (
     Unauthenticated,
     UnsupportedMediaType,
 )
+from fdp.shared.graphs import is_profile_graph_uri
 from fdp.shared.identifiers import canonicalize
 from fdp.shared.namespaces import DCT, LDP as LDP_NS
 from fdp.shared.negotiation import (
@@ -83,6 +85,7 @@ if TYPE_CHECKING:
     from fdp.metadata.shacl import ShaclValidator
     from fdp.policy.pdp import PDP
     from fdp.shared.events import Event, EventBus
+    from fdp.storage.triplestore import TripleStoreAdapter
 
 log = structlog.get_logger(__name__)
 
@@ -149,6 +152,7 @@ def build_ldp_router(
     pdp: PDP,
     validator: ShaclValidator | None = None,
     containers: ContainerRegistry | None = None,
+    triplestore: TripleStoreAdapter | None = None,
     event_bus: EventBus | None = None,
     state_gate: StateGate | None = None,
     containment: ContainmentManager | None = None,
@@ -250,6 +254,30 @@ def build_ldp_router(
             return
         report = await validator.validate_against(graph, shape_iri)
         report.raise_if_failed()
+
+    async def _stamp_conformance(graph: Graph, iri: str, shape_iri: str | None) -> str | None:
+        """Make the record self-describing (ADR-0019): stamp server-owned
+        ``dct:conformsTo`` → the type's stable profile, return the profile *version*
+        IRI to record as ``fdp-o:validatedAgainst`` in the meta graph.
+
+        The profile (and the schema version snapshot it wraps) is provisioned on
+        demand from the record's schema. Any client-supplied ``conformsTo`` into
+        the managed profile namespace is dropped first — the validation binding is
+        server-owned and must equal the type default (ADR-0019 §2); a client's
+        ``conformsTo`` to some *other* vocabulary/profile is left untouched.
+        """
+        if triplestore is None or shape_iri is None:
+            return None
+        resolved = await ensure_conformance(triplestore, repo, schema_iri=shape_iri)
+        if resolved is None:
+            return None
+        stable_profile, validated_against = resolved
+        subject = URIRef(iri)
+        for obj in list(graph.objects(subject, DCT.conformsTo)):
+            if isinstance(obj, URIRef) and is_profile_graph_uri(obj):
+                graph.remove((subject, DCT.conformsTo, obj))
+        graph.add((subject, DCT.conformsTo, URIRef(stable_profile)))
+        return validated_against
 
     async def _maintain_membership(
         *,
@@ -389,9 +417,14 @@ def build_ldp_router(
         # member shape, which only applies to POST and resolves to None for a
         # leaf member IRI (leaving the write unvalidated).
         await _validate_against_resource_shape(new_graph, iri)
+        # Make the record self-describing (ADR-0019): stamp dct:conformsTo → the
+        # type's profile, and capture the exact version for the meta graph.
+        validated_against = await _stamp_conformance(new_graph, iri, registry.shape_for(iri))
         # Stamp this record's own Direct Container config if it's a container type.
         _stamp_container_config(new_graph, iri)
-        etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
+        etag = await repo.put_graph(
+            iri, new_graph, subject=ctx.subject, validated_against=validated_against
+        )
         # Maintain the parent's forward containment links from the child's
         # dct:isPartOf (compensates the child write on failure).
         parent_events = await _maintain_membership(
@@ -462,8 +495,13 @@ def build_ldp_router(
         # the minted member IRI, preserving it as owl:sameAs.
         member_graph = _reconcile(member_graph, member_iri)
         await _validate_member(member_graph, container_iri)
+        validated_against = await _stamp_conformance(
+            member_graph, member_iri, registry.member_shape(container_iri)
+        )
         _stamp_container_config(member_graph, member_iri)
-        etag = await repo.put_graph(member_iri, member_graph, subject=ctx.subject)
+        etag = await repo.put_graph(
+            member_iri, member_graph, subject=ctx.subject, validated_against=validated_against
+        )
         parent_events = await _maintain_membership(
             child_iri=member_iri,
             ctx=ctx,
@@ -509,7 +547,10 @@ def build_ldp_router(
             raise BadRequest("PATCH body must be a non-empty SPARQL Update")
         new_graph = simulate_update(existing, body, iri)
         await _validate_against_resource_shape(new_graph, iri)
-        etag = await repo.put_graph(iri, new_graph, subject=ctx.subject)
+        validated_against = await _stamp_conformance(new_graph, iri, registry.shape_for(iri))
+        etag = await repo.put_graph(
+            iri, new_graph, subject=ctx.subject, validated_against=validated_against
+        )
         await _publish(
             RecordModified(
                 record_iri=iri,
