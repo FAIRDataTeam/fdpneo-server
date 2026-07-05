@@ -13,7 +13,9 @@ from rdflib import Graph
 
 from fdp.config import OIDCSettings, Settings, TripleStoreSettings
 from fdp.metadata.profiles import apply_profile, load_profile, resolve_runtime_state
+from fdp.metadata.profiles.applier import _repository_graph, _service_advertisement
 from fdp.shared.errors import BadRequest, Conflict
+from fdp.shared.namespaces import DCAT, VOID
 
 # --- in-memory fakes -------------------------------------------------------
 
@@ -363,3 +365,46 @@ def test_direct_container_config_emits_membership_triad() -> None:
     assert (subject, LDP.hasMemberRelation, URIRef(catalog)) in triples
     # Basic Container is gone — the root is a Direct Container now.
     assert (subject, RDF.type, LDP.BasicContainer) not in triples
+
+
+def test_service_advertisement_emits_sparql_and_search_endpoints() -> None:
+    from rdflib import RDF, URIRef
+
+    root = URIRef("http://localhost:8000")
+    triples = _service_advertisement(root, "http://localhost:8000", search_enabled=True)
+    sparql = URIRef("http://localhost:8000/fdp-api/sparql")
+    search = URIRef("http://localhost:8000/fdp-api/search")
+    # Direct VoID discovery signal for SPARQL.
+    assert (root, VOID.sparqlEndpoint, sparql) in triples
+    # DCAT DataService descriptors with endpointURL for both endpoints.
+    endpoint_urls = {o for _, p, o in triples if p == DCAT.endpointURL}
+    assert endpoint_urls == {sparql, search}
+    services = [s for s, p, o in triples if p == RDF.type and o == DCAT.DataService]
+    assert len(services) == 2
+    assert all((root, DCAT.service, svc) in triples for svc in services)
+
+
+def test_service_advertisement_omits_search_when_disabled() -> None:
+    from rdflib import URIRef
+
+    root = URIRef("http://localhost:8000")
+    triples = _service_advertisement(root, "http://localhost:8000", search_enabled=False)
+    endpoint_urls = {str(o) for _, p, o in triples if p == DCAT.endpointURL}
+    assert endpoint_urls == {"http://localhost:8000/fdp-api/sparql"}  # no search
+    assert (root, VOID.sparqlEndpoint, URIRef("http://localhost:8000/fdp-api/sparql")) in triples
+
+
+def test_repository_graph_includes_service_advertisement() -> None:
+    from rdflib import URIRef
+
+    g = _repository_graph(
+        iri="http://localhost:8000",
+        type_iri="https://w3id.org/fdp/o#FAIRDataPoint",
+        member_relations=["http://www.w3.org/ns/dcat#catalog"],
+        title="Test FDP",
+        rights_iri=None,
+        search_enabled=True,
+    )
+    root = URIRef("http://localhost:8000")
+    assert (root, VOID.sparqlEndpoint, URIRef("http://localhost:8000/fdp-api/sparql")) in g
+    assert any(p == DCAT.service for _, p, _ in g)

@@ -62,6 +62,7 @@ def test_prefixes_mapping_is_lowercase_and_immutable() -> None:
         "sh",
         "skos",
         "spdx",
+        "void",
         "xsd",
     }
     with pytest.raises(TypeError):
