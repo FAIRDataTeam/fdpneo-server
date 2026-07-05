@@ -408,3 +408,57 @@ def test_repository_graph_includes_service_advertisement() -> None:
     root = URIRef("http://localhost:8000")
     assert (root, VOID.sparqlEndpoint, URIRef("http://localhost:8000/fdp-api/sparql")) in g
     assert any(p == DCAT.service for _, p, _ in g)
+
+
+async def test_ensure_root_service_advertisement_adds_then_idempotent() -> None:
+    from rdflib import RDF, URIRef
+
+    from fdp.metadata.profiles.applier import ensure_root_service_advertisement
+
+    class _Store:
+        def __init__(self) -> None:
+            self.graphs: dict[str, Graph] = {}
+
+        async def get_graph(self, record_uri: str) -> Graph:
+            return self.graphs.get(str(record_uri).rstrip("/"), Graph())
+
+        async def replace_graph(self, graph_uri: str, data: str, *, mime: str = "") -> None:
+            del mime
+            g = Graph()
+            g.parse(data=data, format="nt")
+            self.graphs[str(graph_uri).rstrip("/")] = g
+
+    store = _Store()
+    root = "http://localhost:8000"
+    seed = Graph()
+    seed.add((URIRef(root), RDF.type, URIRef("https://w3id.org/fdp/o#FAIRDataPoint")))
+    store.graphs[root] = seed
+
+    added = await ensure_root_service_advertisement(store, store, base_url=root)  # type: ignore[arg-type]
+    assert added is True
+    assert (URIRef(root), VOID.sparqlEndpoint, URIRef(f"{root}/fdp-api/sparql")) in store.graphs[
+        root
+    ]
+    # Second pass is a no-op (idempotent — never clobbers).
+    assert await ensure_root_service_advertisement(store, store, base_url=root) is False  # type: ignore[arg-type]
+
+
+async def test_ensure_root_service_advertisement_noop_when_no_root() -> None:
+    from fdp.metadata.profiles.applier import ensure_root_service_advertisement
+
+    class _Empty:
+        async def get_graph(self, record_uri: str) -> Graph:
+            del record_uri
+            return Graph()
+
+        async def replace_graph(self, graph_uri: str, data: str, *, mime: str = "") -> None:
+            raise AssertionError("must not write when there is no root record")
+
+    assert (
+        await ensure_root_service_advertisement(
+            _Empty(),  # type: ignore[arg-type]
+            _Empty(),  # type: ignore[arg-type]
+            base_url="http://localhost:8000",
+        )
+        is False
+    )

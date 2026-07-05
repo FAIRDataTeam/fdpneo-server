@@ -76,6 +76,7 @@ if TYPE_CHECKING:
     from fdp.metadata.profiles.manifest import DeploymentProfile, LoadedOffer
     from fdp.metadata.profiles.state import ProfileStateRepository
     from fdp.metadata.repository import MetadataRepository
+    from fdp.storage.triplestore import TripleStoreAdapter
 
 log = structlog.get_logger(__name__)
 
@@ -521,6 +522,39 @@ def _service_advertisement(
     return triples
 
 
+async def ensure_root_service_advertisement(
+    repository: MetadataRepository,
+    adapter: TripleStoreAdapter,
+    *,
+    base_url: str,
+    search_enabled: bool = True,
+) -> bool:
+    """Idempotently add endpoint advertisement (G-05) to the *existing* root record.
+
+    A fresh bootstrap seeds this into the root (:func:`_repository_graph`); this
+    handles deployments bootstrapped **before** G-05 — on the next restart the root
+    gains the ``void:sparqlEndpoint`` / DCAT ``dcat:DataService`` advertisement
+    without a destructive re-apply. Strictly additive and idempotent: a no-op once
+    the root already advertises SPARQL, so it never clobbers operator edits. Writes
+    the record graph directly (no version bump — not a content edit). Returns
+    ``True`` iff it added the advertisement.
+    """
+    root_iri = base_url.rstrip("/")
+    graph = await repository.get_graph(root_iri)
+    if len(graph) == 0:
+        return False  # no root record yet (uninitialized)
+    subject = URIRef(root_iri)
+    if next(iter(graph.objects(subject, VOID.sparqlEndpoint)), None) is not None:
+        return False  # already advertises — leave it be
+    for triple in _service_advertisement(subject, root_iri, search_enabled=search_enabled):
+        graph.add(triple)
+    await adapter.replace_graph(
+        root_iri, graph.serialize(format="nt"), mime="application/n-triples"
+    )
+    log.info("root_service_advertisement_stamped", root=root_iri)
+    return True
+
+
 def direct_container_config(
     subject: URIRef, member_relations: list[str]
 ) -> list[tuple[URIRef, URIRef, URIRef]]:
@@ -543,4 +577,10 @@ def direct_container_config(
     return triples
 
 
-__all__ = ["ApplyError", "ApplyReport", "apply_profile", "direct_container_config"]
+__all__ = [
+    "ApplyError",
+    "ApplyReport",
+    "apply_profile",
+    "direct_container_config",
+    "ensure_root_service_advertisement",
+]
