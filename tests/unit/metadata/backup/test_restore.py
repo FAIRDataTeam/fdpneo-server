@@ -136,3 +136,47 @@ async def test_restore_detects_corrupt_records(tmp_path: Path) -> None:
     (tmp_path / RECORDS_FILE).write_text("<x> <y> <z> <g> .\n", encoding="utf-8")  # checksum breaks
     with pytest.raises(RestoreError, match="checksum mismatch"):
         await restore_store(_Store(), tmp_path, target_identifier_base=BASE)  # type: ignore[arg-type]
+
+
+async def test_import_rebase_reroots_every_iri(tmp_path: Path) -> None:
+    old = "http://old.example"
+    new = BASE
+    # A record under the OLD base that conformsTo a profile (also under OLD) and
+    # is part of the OLD root — all must re-root to NEW.
+    cat = Graph()
+    cat.add((URIRef(f"{old}/catalog/c1"), RDF.type, DCAT_CATALOG))
+    cat.add(
+        (URIRef(f"{old}/catalog/c1"), DCTERMS.conformsTo, URIRef(f"{old}/fdp-api/profiles/catalog"))
+    )
+    cat.add((URIRef(f"{old}/catalog/c1"), DCTERMS.isPartOf, URIRef(old)))
+    prof = Graph()
+    prof.add((URIRef(f"{old}/fdp-api/profiles/catalog"), RDF.type, PROV.Entity))
+    source = _Store({f"{old}/catalog/c1": cat, f"{old}/fdp-api/profiles/catalog": prof})
+    await dump_store(source, tmp_path, identifier_base=old, include_audit=False)  # type: ignore[arg-type]
+
+    target = _Store()
+    result = await restore_store(target, tmp_path, target_identifier_base=new, rebase=True)  # type: ignore[arg-type]
+
+    assert result.identifier_base == new
+    # Graph IRIs re-rooted; old ones gone.
+    assert f"{new}/catalog/c1" in target.graphs
+    assert f"{new}/fdp-api/profiles/catalog" in target.graphs
+    assert f"{old}/catalog/c1" not in target.graphs
+    # Cross-references inside the record re-rooted too (ADR-0019 binding included).
+    record = target.graphs[f"{new}/catalog/c1"]
+    subject = URIRef(f"{new}/catalog/c1")
+    assert (subject, DCTERMS.conformsTo, URIRef(f"{new}/fdp-api/profiles/catalog")) in record
+    assert (subject, DCTERMS.isPartOf, URIRef(new)) in record
+
+
+async def test_import_rebase_same_base_is_noop_rewrite(tmp_path: Path) -> None:
+    # rebase=True with a matching base leaves IRIs unchanged (rebased() → None).
+    await _dump(tmp_path, _source())
+    target = _Store()
+    result = await restore_store(target, tmp_path, target_identifier_base=BASE, rebase=True)  # type: ignore[arg-type]
+    assert set(target.graphs) == {
+        f"{BASE}/catalog/c1",
+        f"{BASE}/catalog/c1/meta",
+        f"{BASE}/fdp-api/profiles/catalog",
+    }
+    assert result.graphs_loaded == 3

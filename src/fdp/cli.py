@@ -953,7 +953,13 @@ def backup_restore(
 
 
 async def _run_restore(
-    in_dir: Path, *, merge: bool, overwrite: bool, include_audit: bool, dry_run: bool
+    in_dir: Path,
+    *,
+    merge: bool,
+    overwrite: bool,
+    include_audit: bool,
+    dry_run: bool,
+    rebase: bool = False,
 ) -> tuple[RestoreResult, int, int, int]:
     """Load a dump, then (unless dry-run) insert audit, migrate, and reindex.
 
@@ -983,6 +989,7 @@ async def _run_restore(
                 merge=merge,
                 overwrite=overwrite,
                 dry_run=dry_run,
+                rebase=rebase,
             )
             if result.dry_run:
                 return result, 0, 0, 0
@@ -1008,6 +1015,72 @@ async def _run_restore(
         return result, audit_rows, profiles, indexed
     finally:
         await engine.dispose()
+
+
+@backup_app.command("import")
+def backup_import(
+    path: Path = typer.Argument(..., exists=True, file_okay=False),
+    rebase: bool = typer.Option(
+        False,
+        "--rebase",
+        help="Adopt an FDPneo dump captured under a different identifier_base: re-root every IRI to this deployment's base.",
+    ),
+    merge: bool = typer.Option(
+        False, "--merge", help="Into a non-empty store: skip graphs that already exist."
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Into a non-empty store: replace existing graphs."
+    ),
+    no_audit: bool = typer.Option(
+        False, "--no-audit", help="Skip inserting the dump's audit.jsonl rows."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would change; write nothing."
+    ),
+) -> None:
+    """Import a dump into this FDP, adopting it under this deployment's base (ADR-0016 §4).
+
+    `--rebase` re-roots every IRI (records, cross-links, and the ADR-0019 binding:
+    conformsTo / validatedAgainst / hasArtifact + the profile/schema graphs) from the
+    dump's identifier_base to this deployment's. Migration from a reference-FDP
+    instance is task 18.5.
+    """
+    if not rebase:
+        console.print(
+            "[yellow]non-rebase import (from a reference FDP) is not yet implemented (task 18.5).[/]\n"
+            "Use --rebase for an FDPneo dump under a different base, or "
+            "`fdp backup restore` for a same-base dump."
+        )
+        raise typer.Exit(code=1)
+    if merge and overwrite:
+        console.print("[red]--merge and --overwrite are mutually exclusive[/]")
+        raise typer.Exit(code=1)
+    try:
+        result, audit_rows, profiles, indexed = asyncio.run(
+            _run_restore(
+                path,
+                merge=merge,
+                overwrite=overwrite,
+                include_audit=not no_audit,
+                dry_run=dry_run,
+                rebase=True,
+            )
+        )
+    except Exception as err:
+        console.print(f"[red]import failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    verb = "would import" if result.dry_run else "imported"
+    console.print(
+        f"[green]{verb} (rebased)[/] {result.graphs_loaded} graph(s), {result.quad_count} quad(s) "
+        f"(skipped {result.graphs_skipped}) → base {result.identifier_base}"
+    )
+    if not result.dry_run:
+        if result.needs_migration:
+            console.print(
+                f"  migrated pre-ADR-0019 dump forward: {profiles} profile(s) provisioned"
+            )
+        console.print(f"  inserted {audit_rows} audit row(s); reindexed {indexed} record(s)")
 
 
 async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:

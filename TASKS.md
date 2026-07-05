@@ -1869,7 +1869,9 @@ _Done: `fdp backup restore` in `metadata/backup/restore.py` (verbatim load, base
 
 References: ADR-0016 §3; ADR-0019 §6 (migration).
 
-### 18.4 [ ] `fdp import --rebase` — adoption from an FDPneo dump under a different base
+### 18.4 [x] `fdp import --rebase` — adoption from an FDPneo dump under a different base
+
+_Done: `fdp backup import --rebase` (restore_store rebase mode) re-roots graph IRIs + all IRI terms old→new via the shared `pid/rebase` rewrite, covering the ADR-0019 cross-references._
 
 - Compose restore with `pid/rebase.py`'s term rewriting applied in-flight: re-root
   every IRI under the old base to `identifier_base`, cross-record links included.

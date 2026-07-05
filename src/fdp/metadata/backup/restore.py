@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+from rdflib import Graph
 
 from fdp.metadata.audit import RecordAuditRow
 from fdp.metadata.backup.dump import (
@@ -40,6 +41,7 @@ from fdp.metadata.backup.dump import (
     MANIFEST_FILE,
     RECORDS_FILE,
 )
+from fdp.metadata.pid.rebase import rebased, rewrite_graph
 from fdp.storage.triplestore.adapter import SPARQL_JSON
 
 if TYPE_CHECKING:
@@ -82,8 +84,17 @@ async def restore_store(
     merge: bool = False,
     overwrite: bool = False,
     dry_run: bool = False,
+    rebase: bool = False,
 ) -> RestoreResult:
-    """Load a dump into the triple store verbatim, enforcing ADR-0016 preconditions."""
+    """Load a dump into the triple store, enforcing ADR-0016 preconditions.
+
+    ``rebase`` (task 18.4) adopts a dump captured under a *different* base: every
+    graph IRI and every IRI term under the dump's ``identifier_base`` is re-rooted
+    to ``target_identifier_base`` in flight (including the ADR-0019 cross-references
+    ``dct:conformsTo`` / ``fdp-o:validatedAgainst`` / ``prof:hasArtifact`` and the
+    profile / schema graphs, since those live under the same base). Without
+    ``rebase`` a base mismatch is refused - a faithful restore never re-mints IRIs.
+    """
     src = Path(in_dir)
     manifest = json.loads((src / MANIFEST_FILE).read_text(encoding="utf-8"))
 
@@ -92,7 +103,7 @@ async def restore_store(
 
     manifest_base = str(manifest.get("identifier_base", "")).rstrip("/")
     target_base = target_identifier_base.rstrip("/")
-    if manifest_base != target_base:
+    if manifest_base != target_base and not rebase:
         raise RestoreError(
             f"identifier_base mismatch: dump is {manifest_base!r} but this deployment is "
             f"{target_base!r}. A faithful restore never re-mints IRIs — use "
@@ -111,12 +122,17 @@ async def restore_store(
     skipped = 0
     quads = 0
     for graph_uri, triples in groups.items():
-        if merge and graph_uri in existing:
+        dest_uri = graph_uri
+        payload = "".join(triples)
+        if rebase:
+            dest_uri = rebased(graph_uri, manifest_base, target_base) or graph_uri
+            payload = _rebase_payload(payload, manifest_base, target_base)
+        if merge and dest_uri in existing:
             skipped += 1
             continue
         quads += len(triples)
         if not dry_run:
-            await adapter.replace_graph(graph_uri, "".join(triples), mime=_NT)
+            await adapter.replace_graph(dest_uri, payload, mime=_NT)
         loaded += 1
 
     data_model = str(manifest.get("data_model_version", DATA_MODEL_LEGACY))
@@ -125,7 +141,7 @@ async def restore_store(
         graphs_skipped=skipped,
         quad_count=quads,
         data_model_version=data_model,
-        identifier_base=manifest_base,
+        identifier_base=target_base if rebase else manifest_base,
         needs_migration=data_model == DATA_MODEL_LEGACY,
         dry_run=dry_run,
     )
@@ -169,6 +185,13 @@ async def restore_audit(
         session.add_all(rows)
         await session.commit()
     return len(rows)
+
+
+def _rebase_payload(nt_text: str, old: str, new: str) -> str:
+    """Re-root every IRI under ``old`` to ``new`` in a graph's N-Triples payload."""
+    graph = Graph()
+    graph.parse(data=nt_text, format="nt")
+    return rewrite_graph(graph, old, new).serialize(format="nt")
 
 
 def _parse_nquads_by_graph(text: str) -> dict[str, list[str]]:
