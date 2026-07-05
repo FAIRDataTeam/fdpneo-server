@@ -71,6 +71,7 @@ from fdp.metadata.profiles import (
     load_profile,
     resolve_runtime_state,
 )
+from fdp.metadata.profiles.applier import ensure_root_service_advertisement
 from fdp.metadata.rd_api import build_resource_definition_router
 from fdp.metadata.repository import MetadataRepository
 from fdp.metadata.schemas import SchemaService, build_schema_router
@@ -876,6 +877,17 @@ async def _publish_runtime_state(
         await _verify_system_default_offer(app, system_default_offer_iri)
     if resource_definitions is not None:
         await _publish_resource_definitions(app, resource_definitions)
+    # ADR-0018 G-05: ensure the root advertises its query endpoints. A fresh
+    # bootstrap seeds this; here it also self-heals a deployment bootstrapped
+    # before G-05 — on restart the root gains the advertisement (idempotent, no
+    # destructive re-apply).
+    settings = get_settings()
+    await ensure_root_service_advertisement(
+        app.state.metadata_repository,
+        app.state.triplestore,
+        base_url=settings.resolved_identifier_base,
+        search_enabled=settings.search.enabled,
+    )
 
 
 async def _verify_system_default_offer(app: FastAPI, iri: str) -> None:

@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import structlog
-from rdflib import Graph, Literal, URIRef
+from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from fdp.metadata.licenses import LICENSE_SHAPE_IRI, predefined_license_shape_graph
@@ -66,7 +66,8 @@ from fdp.metadata.profiles.validator import (
 from fdp.metadata.states import SEED_STATE
 from fdp.shared.errors import BadRequest, Conflict, FDPError
 from fdp.shared.graphs import policy_graph_uri, resource_definition_graph_uri
-from fdp.shared.namespaces import DCT, LDP, ODRL
+from fdp.shared.namespaces import DCAT, DCT, LDP, ODRL, VOID
+from fdp.shared.reserved import RESERVED_API_PATH
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,6 +76,7 @@ if TYPE_CHECKING:
     from fdp.metadata.profiles.manifest import DeploymentProfile, LoadedOffer
     from fdp.metadata.profiles.state import ProfileStateRepository
     from fdp.metadata.repository import MetadataRepository
+    from fdp.storage.triplestore import TripleStoreAdapter
 
 log = structlog.get_logger(__name__)
 
@@ -298,6 +300,7 @@ async def apply_profile(
                     member_relations=[c.relation_uri for c in root_rd.children],
                     title=profile.name,
                     rights_iri=system_default_iri,
+                    search_enabled=settings.search.enabled,
                 )
                 await repository.put_graph(repo_iri, graph, subject=None, initial_state=SEED_STATE)
                 report.repository_iri = repo_iri
@@ -452,6 +455,7 @@ def _repository_graph(
     member_relations: list[str],
     title: str,
     rights_iri: str | None,
+    search_enabled: bool = True,
 ) -> Graph:
     """Build the seed graph for the root record (the FAIR Data Point).
 
@@ -462,6 +466,12 @@ def _repository_graph(
     (``ldp:membershipResource`` = itself, one ``ldp:hasMemberRelation`` per RD
     child relation, ``ldp:insertedContentRelation ldp:MemberSubject``) so a
     standards consumer reads the container's membership pattern directly.
+
+    It also **advertises this FDP's query service endpoints** (ADR-0018 gap G-05):
+    ``void:sparqlEndpoint`` for the SPARQL endpoint plus a ``dcat:DataService``
+    (``dcat:service`` → ``dcat:endpointURL``) for SPARQL and, when enabled, the
+    search API — so an agent/client (e.g. the ``fdp-mcp`` bridge) discovers them
+    from the root record instead of being hand-configured with endpoint paths.
     """
     subject = URIRef(iri)
     graph = Graph()
@@ -471,7 +481,78 @@ def _repository_graph(
         graph.add((subject, DCT.rights, URIRef(rights_iri)))
     for triple in direct_container_config(subject, member_relations):
         graph.add(triple)
+    for triple in _service_advertisement(subject, iri, search_enabled=search_enabled):
+        graph.add(triple)
     return graph
+
+
+def _service_advertisement(
+    subject: URIRef, base_iri: str, *, search_enabled: bool
+) -> list[tuple[URIRef | BNode, URIRef, URIRef | Literal | BNode]]:
+    """Triples advertising this FDP's SPARQL/search endpoints on the root record.
+
+    ADR-0018 gap G-05: a client that fetches the root can discover the query
+    endpoints rather than being configured. Both the standard VoID
+    ``void:sparqlEndpoint`` (direct, simplest to consume) and DCAT
+    ``dcat:DataService`` descriptors (richer, DCAT-idiomatic) are emitted.
+    """
+    base = base_iri.rstrip("/")
+    sparql_url = f"{base}{RESERVED_API_PATH}/sparql"
+    triples: list[tuple[URIRef | BNode, URIRef, URIRef | Literal | BNode]] = [
+        (subject, VOID.sparqlEndpoint, URIRef(sparql_url)),
+    ]
+    sparql_svc = BNode()
+    triples += [
+        (subject, DCAT.service, sparql_svc),
+        (sparql_svc, RDF.type, DCAT.DataService),
+        (sparql_svc, DCT.title, Literal("SPARQL query endpoint")),
+        (sparql_svc, DCAT.endpointURL, URIRef(sparql_url)),
+        (sparql_svc, DCAT.endpointDescription, URIRef("https://www.w3.org/TR/sparql11-protocol/")),
+        (sparql_svc, DCAT.servesDataset, subject),
+    ]
+    if search_enabled:
+        search_svc = BNode()
+        triples += [
+            (subject, DCAT.service, search_svc),
+            (search_svc, RDF.type, DCAT.DataService),
+            (search_svc, DCT.title, Literal("Metadata search API")),
+            (search_svc, DCAT.endpointURL, URIRef(f"{base}{RESERVED_API_PATH}/search")),
+            (search_svc, DCAT.servesDataset, subject),
+        ]
+    return triples
+
+
+async def ensure_root_service_advertisement(
+    repository: MetadataRepository,
+    adapter: TripleStoreAdapter,
+    *,
+    base_url: str,
+    search_enabled: bool = True,
+) -> bool:
+    """Idempotently add endpoint advertisement (G-05) to the *existing* root record.
+
+    A fresh bootstrap seeds this into the root (:func:`_repository_graph`); this
+    handles deployments bootstrapped **before** G-05 — on the next restart the root
+    gains the ``void:sparqlEndpoint`` / DCAT ``dcat:DataService`` advertisement
+    without a destructive re-apply. Strictly additive and idempotent: a no-op once
+    the root already advertises SPARQL, so it never clobbers operator edits. Writes
+    the record graph directly (no version bump — not a content edit). Returns
+    ``True`` iff it added the advertisement.
+    """
+    root_iri = base_url.rstrip("/")
+    graph = await repository.get_graph(root_iri)
+    if len(graph) == 0:
+        return False  # no root record yet (uninitialized)
+    subject = URIRef(root_iri)
+    if next(iter(graph.objects(subject, VOID.sparqlEndpoint)), None) is not None:
+        return False  # already advertises — leave it be
+    for triple in _service_advertisement(subject, root_iri, search_enabled=search_enabled):
+        graph.add(triple)
+    await adapter.replace_graph(
+        root_iri, graph.serialize(format="nt"), mime="application/n-triples"
+    )
+    log.info("root_service_advertisement_stamped", root=root_iri)
+    return True
 
 
 def direct_container_config(
@@ -496,4 +577,10 @@ def direct_container_config(
     return triples
 
 
-__all__ = ["ApplyError", "ApplyReport", "apply_profile", "direct_container_config"]
+__all__ = [
+    "ApplyError",
+    "ApplyReport",
+    "apply_profile",
+    "direct_container_config",
+    "ensure_root_service_advertisement",
+]

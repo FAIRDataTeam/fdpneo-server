@@ -5,6 +5,35 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.6.0] — 2026-07-05
+
+Agent consumption: server-side support for the `fdp-mcp` bridge (Phase 19 /
+ADR-0018). The full-stack deployment now comes up agent-ready, and the FDP
+advertises its query endpoints so agents can discover them.
+
+### Added
+
+- **Endpoint discovery in the root metadata (gap G-05).** The root FDP record now
+  advertises this deployment's query services — `void:sparqlEndpoint` plus DCAT
+  `dcat:DataService` descriptors (`dcat:endpointURL` / `dcat:endpointDescription`)
+  for the SPARQL endpoint and, when enabled, the search API — so a client (the
+  `fdp-mcp` bridge, or any consumer) discovers them from the root instead of being
+  hand-configured with endpoint paths. Added the VOID namespace (`void`).
+- **`fdp-mcp` in the full-stack deploy profile.** `deploy/stack/compose.yaml` gains
+  an `mcp` service (streamable-HTTP MCP at `:8002/mcp`, liveness at `/healthz`),
+  wired to the server so a default deployment is agent-ready. Off switch:
+  `--scale mcp=0`. Read-only, public-surface-only (ADR-0018).
+- **Agent-ready conformance note** (`docs/conformance/agent-ready.md`): which
+  MCP tool-surface tools this server backs (all 5 required + 3 optional) and the
+  gap triage.
+
+### Changed
+
+- **Root advertisement self-heals on restart.** A deployment bootstrapped before
+  G-05 gains the advertisement idempotently on the next startup
+  (`ensure_root_service_advertisement`) — no destructive re-apply. Strictly
+  additive; never clobbers operator edits.
+
 ## [0.5.0] — 2026-07-04
 
 Self-describing record–schema binding and schema versioning (Phase 20 / ADR-0019).

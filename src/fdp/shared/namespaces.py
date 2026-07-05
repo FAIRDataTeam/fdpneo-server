@@ -41,6 +41,7 @@ ROLE = Namespace("http://www.w3.org/ns/dx/prof/role/")
 SH = Namespace("http://www.w3.org/ns/shacl#")
 SKOS = Namespace("http://www.w3.org/2004/02/skos/core#")
 SPDX = Namespace("http://spdx.org/rdf/terms#")
+VOID = Namespace("http://rdfs.org/ns/void#")
 XSD = Namespace("http://www.w3.org/2001/XMLSchema#")
 
 FDP_DEFAULT = Namespace("https://w3id.org/fdp/o#")
@@ -118,6 +119,7 @@ PREFIXES: Mapping[str, Namespace] = MappingProxyType(
         "sh": SH,
         "skos": SKOS,
         "spdx": SPDX,
+        "void": VOID,
         "xsd": XSD,
     }
 )
@@ -170,6 +172,7 @@ __all__ = [
     "SH",
     "SKOS",
     "SPDX",
+    "VOID",
     "XSD",
     "bind_all",
     "fdp_namespace",

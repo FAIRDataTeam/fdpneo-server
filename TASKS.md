@@ -1933,7 +1933,16 @@ phase covers what the **server** repo owes the programme. Motivation and
 phasing: [`docs/architecture/agent-consumption-vision.md`](docs/architecture/agent-consumption-vision.md).
 `(Phase 18 is reserved for ADR-0016 backup/restore.)`
 
-### 19.1 [ ] Wire `fdp-mcp` into the standard deploy profiles
+**Status: complete** (branch `feature/adr-0018-agent-support`). The bridge
+(`../mcp`, v0.1.0) was already done; this phase closed the server-side obligations.
+Gap triage lives in [`docs/conformance/agent-ready.md`](docs/conformance/agent-ready.md)
+and the per-gap table below. The one actionable server capability gap — **G-05**
+(endpoint discovery) — is fixed (19.2); G-01/G-02/G-03/G-04 are interop/spec
+concerns FDPneo already satisfies; G-06 (shape closure) is deferred (FDPneo already
+serves the closure via `?composed=true` / `/{prefix}/spec`). Commits: 19.2/G-05
+`b13972d`, 19.1 `8b428f7`.
+
+### 19.1 [x] Wire `fdp-mcp` into the standard deploy profiles
 
 - Add the `fdp-mcp` service to the compose/deploy profiles (`deploy/`,
   architecture §12), pointed at the FDP container's base URL, so a default
@@ -1945,7 +1954,7 @@ phasing: [`docs/architecture/agent-consumption-vision.md`](docs/architecture/age
 
 References: ADR-0018 §6, architecture §12.
 
-### 19.2 [ ] Gap-report triage loop
+### 19.2 [x] Gap-report triage loop
 
 - Adopt `../mcp/docs/fdp-api-gaps.md` as a standing input to this file:
   each triaged gap becomes a task here (or an explicit won't-fix with
@@ -1958,7 +1967,7 @@ References: ADR-0018 §6, architecture §12.
 
 References: ADR-0018 §4.
 
-### 19.3 [ ] "Agent-ready FDP" conformance note
+### 19.3 [x] "Agent-ready FDP" conformance note
 
 - `docs/conformance/`: a note recording which parts of the
   `../mcp/docs/mcp-tool-surface.md` contract this server's public surface
