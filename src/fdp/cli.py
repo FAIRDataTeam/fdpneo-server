@@ -30,6 +30,7 @@ import typer
 from rich.console import Console
 
 if TYPE_CHECKING:
+    from fdp.metadata.backup import DumpResult
     from fdp.metadata.pid.github import PublishResult
     from fdp.metadata.pid.rebase import RebaseReport
     from fdp.metadata.pid.verify import ResolutionReport
@@ -56,6 +57,7 @@ schema_app = typer.Typer(help="Schema commands.", no_args_is_help=True)
 search_app = typer.Typer(help="Search commands.", no_args_is_help=True)
 ldp_app = typer.Typer(help="LDP-conformance commands.", no_args_is_help=True)
 pid_app = typer.Typer(help="Persistent-identifier commands.", no_args_is_help=True)
+backup_app = typer.Typer(help="Backup / restore / migration commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
@@ -64,6 +66,7 @@ app.add_typer(schema_app, name="schema")
 app.add_typer(search_app, name="search")
 app.add_typer(ldp_app, name="ldp")
 app.add_typer(pid_app, name="pid")
+app.add_typer(backup_app, name="backup")
 
 console = Console()
 
@@ -897,6 +900,59 @@ async def _run_pid_rebase(from_base: str, to_base: str, dry_run: bool) -> Rebase
         return await rebase_identifiers(
             adapter=adapter, old_base=from_base, new_base=to_base, dry_run=dry_run
         )
+
+
+# --- backup / restore / migration commands (ADR-0016) --------------------
+
+
+@backup_app.command("dump")
+def backup_dump(
+    path: Path = typer.Argument(..., file_okay=False),
+    no_audit: bool = typer.Option(
+        False, "--no-audit", help="Skip exporting the Postgres record_audit rows."
+    ),
+) -> None:
+    """Dump every named graph (+ manifest, + audit) to a directory (ADR-0016 §2).
+
+    Storage-level and faithful: reads through the adapter, not the LDP layer, so
+    provenance, the ADR-0019 record-schema binding, and audit graphs survive
+    byte-for-byte. Writes ``records.nq``, ``manifest.json`` and (unless
+    ``--no-audit``) ``audit.jsonl``. Whole-store only in v1.
+    """
+    try:
+        result = asyncio.run(_run_dump(path, include_audit=not no_audit))
+    except Exception as err:
+        console.print(f"[red]dump failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    console.print(
+        f"[green]dumped[/] {result.graph_count} graph(s), {result.quad_count} quad(s), "
+        f"{result.audit_rows} audit row(s) → {result.out_dir} "
+        f"(data model: {result.data_model_version})"
+    )
+
+
+async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:
+    """Build the runtime collaborators and dump the store."""
+    from fdp.config import get_settings
+    from fdp.metadata.backup import dump_store
+    from fdp.storage.postgres.engine import build_engine, build_session_factory
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+    try:
+        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+            return await dump_store(
+                adapter,
+                out_dir,
+                identifier_base=settings.resolved_identifier_base,
+                session_factory=session_factory if include_audit else None,
+                include_audit=include_audit,
+            )
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":
