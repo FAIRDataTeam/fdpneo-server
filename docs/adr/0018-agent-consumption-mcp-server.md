@@ -1,6 +1,6 @@
 # ADR-0018: Agent consumption via a standalone MCP sidecar (`fdp-mcp`)
 
-**Status:** Proposed
+**Status:** Accepted (server-side support implemented in v0.6.0; bridge is `fdp-mcp` v0.1.0)
 **Date:** 2026-07-03
 **See also:** [Agent Consumption Vision](../architecture/agent-consumption-vision.md)
 (motivation, demo strategy, phasing), ADR-0011 (API keys), ADR-0004/ADR-0007
