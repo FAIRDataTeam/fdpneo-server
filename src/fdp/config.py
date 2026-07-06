@@ -339,6 +339,92 @@ class SchemaSyncSettings(BaseSettings):
         return value
 
 
+class RemoteLabelSettings(BaseSettings):
+    """Configuration for external label resolution (Phase 21, ADR-0012 extension).
+
+    The public ``GET /fdp-api/labels`` endpoint resolves an IRI to a human label
+    from the local graph and a curated inline map. This group turns on a third
+    source: dereferencing an *external* IRI (ROR, DOI, ORCID, a SKOS term) over
+    content-negotiated RDF, extracting a label, and caching it in Postgres.
+
+    Same outbound posture as schema sync — two independent gates, both off by
+    default:
+
+    * ``enabled`` — the master switch for any outbound label fetch.
+    * ``allowed_hosts`` — hostnames the resolver may dereference. **Empty means
+      no host is allowed**, enforced on every hop of every fetch. Combined,
+      ``effective_enabled`` is true only when the switch is on *and* at least one
+      host is listed — so a misconfigured deployment makes no unauthenticated
+      outbound fetches to arbitrary IRIs.
+
+    Fetches are lazy by default (unknown IRIs are resolved in the background and
+    cached; the current call omits them) with an opt-in bounded ``?wait``.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_REMOTE_LABELS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    enabled: bool = False
+    """Master switch for outbound label fetches. Off by default."""
+
+    # ``NoDecode`` for the same reason as ``SchemaSyncSettings.allowed_hosts``:
+    # accept a friendly comma-separated string in addition to a JSON array.
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description=(
+            "Hostnames the label resolver may dereference. Empty denies all. "
+            "Accepts a JSON array or a comma-separated string via "
+            "FDP_REMOTE_LABELS_ALLOWED_HOSTS. Include terminal RDF hosts for "
+            "redirect-based content negotiation (e.g. DOI -> data.crossref.org)."
+        ),
+    )
+
+    timeout_seconds: float = 5.0
+    """Per-fetch timeout when dereferencing a remote IRI."""
+
+    max_bytes: int = 256 * 1024  # 256 KiB — a description document is small
+    """Hard cap on a fetched document's size; oversize responses are rejected."""
+
+    max_redirects: int = 5
+    """Maximum redirect hops to follow (each re-validated against the allow-list)."""
+
+    max_concurrent_fetches: int = 4
+    """Bound on in-flight outbound fetches (a shared semaphore)."""
+
+    positive_ttl_seconds: int = 2592000  # 30 days — org/person names are stable
+    """How long a resolved label stays fresh in the cache."""
+
+    negative_ttl_seconds: int = 86400  # 1 day
+    """How long a miss (no label found / fetch failed) is remembered."""
+
+    max_wait_ms: int = 3000
+    """Hard cap on the opt-in ``?wait`` bounded blocking fetch (milliseconds)."""
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: object) -> object:
+        """Parse the env value into a list of hostnames (JSON array or CSV)."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [host.strip() for host in text.split(",") if host.strip()]
+        return value
+
+    @property
+    def hosts(self) -> frozenset[str]:
+        """The allow-list as a set, for O(1) membership checks per fetch/hop."""
+        return frozenset(self.allowed_hosts)
+
+    @property
+    def effective_enabled(self) -> bool:
+        """Outbound resolution runs only when switched on with a non-empty allow-list."""
+        return self.enabled and bool(self.allowed_hosts)
+
+
 class PIDSettings(BaseSettings):
     """Configuration for persistent identifiers (v0.3.0, ADR-0014).
 
@@ -575,6 +661,7 @@ class Settings(BaseSettings):
     data: DataSettings = Field(default_factory=lambda: DataSettings())
     profile: ProfileSettings = Field(default_factory=lambda: ProfileSettings())
     schema_sync: SchemaSyncSettings = Field(default_factory=lambda: SchemaSyncSettings())
+    remote_labels: RemoteLabelSettings = Field(default_factory=lambda: RemoteLabelSettings())
     api_keys: ApiKeySettings = Field(default_factory=lambda: ApiKeySettings())
     search: SearchSettings = Field(default_factory=lambda: SearchSettings())
     index: IndexSettings = Field(default_factory=lambda: IndexSettings())

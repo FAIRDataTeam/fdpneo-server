@@ -2110,7 +2110,7 @@ with an opt-in bounded `?wait`. Pre-sanctioned by ADR-0012 §8 / architecture §
 shared `httpx.AsyncClient`, `shared.ssrf.assert_public_url`, the schema-sync
 fetch/parse, and the search ORM/upsert patterns. Target release **v0.10.0**.
 
-### 21.1 [ ] Config: `RemoteLabelSettings`
+### 21.1 [x] Config: `RemoteLabelSettings`
 
 - `src/fdp/config.py`: `RemoteLabelSettings` mirroring `SchemaSyncSettings`,
   `env_prefix="FDP_REMOTE_LABELS_"`: `enabled: bool = False`;
