@@ -44,7 +44,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_metadata_external_labels_expires_at", table_name="metadata_external_labels"
-    )
+    op.drop_index("ix_metadata_external_labels_expires_at", table_name="metadata_external_labels")
     op.drop_table("metadata_external_labels")

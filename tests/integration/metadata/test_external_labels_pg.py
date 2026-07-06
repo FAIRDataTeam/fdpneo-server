@@ -124,7 +124,7 @@ async def test_label_survives_a_fresh_resolver(session_factory: Any) -> None:
     warm = LabelResolver(
         adapter=_EmptyAdapter(),  # type: ignore[arg-type]
         external_cache=cache,
-        external_fetcher=_FakeFetcher({DOI: "Persisted Work"}),
+        external_fetcher=_FakeFetcher({DOI: "Persisted Work"}),  # type: ignore[arg-type]
         remote_settings=settings,
     )
     assert await warm.lookup([DOI], language="en") == {}  # lazy — omitted
@@ -137,7 +137,7 @@ async def test_label_survives_a_fresh_resolver(session_factory: Any) -> None:
     cold = LabelResolver(
         adapter=_EmptyAdapter(),  # type: ignore[arg-type]
         external_cache=ExternalLabelCache(session_factory=session_factory),
-        external_fetcher=cold_fetcher,
+        external_fetcher=cold_fetcher,  # type: ignore[arg-type]
         remote_settings=settings,
     )
     got = await cold.lookup([DOI], language="en", wait_ms=2000)

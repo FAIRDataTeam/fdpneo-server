@@ -2196,7 +2196,7 @@ References: main.py lifespan; index_ping shutdown pattern.
   trust/allow-list/caching/lazy semantics; caveat that redirect-based conneg needs
   terminal RDF hosts allow-listed (DOI → `data.crossref.org`/`data.datacite.org`).
 
-### 21.8 [ ] Quality gate + release (v0.10.0)
+### 21.8 [x] Quality gate + release (v0.10.0)
 
 - `uv run ruff check . && uv run ruff format --check . && uv run pyright &&
   uv run pytest` green. Manual E2E: `FDP_REMOTE_LABELS_ENABLED=true` +

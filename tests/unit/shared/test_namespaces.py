@@ -59,6 +59,7 @@ def test_prefixes_mapping_is_lowercase_and_immutable() -> None:
         "prov",
         "rdfs",
         "role",
+        "sdo",
         "sh",
         "skos",
         "spdx",

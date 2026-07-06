@@ -234,11 +234,13 @@ def _fetcher(handler: Callable[[httpx.Request], httpx.Response], **over: object)
     return ExternalLabelFetcher(http_client=client, settings=settings), client
 
 
-@pytest.fixture(autouse=True)
-def _no_ssrf_dns(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neutralize the SSRF guard's DNS in functional tests (kept offline).
+@pytest.fixture
+def patch_ssrf(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralize the SSRF guard's DNS so functional fetch tests stay offline.
 
-    The real guard is exercised separately below with a literal private IP.
+    Opt-in (not autouse): tests that assert the guard *itself* — e.g.
+    ``test_fetch_blocks_private_address_with_real_guard`` — must not request it,
+    or they'd pass for the wrong reason.
     """
 
     async def _ok(*_a: object, **_k: object) -> None:
@@ -247,7 +249,7 @@ def _no_ssrf_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("fdp.metadata.external_labels.assert_public_url", _ok)
 
 
-async def test_fetch_resolves_turtle_label() -> None:
+async def test_fetch_resolves_turtle_label(patch_ssrf: None) -> None:
     ttl = (
         "<https://orcid.example/0000-0002-1825-0097> "
         '<http://www.w3.org/2000/01/rdf-schema#label> "Josiah Carberry" .'
@@ -262,7 +264,7 @@ async def test_fetch_resolves_turtle_label() -> None:
     assert got == "Josiah Carberry"
 
 
-async def test_fetch_follows_redirect_then_resolves() -> None:
+async def test_fetch_follows_redirect_then_resolves(patch_ssrf: None) -> None:
     ttl = '<http://dx.doi.example/10.1/x> <http://purl.org/dc/terms/title> "Redirected Work" .'
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -290,7 +292,7 @@ async def test_fetch_skips_host_not_on_allow_list() -> None:
     assert calls["n"] == 0  # never dereferenced
 
 
-async def test_fetch_rejects_oversized_body() -> None:
+async def test_fetch_rejects_oversized_body(patch_ssrf: None) -> None:
     big = b"x" * 5000
 
     def handler(_req: httpx.Request) -> httpx.Response:
@@ -302,7 +304,7 @@ async def test_fetch_rejects_oversized_body() -> None:
     assert got is None
 
 
-async def test_fetch_returns_none_on_http_error() -> None:
+async def test_fetch_returns_none_on_http_error(patch_ssrf: None) -> None:
     def handler(_req: httpx.Request) -> httpx.Response:
         return httpx.Response(404)
 
@@ -312,7 +314,7 @@ async def test_fetch_returns_none_on_http_error() -> None:
     assert got is None
 
 
-async def test_fetch_returns_none_when_no_matching_label() -> None:
+async def test_fetch_returns_none_when_no_matching_label(patch_ssrf: None) -> None:
     ttl = '<https://other.example/z> <http://www.w3.org/2000/01/rdf-schema#label> "Elsewhere" .'
 
     def handler(_req: httpx.Request) -> httpx.Response:
@@ -324,7 +326,7 @@ async def test_fetch_returns_none_when_no_matching_label() -> None:
     assert got is None
 
 
-async def test_fetch_stops_after_too_many_redirects() -> None:
+async def test_fetch_stops_after_too_many_redirects(patch_ssrf: None) -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(302, headers={"location": "https://doi.example/next"})
 
