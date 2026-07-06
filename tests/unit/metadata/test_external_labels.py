@@ -6,6 +6,7 @@ configuration group (env parsing + the ``effective_enabled`` gate).
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -22,6 +23,7 @@ from fdp.metadata.external_labels import (
     ExternalLabelRow,
     best_label_from_graph,
 )
+from fdp.metadata.labels import LabelResolver
 from fdp.storage.postgres.models import Base, register_all_models
 
 pytestmark = pytest.mark.unit
@@ -344,3 +346,116 @@ async def test_fetch_blocks_private_address_with_real_guard() -> None:
     async with client:
         got = await fetcher.fetch("http://127.0.0.1/x", language="en")
     assert got is None
+
+
+# --- LabelResolver external integration ------------------------------------
+
+DOI = "https://doi.example/10.1/x"
+
+
+class _EmptyAdapter:
+    """A triple store with no local labels — everything falls to external."""
+
+    async def query(self, sparql: str, *, accept: str = "") -> bytes:
+        del sparql, accept
+        return b'{"results": {"bindings": []}}'
+
+
+class _FakeFetcher:
+    def __init__(self, labels: dict[str, str | None]) -> None:
+        self._labels = labels
+        self.calls: list[str] = []
+
+    async def fetch(self, iri: str, *, language: str) -> str | None:
+        del language
+        self.calls.append(iri)
+        return self._labels.get(iri)
+
+
+def _resolver(session_factory: Any, fetcher: Any, **over: object) -> LabelResolver:
+    over.setdefault("enabled", True)
+    over.setdefault("allowed_hosts", "doi.example")
+    return LabelResolver(
+        adapter=_EmptyAdapter(),  # type: ignore[arg-type]
+        external_cache=ExternalLabelCache(session_factory=session_factory),
+        external_fetcher=fetcher,
+        remote_settings=_settings(**over),
+    )
+
+
+async def _drain(resolver: LabelResolver) -> None:
+    """Await any background cache-warming tasks the resolver scheduled."""
+    while resolver._bg_tasks:
+        await asyncio.gather(*list(resolver._bg_tasks))
+
+
+async def test_lazy_first_call_omits_then_second_call_hits(session_factory: Any) -> None:
+    fetcher = _FakeFetcher({DOI: "The Work"})
+    r = _resolver(session_factory, fetcher)
+
+    first = await r.lookup([DOI], language="en")
+    assert first == {}  # lazy — not resolved inline
+    await _drain(r)
+
+    second = await r.lookup([DOI], language="en")
+    assert second == {DOI: "The Work"}
+    assert fetcher.calls == [DOI]  # fetched exactly once (cached thereafter)
+
+
+async def test_wait_returns_label_inline(session_factory: Any) -> None:
+    fetcher = _FakeFetcher({DOI: "The Work"})
+    r = _resolver(session_factory, fetcher)
+    got = await r.lookup([DOI], language="en", wait_ms=2000)
+    assert got == {DOI: "The Work"}
+    await _drain(r)
+
+
+async def test_postgres_cache_short_circuits_fetch(session_factory: Any) -> None:
+    cache = ExternalLabelCache(session_factory=session_factory)
+    await cache.upsert(DOI, "en", "Cached Work", ttl_seconds=3600)
+    fetcher = _FakeFetcher({DOI: "Fresh Work"})
+    r = _resolver(session_factory, fetcher)
+    got = await r.lookup([DOI], language="en", wait_ms=2000)
+    assert got == {DOI: "Cached Work"}
+    assert fetcher.calls == []  # durable cache hit — no outbound fetch
+
+
+async def test_cached_negative_not_refetched(session_factory: Any) -> None:
+    fetcher = _FakeFetcher({})  # always a miss
+    r = _resolver(session_factory, fetcher)
+    assert await r.lookup([DOI], language="en") == {}
+    await _drain(r)
+    assert await r.lookup([DOI], language="en") == {}
+    assert fetcher.calls == [DOI]  # negative remembered, not retried
+
+
+async def test_disabled_skips_external(session_factory: Any) -> None:
+    fetcher = _FakeFetcher({DOI: "The Work"})
+    r = _resolver(session_factory, fetcher, enabled=False)
+    assert await r.lookup([DOI], language="en", wait_ms=2000) == {}
+    assert fetcher.calls == []
+
+
+async def test_non_allowlisted_host_not_fetched(session_factory: Any) -> None:
+    fetcher = _FakeFetcher({"https://evil.example/x": "Nope"})
+    r = _resolver(session_factory, fetcher)
+    assert await r.lookup(["https://evil.example/x"], language="en", wait_ms=2000) == {}
+    assert fetcher.calls == []
+    assert not r._bg_tasks
+
+
+async def test_shutdown_cancels_background_tasks(session_factory: Any) -> None:
+    started = asyncio.Event()
+
+    class _Slow:
+        async def fetch(self, iri: str, *, language: str) -> str | None:
+            del iri, language
+            started.set()
+            await asyncio.sleep(30)  # never completes within the test
+            return "unreached"
+
+    r = _resolver(session_factory, _Slow())
+    await r.lookup([DOI], language="en")  # schedules a background fetch
+    await asyncio.wait_for(started.wait(), timeout=2)
+    await r.shutdown()
+    assert not r._bg_tasks

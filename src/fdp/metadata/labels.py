@@ -48,9 +48,12 @@ Security:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import time
 from typing import TYPE_CHECKING, Annotated, Any, Final
+from urllib.parse import urlsplit
 
 import structlog
 from fastapi import APIRouter, Query
@@ -62,6 +65,8 @@ from fdp.shared.errors import BadRequest
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from fdp.config import RemoteLabelSettings
+    from fdp.metadata.external_labels import ExternalLabelCache, ExternalLabelFetcher
     from fdp.metadata.settings import SettingsRepository
     from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
@@ -164,6 +169,9 @@ class LabelResolver:
         *,
         adapter: TripleStoreAdapter,
         settings_repository: SettingsRepository | None = None,
+        external_cache: ExternalLabelCache | None = None,
+        external_fetcher: ExternalLabelFetcher | None = None,
+        remote_settings: RemoteLabelSettings | None = None,
         cache_ttl_seconds: int = 3600,
         inline_ttl_seconds: int = 300,
         max_iris_per_query: int = 100,
@@ -176,13 +184,38 @@ class LabelResolver:
         # (map, expiry-monotonic). Refreshed lazily so an admin edit to the
         # autocomplete sources shows up within the TTL without a restart.
         self._inline_cache: tuple[dict[str, str], float] | None = None
+        # Third source (Phase 21): external IRI dereferencing. All three must be
+        # wired and the settings ``effective_enabled`` for it to run.
+        self._external_cache = external_cache
+        self._external_fetcher = external_fetcher
+        self._remote_settings = remote_settings
+        # Background cache-warming tasks + a stampede guard so concurrent lookups
+        # of the same first-seen IRI dereference it only once.
+        self._bg_tasks: set[asyncio.Task[str | None]] = set()
+        self._inflight: set[tuple[str, str]] = set()
 
-    async def lookup(self, iris: Sequence[str], *, language: str) -> dict[str, str]:
+    @property
+    def _external_enabled(self) -> bool:
+        return (
+            self._external_cache is not None
+            and self._external_fetcher is not None
+            and self._remote_settings is not None
+            and self._remote_settings.effective_enabled
+        )
+
+    async def lookup(
+        self, iris: Sequence[str], *, language: str, wait_ms: int = 0
+    ) -> dict[str, str]:
         """Resolve ``iris`` to labels in ``language`` (with fallbacks).
 
-        Returns only IRIs that have a discoverable label. Cached negative
-        results are honoured — an IRI that previously returned no label
-        is not re-queried until the cache expires.
+        Order: in-memory cache → knowledge graph → curated inline sources →
+        external dereferencing (Phase 21, when enabled). Returns only IRIs that
+        have a discoverable label. Cached negatives are honoured.
+
+        External resolution is lazy: a first-seen external IRI is fetched in the
+        background and this call omits it; a later call returns it from cache.
+        ``wait_ms`` opts into a bounded blocking wait (capped by the configured
+        ``max_wait_ms``) so a caller can get the label inline on the first ask.
         """
         result: dict[str, str] = {}
         to_query: list[str] = []
@@ -198,6 +231,7 @@ class LabelResolver:
             return result
 
         inline = await self._inline_labels()
+        external_candidates: list[str] = []
         # Query in chunks to keep individual queries bounded.
         for start in range(0, len(to_query), self._max_iris_per_query):
             batch = to_query[start : start + self._max_iris_per_query]
@@ -207,15 +241,124 @@ class LabelResolver:
                 label = resolved.get(iri)
                 if label is None:
                     label = inline.get(iri)
-                self._cache.set(iri, language, label)
                 if label is not None:
+                    self._cache.set(iri, language, label)
                     result[iri] = label
+                elif self._external_enabled:
+                    # Defer the negative — the external path decides and caches.
+                    external_candidates.append(iri)
+                else:
+                    self._cache.set(iri, language, None)
+
+        if external_candidates:
+            await self._resolve_external(
+                external_candidates, language=language, wait_ms=wait_ms, result=result
+            )
         return result
 
     async def _query_batch(self, iris: Sequence[str], *, language: str) -> dict[str, str | None]:
         sparql = _build_sparql(iris)
         body = await self._adapter.query(sparql)
         return _pick_best_labels(body, requested_language=language)
+
+    # --- external resolution (Phase 21) -----------------------------------
+
+    async def _resolve_external(
+        self, iris: Sequence[str], *, language: str, wait_ms: int, result: dict[str, str]
+    ) -> None:
+        """Resolve external IRIs via the Postgres cache, then a bounded fetch.
+
+        Mutates ``result`` in place with any labels learned in time. Assumes the
+        external collaborators are wired (guarded by ``_external_enabled``).
+        """
+        assert self._external_cache is not None
+        assert self._remote_settings is not None
+
+        # 1. Durable cache — a hit (positive or cached-miss) short-circuits and
+        #    also seeds the in-memory hot layer.
+        cached = await self._external_cache.get_many(iris, language=language)
+        still_unknown: list[str] = []
+        for iri in iris:
+            if iri in cached:
+                label = cached[iri]
+                self._cache.set(iri, language, label)
+                if label is not None:
+                    result[iri] = label
+            else:
+                still_unknown.append(iri)
+
+        # 2. Dereference the rest — only allow-listed hosts are eligible.
+        eligible = [iri for iri in still_unknown if self._eligible(iri)]
+        tasks: dict[asyncio.Task[str | None], str] = {}
+        for iri in eligible:
+            if (iri, language) in self._inflight:
+                continue  # already being fetched — don't stampede the remote
+            self._inflight.add((iri, language))
+            task = asyncio.create_task(self._fetch_and_persist(iri, language))
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._on_task_done)
+            tasks[task] = iri
+
+        # 3. Lazy by default (return now, warm the cache); opt-in bounded wait.
+        if wait_ms > 0 and tasks:
+            deadline = min(wait_ms, self._remote_settings.max_wait_ms) / 1000
+            done, _pending = await asyncio.wait(list(tasks), timeout=deadline)
+            for task in done:
+                label = task.result()
+                if label is not None:
+                    result[tasks[task]] = label
+            # Unfinished fetches keep running to warm the cache for next time.
+
+    def _eligible(self, iri: str) -> bool:
+        """True iff ``iri`` is safe and its host is on the allow-list."""
+        if self._remote_settings is None or not is_safe_iri(iri):
+            return False
+        return (urlsplit(iri).hostname or "") in self._remote_settings.hosts
+
+    async def _fetch_and_persist(self, iri: str, language: str) -> str | None:
+        """Dereference ``iri``, persist the (positive or negative) result, cache it."""
+        assert self._external_fetcher is not None
+        assert self._external_cache is not None
+        assert self._remote_settings is not None
+        try:
+            label = await self._external_fetcher.fetch(iri, language=language)
+            ttl = (
+                self._remote_settings.positive_ttl_seconds
+                if label is not None
+                else self._remote_settings.negative_ttl_seconds
+            )
+            try:
+                await self._external_cache.upsert(
+                    iri,
+                    language,
+                    label,
+                    ttl_seconds=ttl,
+                    source_host=urlsplit(iri).hostname,
+                )
+            except Exception as err:  # persistence is best-effort
+                log.warning("external_label_persist_failed", iri=iri, error=repr(err))
+            self._cache.set(iri, language, label)  # in-memory hot layer
+            return label
+        finally:
+            self._inflight.discard((iri, language))
+
+    def _on_task_done(self, task: asyncio.Task[str | None]) -> None:
+        self._bg_tasks.discard(task)
+        # Consume any exception so a background fetch never logs "never retrieved".
+        if not task.cancelled():
+            with contextlib.suppress(Exception):
+                task.result()
+
+    async def shutdown(self) -> None:
+        """Cancel outstanding background fetches (called on app shutdown)."""
+        tasks = list(self._bg_tasks)
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        self._bg_tasks.clear()
+        self._inflight.clear()
 
     async def _inline_labels(self) -> dict[str, str]:
         """``iri -> label`` from the inline autocomplete sources (TTL-cached).

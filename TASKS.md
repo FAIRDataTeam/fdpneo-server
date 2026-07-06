@@ -2156,7 +2156,7 @@ References: CLAUDE.md (Postgres holds operational state; parameterized SQL).
 
 References: ADR-0012 §8; SECURE-DEVELOPMENT.md Rule 3; audit-2026-06-07 F-01/R-01/N-02.
 
-### 21.4 [ ] Resolver integration (lazy default + bounded wait)
+### 21.4 [x] Resolver integration (lazy default + bounded wait)
 
 - Extend `LabelResolver.__init__` with optional `external_cache`,
   `external_fetcher`, and a background task set.
