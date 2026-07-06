@@ -2138,7 +2138,7 @@ References: ADR-0012 §8; architecture §8.6.
 
 References: CLAUDE.md (Postgres holds operational state; parameterized SQL).
 
-### 21.3 [ ] External fetcher (allow-list + SSRF + RDF extraction)
+### 21.3 [x] External fetcher (allow-list + SSRF + RDF extraction)
 
 - `src/fdp/metadata/external_labels.py`: `ExternalLabelFetcher(http_client, settings)`
   `async fetch(iri) -> str | None`: `is_safe_iri` → initial host on allow-list →
