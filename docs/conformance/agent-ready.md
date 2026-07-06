@@ -40,14 +40,18 @@ triaged here (server `TASKS.md` Phase 19). Summary:
 | [G-02](../../../mcp/docs/fdp-api-gaps.md#g-02--shape-discovery-is-under-specified-across-implementations) | `shapes` | FDPneo offers `/fdp-api/schemas`, `?composed=true`, `/{prefix}/spec`, and per-record `ldp:constrainedBy`. Under-specification is cross-impl. | Won't-fix on server; spec-level |
 | [G-03](../../../mcp/docs/fdp-api-gaps.md#g-03--sparql-endpoint-presenceenablement-is-not-guaranteed) | `sparql` | FDPneo exposes `/fdp-api/sparql`. Enablement guarantees are per-deployment/spec. | Won't-fix (bridge probes + degrades) |
 | [G-04](../../../mcp/docs/fdp-api-gaps.md#g-04--fair-signposting-relations-absent-on-the-java-reference-implementation) | `signposting` | FDPneo emits FAIR Signposting L1 on every `GET`/`HEAD` (ADR-0017). The gap is the Java RI. | Done for FDPneo (ADR-0017) |
-| [G-05](../../../mcp/docs/fdp-api-gaps.md#g-05--sparqlsearch-endpoint-locations-are-not-discoverable) | `sparql`, `search-api` | **Addressed (v0.5.0, task 19.2):** the root record now advertises `void:sparqlEndpoint` and DCAT `dcat:DataService` (`dcat:endpointURL`) for SPARQL/search, so a client discovers them from the root. | **Fixed** — server advertises; bridge to consume |
-| [G-06](../../../mcp/docs/fdp-api-gaps.md#g-06--shacl-shape-closure-shnode-is-endpoint-specific) | `shapes` | FDPneo serves the composed closure via `?composed=true` and `/{prefix}/spec`; a cross-impl "give me the closure" standard is a spec concern. | Deferred (FDPneo already serves closure on request) |
+| [G-05](../../../mcp/docs/fdp-api-gaps.md#g-05--sparqlsearch-endpoint-locations-are-not-discoverable) | `sparql`, `search-api` | **Addressed (v0.5.0, task 19.2):** the root record now advertises `void:sparqlEndpoint` and DCAT `dcat:DataService` (`dcat:endpointURL`) for SPARQL/search, so a client discovers them from the root. | **Resolved (both sides)** — server advertises (v0.6.0); the `fdp-mcp` bridge consumes it (v0.2.0, `fdp_mcp.fdp.discovery`) |
+| [G-06](../../../mcp/docs/fdp-api-gaps.md#g-06--shacl-shape-closure-shnode-is-endpoint-specific) | `shapes` | FDPneo serves the composed closure via `?composed=true` and `/{prefix}/spec`; a cross-impl "give me the closure" standard is a spec concern. | **Resolved bridge-side** (`fdp-mcp` v0.2.0) — no server change needed |
 
 ## Notes
 
-- **G-05 is server-complete, bridge-pending.** FDPneo now *advertises* its
-  endpoints (task 19.2); the bridge gains a one-time discovery pass in its own
-  repo to *consume* the advertisement instead of relying on configured paths.
-- **G-06** needs no FDPneo change: the closure is already available at
-  `?composed=true` / `/{prefix}/spec`. Making `ldp:constrainedBy` resolve to the
-  closure by default, or agreeing a standard closure request, is an FDP-spec item.
+- **G-05 is resolved end-to-end.** FDPneo *advertises* its endpoints in the root
+  (`void:sparqlEndpoint` + DCAT `dcat:DataService`, v0.6.0), and the `fdp-mcp`
+  bridge *consumes* them (v0.2.0, `fdp_mcp.fdp.discovery`): it resolves each
+  endpoint by override → advertised (on the FDP origin) → configured default,
+  refuses off-origin advertisements, and still degrades a 404 endpoint to
+  `unsupported`. No further server work is required for G-05.
+- **G-06** is resolved bridge-side (`fdp-mcp` v0.2.0) with no FDPneo change: the
+  closure is already available at `?composed=true` / `/{prefix}/spec`. Making
+  `ldp:constrainedBy` resolve to the closure by default, or agreeing a standard
+  closure request, remains an FDP-spec item (not an FDPneo gap).
