@@ -299,6 +299,34 @@ Why each step exists:
 - **No analytics cookies.** Visitor counting uses the rotating hash, not a client-stored ID.
 - **Hard rule for contributors:** never add a `user_id` (or any identifying) column to a metrics table. The boundary is structural, not a policy you can opt out of. If you think you need identity in metrics, you've found a design conversation, not a code change.
 
+## 9. Label resolution (`GET /labels`)
+
+**Who participates:** the resolver ([metadata/labels.py](../../src/fdp/metadata/labels.py)), the curated inline sources (`forms.autocomplete-sources` setting), and — when enabled — the external source ([metadata/external_labels.py](../../src/fdp/metadata/external_labels.py)) with its Postgres cache (`metadata_external_labels`).
+
+`/labels` maps IRIs to human labels for the client (rendering a `dct:license`, a publisher, a `dct:conformsTo`, …). It is **public/unauthenticated** — the labels it serves are vocabulary terms, not access-controlled record content. Resolution walks four sources in order, first hit wins:
+
+```mermaid
+flowchart TB
+    A([GET /labels?iri=…&lang=&wait=]) --> B{in-memory TTL cache?}
+    B -- hit --> Z([return known labels])
+    B -- miss --> C["knowledge graph<br/>(rdfs:label / skos:prefLabel / dct:title)"]
+    C --> D["curated inline map<br/>(forms.autocomplete-sources)"]
+    D -->|still unresolved &<br/>external enabled| E{Postgres external cache?}
+    E -- hit --> Z
+    E -- miss --> F{host on allow-list?}
+    F -- no --> Z
+    F -- yes --> G["dereference RDF (SSRF-guarded, capped)<br/>→ persist to Postgres + memory"]
+    G -->|wait=0 lazy| H([omit now; a later call returns it])
+    G -->|wait>0| I([include if it returns within the deadline])
+```
+
+Key points:
+
+- **The third (external) source is off by default** — it runs only when `FDP_REMOTE_LABELS_*` set the switch *and* a non-empty host allow-list ([ADR-0012](../adr/0012-first-class-odrl-policy-and-license-documents.md#amendment-v0100-remote-vocabulary-labels-external-label-resolution)). Disabled, `/labels` behaves exactly as it did before Phase 21.
+- **Lazy by default.** A first-seen external IRI is dereferenced in a bounded background task and omitted from the current response; the label lands in Postgres + the in-memory cache and a later call returns it. `?wait=<ms>` (capped by `max_wait_ms`) opts into an inline bounded wait.
+- **Every outbound fetch is allow-listed and SSRF-guarded per redirect hop** (`shared.ssrf.assert_public_url`), size/time-capped, and parsed through `shared.negotiation` so the JSON-LD remote-`@context` block (audit F-01/R-01) holds. Only generic RDF is understood — ROR (JSON-only) is not resolved by this path.
+- **Negatives are cached** (shorter TTL) so an unresolvable IRI isn't re-fetched every call.
+
 ---
 
 ← [Request lifecycle](04-request-lifecycle.md) · Next → [Data model](06-data-model.md)

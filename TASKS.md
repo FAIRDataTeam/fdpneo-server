@@ -2188,7 +2188,7 @@ References: main.py lifespan; index_ping shutdown pattern.
   upsert/get + expiry; resolver end-to-end with a mocked HTTP transport writing
   through to Postgres.
 
-### 21.7 [ ] Docs + ADR
+### 21.7 [x] Docs + ADR
 
 - Update `labels.py` module docstring (drop "deferred"; document the third source,
   allow-list, lazy/`wait` semantics). Add `FDP_REMOTE_LABELS_*` to the deploy `.env`
