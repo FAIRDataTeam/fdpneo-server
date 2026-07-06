@@ -39,7 +39,7 @@ from fdp.shared.errors import AmbiguousSubject
 from fdp.shared.identifiers import is_under
 from fdp.shared.namespaces import ADMS, DCT, SKOS, XSD
 
-__all__ = ["reconcile_identifiers"]
+__all__ = ["reconcile_identifiers", "record_alternative_identifier"]
 
 
 def reconcile_identifiers(graph: Graph, *, canonical_iri: str, identifier_base: str) -> Graph:
@@ -105,11 +105,11 @@ def reconcile_identifiers(graph: Graph, *, canonical_iri: str, identifier_base: 
     # alternative identifier (DCAT 3 / ADMS), never as owl:sameAs (ADR-0017 §1).
     # A within-base mis-addressing is just silently corrected to the canonical IRI.
     if not is_under(str(primary), identifier_base):
-        _record_alternative_identifier(out, canon, str(primary))
+        record_alternative_identifier(out, canon, str(primary))
     return out
 
 
-def _record_alternative_identifier(graph: Graph, canonical: URIRef, foreign_iri: str) -> None:
+def record_alternative_identifier(graph: Graph, canonical: URIRef, foreign_iri: str) -> None:
     """Record ``foreign_iri`` as a structured alternative identifier of ``canonical``.
 
     Emits ``dct:identifier`` (a plain literal, the DCAT 3 lightweight form) and a

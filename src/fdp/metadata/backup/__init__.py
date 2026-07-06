@@ -17,6 +17,7 @@ from fdp.metadata.backup.dump import (
     DumpResult,
     dump_store,
 )
+from fdp.metadata.backup.import_fdp import ImportReport, import_reference_fdp
 from fdp.metadata.backup.restore import (
     RestoreError,
     RestoreResult,
@@ -27,9 +28,11 @@ from fdp.metadata.backup.restore import (
 __all__ = [
     "DUMP_FORMAT_VERSION",
     "DumpResult",
+    "ImportReport",
     "RestoreError",
     "RestoreResult",
     "dump_store",
+    "import_reference_fdp",
     "restore_audit",
     "restore_store",
 ]

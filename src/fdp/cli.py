@@ -31,7 +31,7 @@ from rich.console import Console
 
 if TYPE_CHECKING:
     from fdp.config import Settings
-    from fdp.metadata.backup import DumpResult, RestoreResult
+    from fdp.metadata.backup import DumpResult, ImportReport, RestoreResult
     from fdp.metadata.pid.github import PublishResult
     from fdp.metadata.pid.rebase import RebaseReport
     from fdp.metadata.pid.verify import ResolutionReport
@@ -1019,11 +1019,16 @@ async def _run_restore(
 
 @backup_app.command("import")
 def backup_import(
-    path: Path = typer.Argument(..., exists=True, file_okay=False),
+    path: Path | None = typer.Argument(None, file_okay=False),
+    from_url: str = typer.Option(
+        None,
+        "--from",
+        help="Crawl a reference-FDP instance at this base URL and import its records (18.5).",
+    ),
     rebase: bool = typer.Option(
         False,
         "--rebase",
-        help="Adopt an FDPneo dump captured under a different identifier_base: re-root every IRI to this deployment's base.",
+        help="Adopt an FDPneo dump (positional dir) captured under a different identifier_base.",
     ),
     merge: bool = typer.Option(
         False, "--merge", help="Into a non-empty store: skip graphs that already exist."
@@ -1032,25 +1037,32 @@ def backup_import(
         False, "--overwrite", help="Into a non-empty store: replace existing graphs."
     ),
     no_audit: bool = typer.Option(
-        False, "--no-audit", help="Skip inserting the dump's audit.jsonl rows."
+        False, "--no-audit", help="Skip inserting the dump's audit.jsonl rows (--rebase only)."
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Report what would change; write nothing."
     ),
 ) -> None:
-    """Import a dump into this FDP, adopting it under this deployment's base (ADR-0016 §4).
+    """Import records into this FDP, adopting them under this deployment's base (ADR-0016 §4).
 
-    `--rebase` re-roots every IRI (records, cross-links, and the ADR-0019 binding:
-    conformsTo / validatedAgainst / hasArtifact + the profile/schema graphs) from the
-    dump's identifier_base to this deployment's. Migration from a reference-FDP
-    instance is task 18.5.
+    Two modes:
+    - `--from <url>`: crawl a reference-FDP instance's LDP tree and import its records
+      (re-rooted to this base, source provenance carried, old IRI preserved as an
+      alternative identifier), then bind them to this deployment's profiles.
+    - `<dir> --rebase`: adopt an FDPneo dump captured under a different identifier_base.
     """
+    if from_url:
+        _import_reference(from_url, dry_run=dry_run)
+        return
     if not rebase:
         console.print(
-            "[yellow]non-rebase import (from a reference FDP) is not yet implemented (task 18.5).[/]\n"
-            "Use --rebase for an FDPneo dump under a different base, or "
-            "`fdp backup restore` for a same-base dump."
+            "[red]specify a mode[/] — `--from <url>` to crawl a reference FDP, or "
+            "`<dir> --rebase` to adopt an FDPneo dump. For a same-base dump use "
+            "`fdp backup restore`."
         )
+        raise typer.Exit(code=1)
+    if path is None:
+        console.print("[red]--rebase needs a dump directory argument[/]")
         raise typer.Exit(code=1)
     if merge and overwrite:
         console.print("[red]--merge and --overwrite are mutually exclusive[/]")
@@ -1081,6 +1093,80 @@ def backup_import(
                 f"  migrated pre-ADR-0019 dump forward: {profiles} profile(s) provisioned"
             )
         console.print(f"  inserted {audit_rows} audit row(s); reindexed {indexed} record(s)")
+
+
+def _import_reference(from_url: str, *, dry_run: bool) -> None:
+    """Crawl a reference FDP and import its records (18.5 / ADR-0016 §4)."""
+    try:
+        report, profiles, indexed = asyncio.run(_run_import_reference(from_url, dry_run=dry_run))
+    except Exception as err:
+        console.print(f"[red]import failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    verb = "would import" if report.dry_run else "imported"
+    console.print(
+        f"[green]{verb}[/] {report.count} record(s) from {report.source_base} "
+        f"→ base {report.target_base} (skipped {len(report.skipped)}"
+        f"{', truncated' if report.truncated else ''})"
+    )
+    if report.validation_issues:
+        console.print(
+            f"  [yellow]{len(report.validation_issues)} validation issue(s) (report-only)[/]"
+        )
+    if not report.dry_run:
+        console.print(f"  bound {profiles} profile(s); reindexed {indexed} record(s)")
+
+
+async def _run_import_reference(from_url: str, *, dry_run: bool) -> tuple[ImportReport, int, int]:
+    """Crawl + import a reference FDP, then bind to our profiles and reindex."""
+    import httpx
+
+    from fdp.config import get_settings
+    from fdp.metadata.backup import import_reference_fdp
+    from fdp.metadata.prof_backfill import backfill_conformance
+    from fdp.metadata.profiles import build_cache_from_repository
+    from fdp.metadata.repository import MetadataRepository
+    from fdp.metadata.search.reindex import reindex_all
+    from fdp.storage.postgres.engine import build_engine, build_session_factory
+    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+    profiles = 0
+    indexed = 0
+    try:
+        async with (
+            TripleStoreAdapter.from_settings(settings.triplestore) as adapter,
+            httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as http_client,
+        ):
+            repository = MetadataRepository(adapter)
+            report = await import_reference_fdp(
+                repository=repository,
+                http_client=http_client,
+                source_base=from_url,
+                target_base=settings.resolved_identifier_base,
+                dry_run=dry_run,
+            )
+            if not dry_run and report.count:
+                # Bind the imported records to THIS deployment's profiles
+                # (conformsTo / validatedAgainst) and rebuild the search index.
+                cache = await build_cache_from_repository(
+                    adapter, base_url=settings.resolved_identifier_base
+                )
+                backfill = await backfill_conformance(
+                    adapter=adapter, repository=repository, cache=cache
+                )
+                profiles = len(backfill.profiles_provisioned)
+                indexed = await reindex_all(
+                    adapter,
+                    session_factory,
+                    language=settings.search.default_language,
+                    system_default_offer_iri=_system_default_offer(settings),
+                )
+        return report, profiles, indexed
+    finally:
+        await engine.dispose()
 
 
 async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:

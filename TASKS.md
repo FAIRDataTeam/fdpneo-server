@@ -1884,7 +1884,9 @@ _Done: `fdp backup import --rebase` (restore_store rebase mode) re-roots graph I
 
 References: ADR-0016 §4 (FDPneo dump), §6; `pid/rebase.py`.
 
-### 18.5 [ ] `fdp import` — migration from a reference-FDP instance (depends on Phase 20)
+### 18.5 [x] `fdp import` — migration from a reference-FDP instance (depends on Phase 20)
+
+_Done: `fdp backup import --from <url>` (metadata/backup/import_fdp.py) crawls the source LDP tree (BFS over ldp:contains, egress-pinned to the source origin), re-roots each IRI to identifier_base via the shared rebase rewrite, carries source dct:issued/modified → meta created/modified (privileged write path 18.6), and preserves the old IRI as adms:identifier (ADR-0017). The CLI then binds imported records to this deployment's profiles via backfill_conformance + reindexes. Validation-as-report hook present; foreign sources (no conformsTo) are bound by the backfill._
 
 - Walk the source LDP tree (or consume its export); map each host-bound IRI to
   `identifier_base` + the same path; carry provenance (source
