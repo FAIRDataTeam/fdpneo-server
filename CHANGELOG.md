@@ -5,6 +5,29 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.8.0] — 2026-07-06
+
+Outbound Index ping (Phase 8.1 / ADR-0020/0021): a FDPneo deployment now announces
+itself to FDP Index instances so they harvest it and keep it discoverable.
+
+### Added
+
+- **Outbound Index ping.** When `FDP_INDEX_PING_TARGETS` is set, the server POSTs
+  `{"clientUrl": <base>}` to each configured index — the reference wire protocol
+  (`POST {index}/`, `204` accepted, `429` rate-limited), verified against the
+  reference `IndexPingController`. It pings on startup (deployment announce), every
+  `FDP_INDEX_PING_INTERVAL_SECONDS` (default 7 days), and on record changes
+  (throttled by `FDP_INDEX_PING_MIN_INTERVAL_SECONDS` to respect the index's rate
+  limit). Per-target failures are logged, never fatal.
+- **`fdp index ping`** — one-shot CLI for driving pings from an external scheduler
+  (`FDP_INDEX_PING_IN_PROCESS=false` disables the in-process loop).
+- Settings: `FDP_INDEX_PING_TARGETS` (comma-separated index base URLs, empty ⇒
+  disabled), `_INTERVAL_SECONDS`, `_ON_PUBLISH`, `_MIN_INTERVAL_SECONDS`,
+  `_TIMEOUT_SECONDS`, `_IN_PROCESS`, `_CLIENT_URL`.
+
+Only the outbound side ships here; the Index intake/harvest is a separate product
+(FAIR Discovery, ADR-0021).
+
 ## [0.7.0] — 2026-07-06
 
 Faithful backup / restore / migration (Phase 18 / ADR-0016 §2–§6). Storage-level,
