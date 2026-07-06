@@ -26,6 +26,7 @@ Read in order. Each document assumes the previous ones.
 | 5 | [Key processes](05-key-processes.md) | The seven core flows (record CRUD, authorization, SPARQL access, schema validation, metrics, bootstrap, PIDs) with sequence + activity diagrams | The heart of the system. |
 | 6 | [Data model](06-data-model.md) | One-graph-per-record, meta/audit graphs, reserved namespaces, what lives in Postgres vs the triple store | When your change touches storage. |
 | 7 | [Contributing](07-contributing.md) | Dev setup, the quality gate, the testing pyramid, how to add a feature without breaking a boundary | Before you open a PR. |
+| 8 | [Backup, restore, migration](08-backup-restore.md) | `fdp backup dump`/`restore`/`import`, the search-reindex step, the `record_audit` IRI-history boundary | When operating or migrating a deployment. |
 
 ## The five-minute orientation
 

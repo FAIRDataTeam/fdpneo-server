@@ -1,6 +1,6 @@
 # ADR-0016: Faithful backup/restore and instance migration
 
-**Status:** Proposed
+**Status:** Accepted (§1 shipped in v0.4.0; §2–§6 implemented in v0.7.0)
 **Date:** 2026-07-03
 
 ## Context

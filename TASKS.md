@@ -1816,6 +1816,8 @@ References: ADR-0016, ADR-0017, `docs/dev-docs/07-contributing.md`.
 
 ## Phase 18 — Backup / restore / migration (ADR-0016 §2–§6)
 
+**Status: complete** (branch `feature/adr-0016-backup`, for v0.7.0). Commits: 18.2 `80a3c41`, 18.3 `8fced31`, 18.4 `3e330c6`, 18.6 `5e50035`, 18.5 `13ee48c`; runbook `docs/dev-docs/08-backup-restore.md`; ADR-0016 → Accepted.
+
 Implements the storage-level backup/restore/import from
 [ADR-0016](docs/adr/0016-backup-restore-migration.md); §1 (write-path hardening)
 already shipped in v0.4.0 (task 17.1). Read the ADR first.
@@ -1913,7 +1915,7 @@ _Done: `MetadataRepository.write_imported` + `build_meta_graph(created=…, modi
 
 References: ADR-0016 §5.
 
-### 18.7 [ ] Docs + release
+### 18.7 [x] Docs + release
 
 - Operator runbook: dump / restore / import, the mandatory search-reindex step,
   and the `record_audit` IRI-history boundary (ADR-0016 §6). CHANGELOG; version
