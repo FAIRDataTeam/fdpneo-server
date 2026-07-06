@@ -969,53 +969,32 @@ async def _run_restore(
     Returns (restore result, audit rows inserted, profiles provisioned, records indexed).
     """
     from fdp.config import get_settings
-    from fdp.metadata.backup import restore_audit, restore_store
-    from fdp.metadata.prof_backfill import backfill_conformance
-    from fdp.metadata.profiles import build_cache_from_repository
-    from fdp.metadata.repository import MetadataRepository
-    from fdp.metadata.search.reindex import reindex_all
+    from fdp.metadata.backup import orchestrate_restore
     from fdp.storage.postgres.engine import build_engine, build_session_factory
     from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
-    audit_rows = 0
-    profiles = 0
-    indexed = 0
     try:
         async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
-            result = await restore_store(
+            outcome = await orchestrate_restore(
                 adapter,
-                in_dir,
-                target_identifier_base=settings.resolved_identifier_base,
+                session_factory,
+                settings=settings,
+                in_dir=in_dir,
                 merge=merge,
                 overwrite=overwrite,
+                include_audit=include_audit,
                 dry_run=dry_run,
                 rebase=rebase,
             )
-            if result.dry_run:
-                return result, 0, 0, 0
-            if include_audit:
-                audit_rows = await restore_audit(session_factory, in_dir)
-            if result.needs_migration:
-                # Pre-ADR-0019 dump: backfill conformsTo/validatedAgainst + wrap
-                # schemas as profiles so the restored instance is self-describing.
-                repository = MetadataRepository(adapter)
-                cache = await build_cache_from_repository(
-                    adapter, base_url=settings.resolved_identifier_base
-                )
-                report = await backfill_conformance(
-                    adapter=adapter, repository=repository, cache=cache
-                )
-                profiles = len(report.profiles_provisioned)
-            indexed = await reindex_all(
-                adapter,
-                session_factory,
-                language=settings.search.default_language,
-                system_default_offer_iri=_system_default_offer(settings),
-            )
-        return result, audit_rows, profiles, indexed
+        return (
+            outcome.result,
+            outcome.audit_rows,
+            outcome.profiles_provisioned,
+            outcome.records_indexed,
+        )
     finally:
         await engine.dispose()
 

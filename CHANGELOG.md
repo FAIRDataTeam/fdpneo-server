@@ -5,6 +5,34 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.9.0] — 2026-07-06
+
+Admin-only HTTP endpoints for backup/restore (ADR-0016 §5 amendment), so the web
+client can offer an interactive backup/restore UI.
+
+### Added
+
+- **Admin backup/restore API** under `/fdp-api/admin/backup` (requires the `admin`
+  role), job-based:
+  - `POST /admin/backup/dump` → `202` + a job; dumps the store to a downloadable
+    archive.
+  - `POST /admin/backup/restore` → `202` + a job; faithfully restores an uploaded
+    dump archive (`merge` / `overwrite` / `no_audit` / `dry_run`).
+  - `GET /admin/backup/jobs/{id}` → poll job status + result summary.
+  - `GET /admin/backup/jobs/{id}/archive` → download a finished dump's `.zip`.
+
+  The endpoints drive the same `dump_store` / `restore_store` code paths as
+  `fdp backup …` — the HTTP layer is only a role-gated trigger, so the
+  server-stamped-provenance guarantee (ADR-0014) is unchanged for ordinary API
+  clients. Jobs run in-process with in-memory status (single-worker in v1); restore
+  uploads are bounded by the body-size limit (larger archives use the CLI). `import`
+  stays CLI-only. Runbook: [dev-docs/08-backup-restore.md](docs/dev-docs/08-backup-restore.md).
+
+### Changed
+
+- Factored the dump/restore workflows into `metadata/backup/orchestrate.py`
+  (`dump_to_archive`, `orchestrate_restore`) shared by the CLI and the endpoints.
+
 ## [0.8.0] — 2026-07-06
 
 Outbound Index ping (Phase 8.1 / ADR-0020/0021): a FDPneo deployment now announces
