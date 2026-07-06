@@ -37,6 +37,7 @@ from fdp.identity.users import build_users_router
 from fdp.metadata.admin import ResetService, build_admin_router
 from fdp.metadata.audit import AuditLog
 from fdp.metadata.autocomplete import AutocompleteService, build_autocomplete_router
+from fdp.metadata.backup import BackupJobRegistry, build_backup_admin_router
 from fdp.metadata.containment import ContainmentManager
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
@@ -359,6 +360,10 @@ def _build_shared_state(app: FastAPI) -> None:
         on_published=lambda sdoi, rd: _publish_runtime_state(app, sdoi, rd),
     )
 
+    # Admin backup/restore jobs (ADR-0016 §5 amendment): in-process job registry
+    # backing the admin-only /admin/backup endpoints (dump/restore over HTTP).
+    app.state.backup_job_registry = BackupJobRegistry()
+
     # Search (Phase 7). The indexer (event subscriber) keeps metadata_search
     # current; the query service applies the ODRL+state visibility gate
     # (ADR-0010) and reads facet config from the runtime settings. Saved
@@ -410,6 +415,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("fdp_stopping")
         app.state.search_indexer.stop()
         await app.state.index_pinger.stop()
+        await app.state.backup_job_registry.shutdown()
         app.state.audit_log.stop()
         await app.state.metrics_rollup_scheduler.stop()
         app.state.metrics_pipeline.stop()
@@ -573,6 +579,15 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         build_admin_router(service=app.state.reset_service), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_backup_admin_router(
+            registry=app.state.backup_job_registry,
+            adapter=app.state.triplestore,
+            session_factory=app.state.session_factory,
+            settings=settings,
+        ),
+        prefix=RESERVED_API_PATH,
     )
     app.include_router(
         build_autocomplete_router(service=app.state.autocomplete_service),
