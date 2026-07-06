@@ -26,10 +26,14 @@ Lookup strategy:
    to the curated ``forms.autocomplete-sources`` setting, whose inline items
    map those exact IRIs to labels. The graph always wins; the inline map only
    fills gaps and is language-neutral.
-
-Remote-vocabulary resolution (config-driven allow-list, allow-listed outbound
-fetches) remains deferred — it would slot in as a *third* source behind the
-same :class:`LabelResolver` interface.
+5. Third source (Phase 21, ADR-0012 extension): external IRIs the graph and
+   inline map don't describe (a ROR org, a DOI, an ORCID, a SKOS term) are
+   dereferenced over content-negotiated RDF and cached in Postgres. Off by
+   default; only allow-listed hosts are fetched (see
+   :class:`fdp.config.RemoteLabelSettings` and
+   :mod:`fdp.metadata.external_labels`). Lazy by default — a first-seen external
+   IRI is resolved in the background and returned on a later call — with an
+   opt-in bounded ``?wait`` for inline resolution.
 
 Security:
 
@@ -489,12 +493,14 @@ def build_labels_router(
     resolver: LabelResolver,
     default_language: str = "en",
     max_iris_per_request: int = 100,
+    max_wait_ms: int = 3000,
 ) -> APIRouter:
     """Construct ``GET /labels``.
 
     ``default_language`` is what the endpoint uses when the client
     doesn't pass ``?lang=``. ``max_iris_per_request`` is a hard cap to
     protect the triple store from a degenerate single-call batch.
+    ``max_wait_ms`` bounds the opt-in ``?wait`` (external resolution).
     """
     router = APIRouter(tags=["labels"])
 
@@ -512,6 +518,19 @@ def build_labels_router(
                 max_length=16,
             ),
         ] = default_language,
+        # ``Query`` lives in the default (not ``Annotated``) so ``le=max_wait_ms``
+        # — a runtime closure value — resolves despite ``from __future__
+        # import annotations`` stringizing annotations.
+        wait: int = Query(
+            default=0,
+            ge=0,
+            le=max_wait_ms,
+            description=(
+                "Milliseconds to wait for external IRI resolution to complete "
+                "inline. 0 (default) is lazy: unknown external IRIs are resolved "
+                "in the background and returned on a later call."
+            ),
+        ),
     ) -> LabelsResponse:
         if not iri:
             return LabelsResponse(labels={})
@@ -526,7 +545,7 @@ def build_labels_router(
         safe_iris = [i for i in iri if is_safe_iri(i)]
         if not safe_iris:
             return LabelsResponse(labels={})
-        labels = await resolver.lookup(safe_iris, language=lang)
+        labels = await resolver.lookup(safe_iris, language=lang, wait_ms=wait)
         return LabelsResponse(labels=labels)
 
     return router

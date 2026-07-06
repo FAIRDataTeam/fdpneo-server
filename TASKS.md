@@ -2171,7 +2171,7 @@ References: ADR-0012 §8; SECURE-DEVELOPMENT.md Rule 3; audit-2026-06-07 F-01/R-
 
 References: labels.py §6.1 lookup strategy.
 
-### 21.5 [ ] Router param + app wiring + shutdown
+### 21.5 [x] Router param + app wiring + shutdown
 
 - `labels.py` router: add `wait: Query(ge=0, le=max_wait_ms) = 0` (ms), pass to
   `lookup(..., wait_ms=wait)`.
