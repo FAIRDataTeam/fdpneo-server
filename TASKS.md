@@ -494,7 +494,9 @@ so a FDPneo deployment remains discoverable by the community indexes
 deployments alike. "Index" remains the protocol vocabulary; FAIR
 Discovery is the product name (ADR-0021 §1).
 
-### 8.1 [ ] Outbound Ping service (FDPneo side — the only Phase 8 work in this distribution)
+### 8.1 [x] Outbound Ping service (FDPneo side — the only Phase 8 work in this distribution)
+
+_Done: `metadata/index_ping.py` (`IndexPinger` + `ping_indexes`) — startup + periodic (`FDP_INDEX_PING_INTERVAL_SECONDS`, default 7d) + throttled on-publish pings; `fdp index ping` CLI for external cron. Reference wire protocol verified against `IndexPingController` (`POST {index}/` `{clientUrl}`, 204). Settings `FDP_INDEX_PING_TARGETS` / `_INTERVAL_SECONDS`._
 
 A scheduled job (arq or the existing metrics rollup pattern) POSTs
 `{clientUrl: settings.base_url}` to every configured index URL on a

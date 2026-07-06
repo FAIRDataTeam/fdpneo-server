@@ -41,6 +41,7 @@ from fdp.metadata.containment import ContainmentManager
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
 from fdp.metadata.graphs import record_graph_uri
+from fdp.metadata.index_ping import IndexPinger
 from fdp.metadata.instances import InstanceLookupService, build_instances_router
 from fdp.metadata.labels import LabelResolver, build_labels_router
 from fdp.metadata.ldp.router import build_ldp_router
@@ -313,6 +314,14 @@ def _build_shared_state(app: FastAPI) -> None:
     )
     app.state.audit_log = AuditLog(session_factory=app.state.session_factory)
 
+    # Outbound Index ping (Phase 8.1): announce this FDP to configured indexes so
+    # they can harvest it (reference wire protocol). No-op unless targets are set.
+    app.state.index_pinger = IndexPinger(
+        settings=settings.index,
+        client_url=settings.resolved_identifier_base,
+        http_client=http_client,
+    )
+
     # Runtime settings repository — Postgres-backed; read on demand so admin
     # updates are visible without restart. Built before the label resolver and
     # autocomplete service, which both read from it.
@@ -390,6 +399,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.metrics_rollup_scheduler.start()
     app.state.audit_log.start(app.state.event_bus)
     app.state.search_indexer.start(app.state.event_bus)
+    app.state.index_pinger.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
     await _warm_anonymous_authz_cache(app)
     await _verify_store_conformance(app)
@@ -399,6 +409,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         log.info("fdp_stopping")
         app.state.search_indexer.stop()
+        await app.state.index_pinger.stop()
         app.state.audit_log.stop()
         await app.state.metrics_rollup_scheduler.stop()
         app.state.metrics_pipeline.stop()

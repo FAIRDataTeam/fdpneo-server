@@ -32,6 +32,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from fdp.config import Settings
     from fdp.metadata.backup import DumpResult, ImportReport, RestoreResult
+    from fdp.metadata.index_ping import PingResult
     from fdp.metadata.pid.github import PublishResult
     from fdp.metadata.pid.rebase import RebaseReport
     from fdp.metadata.pid.verify import ResolutionReport
@@ -59,6 +60,7 @@ search_app = typer.Typer(help="Search commands.", no_args_is_help=True)
 ldp_app = typer.Typer(help="LDP-conformance commands.", no_args_is_help=True)
 pid_app = typer.Typer(help="Persistent-identifier commands.", no_args_is_help=True)
 backup_app = typer.Typer(help="Backup / restore / migration commands.", no_args_is_help=True)
+index_app = typer.Typer(help="Index / discovery commands.", no_args_is_help=True)
 
 app.add_typer(profile_app, name="profile")
 app.add_typer(db_app, name="db")
@@ -68,6 +70,7 @@ app.add_typer(search_app, name="search")
 app.add_typer(ldp_app, name="ldp")
 app.add_typer(pid_app, name="pid")
 app.add_typer(backup_app, name="backup")
+app.add_typer(index_app, name="index")
 
 console = Console()
 
@@ -1190,6 +1193,57 @@ async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:
             )
     finally:
         await engine.dispose()
+
+
+# --- index / discovery commands (ADR-0020/0021) --------------------------
+
+
+@index_app.command("ping")
+def index_ping() -> None:
+    """Announce this FDP to the configured indexes once (task 8.1).
+
+    POSTs ``{"clientUrl": <base>}`` to every ``FDP_INDEX_PING_TARGETS`` entry
+    (reference wire protocol; 204 = accepted, 429 = rate-limited). For an external
+    scheduler; the server also pings in-process unless ``FDP_INDEX_PING_IN_PROCESS``
+    is false.
+    """
+    try:
+        results = asyncio.run(_run_index_ping())
+    except Exception as err:
+        console.print(f"[red]index ping failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if not results:
+        console.print("[yellow]no index targets configured[/] (set FDP_INDEX_PING_TARGETS)")
+        raise typer.Exit(code=0)
+    for result in results:
+        mark = "[green]ok[/]" if result.ok else "[red]FAIL[/]"
+        detail = f" ({result.detail})" if result.detail else ""
+        console.print(f"  {mark} {result.target}{detail}")
+    if any(not result.ok for result in results):
+        raise typer.Exit(code=1)
+
+
+async def _run_index_ping() -> list[PingResult]:
+    """Ping every configured index once; returns per-target results."""
+    import httpx
+
+    from fdp.config import get_settings
+    from fdp.metadata.index_ping import ping_indexes
+
+    settings = get_settings()
+    if not settings.index.enabled:
+        return []
+    client_url = settings.index.ping_client_url.strip() or settings.resolved_identifier_base.rstrip(
+        "/"
+    )
+    async with httpx.AsyncClient() as http_client:
+        return await ping_indexes(
+            http_client,
+            client_url=client_url,
+            targets=settings.index.targets,
+            timeout_seconds=settings.index.ping_timeout_seconds,
+        )
 
 
 if __name__ == "__main__":

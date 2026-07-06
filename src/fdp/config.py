@@ -162,6 +162,56 @@ class MetricsSettings(BaseSettings):
     """How often the in-process rollup loop runs, when ``rollup_in_process``."""
 
 
+class IndexSettings(BaseSettings):
+    """Outbound Index-ping configuration (Phase 8.1 / ADR-0020/0021).
+
+    A FDPneo deployment announces itself to one or more FDP Index instances by
+    POSTing ``{"clientUrl": <base>}`` to each index (the reference implementation's
+    wire protocol: ``POST {index}/``, 204 on success, rate-limited). The intake
+    side is a separate product (FAIR Discovery); this is the outbound side only.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_INDEX_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    ping_targets: str = ""
+    """Comma-separated index base URLs to ping (e.g. ``https://home.fairdatapoint.org``).
+    Empty ⇒ the pinger is disabled."""
+
+    ping_interval_seconds: int = 604800  # 7 days
+    """How often the in-process pinger announces this FDP (the reference expects
+    at least weekly). The first ping fires at startup (deployment announce)."""
+
+    ping_on_publish: bool = True
+    """Also ping when records change, so indexes harvest promptly (throttled by
+    ``ping_min_interval_seconds`` to respect the index's per-URL rate limit)."""
+
+    ping_min_interval_seconds: int = 300
+    """Minimum gap between publish-triggered pings (debounces write bursts)."""
+
+    ping_timeout_seconds: float = 10.0
+    """Per-ping HTTP timeout."""
+
+    ping_in_process: bool = True
+    """Run the in-process ping loop. Disable to drive `fdp index ping` from an
+    external scheduler (cron / k8s CronJob) instead."""
+
+    ping_client_url: str = ""
+    """Override the announced ``clientUrl``. Empty ⇒ the deployment's
+    ``resolved_identifier_base`` (the FDP's canonical root)."""
+
+    @property
+    def targets(self) -> list[str]:
+        """Configured index base URLs, trimmed and trailing-slash-normalised."""
+        return [t.strip().rstrip("/") for t in self.ping_targets.split(",") if t.strip()]
+
+    @property
+    def enabled(self) -> bool:
+        """The pinger runs only when at least one target is configured."""
+        return bool(self.targets)
+
+
 class ProfileSettings(BaseSettings):
     """Configuration for the deployment-profile bootstrap (architecture §12)."""
 
@@ -527,6 +577,7 @@ class Settings(BaseSettings):
     schema_sync: SchemaSyncSettings = Field(default_factory=lambda: SchemaSyncSettings())
     api_keys: ApiKeySettings = Field(default_factory=lambda: ApiKeySettings())
     search: SearchSettings = Field(default_factory=lambda: SearchSettings())
+    index: IndexSettings = Field(default_factory=lambda: IndexSettings())
     idp_admin: IdpAdminSettings = Field(default_factory=lambda: IdpAdminSettings())
     rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
     pid: PIDSettings = Field(default_factory=lambda: PIDSettings())
