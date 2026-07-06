@@ -71,6 +71,25 @@ fdp backup import --from https://old-fdp.example.org
   `dct:identifier`, ADR-0017 — never `owl:sameAs`), then binds the imported
   records to *this* deployment's profiles and reindexes.
 
+## Admin HTTP API (for the web client)
+
+Besides the CLI, dump and restore are exposed over **admin-only, job-based HTTP
+endpoints** (ADR-0016 §5 amendment) so the web client can offer an interactive UI.
+They require the `admin` role and drive the same code paths as the CLI.
+
+| Method + path | Purpose |
+|---|---|
+| `POST /fdp-api/admin/backup/dump` | Start a dump → `202` + a job. Query: `no_audit`. |
+| `POST /fdp-api/admin/backup/restore` | Start a restore from an uploaded `.zip` (multipart `archive`) → `202` + a job. Query: `merge`, `overwrite`, `no_audit`, `dry_run`. |
+| `GET /fdp-api/admin/backup/jobs/{id}` | Poll job status (`QUEUED`/`RUNNING`/`SUCCEEDED`/`FAILED`) + the result summary. |
+| `GET /fdp-api/admin/backup/jobs/{id}/archive` | Download a finished dump's `.zip`. |
+
+Jobs run in-process and their status is held in memory — **single-worker
+deployments** in v1 (a persistent job store is a later scaling step). Restore
+uploads are bounded by the global body-size limit (`FDP_BODY_MAX_BYTES`,
+default 10 MiB); larger archives use the CLI on the server. `import` (rebase /
+reference-FDP crawl) stays CLI-only.
+
 ## Two boundaries to know (ADR-0016 §6)
 
 - **Search reindex is part of the runbook.** `metadata_search` is a derived
