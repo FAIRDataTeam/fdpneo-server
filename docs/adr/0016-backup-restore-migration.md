@@ -167,6 +167,37 @@ from folklore into the command's docs and completion output.
   than ad-hoc scripting.
 - **Search reindex becomes part of the restore/rebase runbook.**
 
+## Amendment (v0.9.0): an admin-only HTTP surface for backup/restore
+
+§5 above kept privileged provenance writes *off* HTTP, and the "Alternatives
+considered" note deferred an HTTP import mode — *"Can be revisited as an admin-only
+endpoint if operator demand materialises."* It has: the reference web client needs
+an interactive backup/restore UI, which requires an API to call.
+
+We add an **admin-only, job-based HTTP surface** under `/fdp-api/admin/backup`,
+without weakening §5's guarantee:
+
+- **Admin-gated, not a general capability.** Every endpoint requires the `admin`
+  role (like `POST /admin/reset`); it is not an LDP header or query flag on the
+  record write path. Ordinary API clients still cannot supply provenance — the
+  canonical-subject + server-stamped-provenance contract (ADR-0014) is unchanged
+  for everyone but an authenticated admin deliberately restoring a dump.
+- **Same code paths as the CLI.** The endpoints drive `dump_store` / `restore_store`
+  (and the privileged `write_imported`) — the exact operations `fdp backup …` runs.
+  No new provenance-write mechanism is introduced; the HTTP layer is only a
+  role-gated trigger.
+- **Asynchronous jobs.** Dump/restore are long-running, so a request starts a job
+  (`202` + a job id) and the client polls a status resource; a dump's archive is
+  downloaded, a restore's archive is uploaded. Jobs run in-process and their status
+  is retained in memory (single-worker deployments in v1; a persistent job store is
+  a later scaling step). Restore uploads are bounded by the global body-size limit —
+  larger archives use the CLI on the server.
+
+Endpoints: `POST /admin/backup/dump` → `{jobId}`; `POST /admin/backup/restore`
+(archive upload) → `{jobId}`; `GET /admin/backup/jobs/{id}` (status);
+`GET /admin/backup/jobs/{id}/archive` (dump download). `import` stays CLI-only for
+now (it crawls/consumes a foreign source; not needed for the client UI).
+
 ## References
 
 - FAIR F1; LDP 1.0 §5.2.3 (slug handling); W3ID.
