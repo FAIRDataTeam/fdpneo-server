@@ -5,6 +5,46 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.7.0] — 2026-07-06
+
+Faithful backup / restore / migration (Phase 18 / ADR-0016 §2–§6). Storage-level,
+admin-operated CLI tooling that round-trips a deployment byte-for-byte and adopts
+records from other instances — provenance, the ADR-0019 record–schema binding, and
+audit graphs all preserved.
+
+### Added
+
+- **`fdp backup dump <dir>`** — export every named graph as N-Quads plus a
+  versioned `manifest.json` (dump-format + data-model version, `identifier_base`,
+  graph/quad counts, per-file SHA-256) and an optional `audit.jsonl` of the
+  Postgres `record_audit` rows. Reads through the adapter; the LDP layer is not
+  involved. Blank-node labels are re-minted per graph so N-Quads' document-scoped
+  blank nodes can't conflate records on restore.
+- **`fdp backup restore <dir>`** — faithful, verbatim load (no re-stamped
+  provenance). Verifies the checksum; refuses an `identifier_base` mismatch (points
+  at `import --rebase`) or a non-empty store (unless `--merge`/`--overwrite`);
+  `--dry-run`. Afterwards inserts audit rows, migrates a pre-ADR-0019 dump forward,
+  and reindexes search.
+- **`fdp backup import --rebase <dir>`** — adopt an FDPneo dump captured under a
+  different base, re-rooting every IRI (including the ADR-0019 cross-references) via
+  the shared `pid/rebase` rewrite.
+- **`fdp backup import --from <url>`** — migrate a reference-FDP instance by
+  crawling its LDP tree (egress-pinned to the source origin): re-root each record,
+  carry source `dct:issued`/`dct:modified` into the meta graph, preserve the old
+  IRI as `adms:identifier` (ADR-0017), then bind to this deployment's profiles.
+- **Privileged provenance write path** (`MetadataRepository.write_imported`) —
+  writes meta graphs with supplied created/modified/creator/state; CLI-only, never
+  on the HTTP surface (ADR-0016 §5), so ADR-0014's server-stamped-provenance
+  guarantee stays un-gameable.
+- Operator runbook: [dev-docs/08-backup-restore.md](docs/dev-docs/08-backup-restore.md).
+
+### Changed
+
+- `pid/rebase` `rebased` / `rewrite_graph` and `identifiers.record_alternative_identifier`
+  promoted to public (the ADR-0016 shared rewrite + alt-id helpers).
+- Search reindex factored into `metadata/search/reindex.py` (`reindex_all`), shared
+  by `fdp search reindex` and the restore/import flows.
+
 ## [0.6.0] — 2026-07-05
 
 Agent consumption: server-side support for the `fdp-mcp` bridge (Phase 19 /

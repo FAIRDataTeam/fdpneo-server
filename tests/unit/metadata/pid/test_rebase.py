@@ -7,7 +7,7 @@ import json
 import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 
-from fdp.metadata.pid.rebase import _rebased, _rewrite_term, rebase_identifiers
+from fdp.metadata.pid.rebase import _rewrite_term, rebase_identifiers, rebased
 
 OLD = "http://localhost:8000"
 NEW = "https://w3id.org/myfdp"
@@ -113,7 +113,7 @@ async def test_dry_run_writes_nothing() -> None:
     ],
 )
 def test_rebased_rewrites_old_base(value: str, expected: str) -> None:
-    assert _rebased(value, OLD, NEW) == expected
+    assert rebased(value, OLD, NEW) == expected
 
 
 @pytest.mark.unit
@@ -127,7 +127,7 @@ def test_rebased_rewrites_old_base(value: str, expected: str) -> None:
     ],
 )
 def test_rebased_leaves_unaffected_values(value: str) -> None:
-    assert _rebased(value, OLD, NEW) is None
+    assert rebased(value, OLD, NEW) is None
 
 
 @pytest.mark.unit

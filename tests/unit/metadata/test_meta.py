@@ -259,3 +259,22 @@ def test_default_shape_file_parses_cleanly() -> None:
     g = Graph()
     g.parse(data=META_SHAPE_TTL, format="turtle")
     assert (URIRef(META_SHAPE_IRI), None, None) in g
+
+
+@pytest.mark.unit
+def test_created_modified_overrides_carry_source_provenance() -> None:
+    # Privileged import (ADR-0016 §5): dct:created/modified come from the source,
+    # not from `now`.
+    src_created = datetime(2020, 1, 1, tzinfo=UTC)
+    src_modified = datetime(2021, 6, 1, tzinfo=UTC)
+    result = build_meta_graph(
+        record_iri=RECORD,
+        prior=_empty(),
+        subject=ALICE,
+        now=NOW,
+        created=src_created,
+        modified=src_modified,
+    )
+    assert (RECORD_URI, DCT.created, Literal(src_created)) in result.graph
+    assert (RECORD_URI, DCT.modified, Literal(src_modified)) in result.graph
+    assert (RECORD_URI, DCT.modified, Literal(NOW)) not in result.graph

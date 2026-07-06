@@ -28,7 +28,7 @@ from rdflib import Graph, URIRef
 
 from fdp.storage.triplestore.adapter import TripleStoreAdapter, construct_named_graph
 
-__all__ = ["RebaseReport", "rebase_identifiers"]
+__all__ = ["RebaseReport", "rebase_identifiers", "rebased", "rewrite_graph"]
 
 log = structlog.get_logger(__name__)
 
@@ -48,7 +48,7 @@ class RebaseReport:
         return len(self.moved)
 
 
-def _rebased(value: str, old: str, new: str) -> str | None:
+def rebased(value: str, old: str, new: str) -> str | None:
     """Return ``value`` re-rooted from ``old`` to ``new``, or None if unaffected."""
     if value == old:
         return new
@@ -60,13 +60,13 @@ def _rebased(value: str, old: str, new: str) -> str | None:
 
 def _rewrite_term(term: object, old: str, new: str) -> object:
     if isinstance(term, URIRef):
-        moved = _rebased(str(term), old, new)
+        moved = rebased(str(term), old, new)
         if moved is not None:
             return URIRef(moved)
     return term
 
 
-def _rewrite_graph(graph: Graph, old: str, new: str) -> Graph:
+def rewrite_graph(graph: Graph, old: str, new: str) -> Graph:
     out = Graph()
     for s, p, o in graph:
         out.add(
@@ -113,13 +113,13 @@ async def rebase_identifiers(
         return report
 
     for graph_uri in await _list_graphs(adapter):
-        new_uri = _rebased(graph_uri, old, new)
+        new_uri = rebased(graph_uri, old, new)
         if new_uri is None:
             continue  # already under the new base, or unrelated/internal
         report.moved.append((graph_uri, new_uri))
         if dry_run:
             continue
-        rewritten = _rewrite_graph(await construct_named_graph(adapter, graph_uri), old, new)
+        rewritten = rewrite_graph(await construct_named_graph(adapter, graph_uri), old, new)
         await adapter.replace_graph(
             new_uri, rewritten.serialize(format="nt"), mime="application/n-triples"
         )

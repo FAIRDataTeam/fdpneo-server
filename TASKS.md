@@ -474,55 +474,47 @@ References: `SearchService.java`, `SearchSavedQueryService.java`,
 
 ---
 
-## Phase 8 — FDP Index protocol (cross-FDP discovery)
+## Phase 8 — Index protocol (cross-FDP discovery)
 
-The reference impl is the canonical implementation of the FAIR Data
-Point Index protocol — FDPs ping a registered Index with their URL, the
-Index pulls their root catalog metadata, and the Index exposes a
-directory of known FDPs. Without this, a deployed FDP cannot be
-discovered by the community indexes (e.g. `https://home.fairdatapoint.org`).
+> **Rescoped 2026-07-05 per ADR-0020/0021.** The index is no longer a
+> mode of this server: it is a separate product, **FAIR Discovery**
+> (`discovery` distribution), composed of the new `registry/` and
+> `harvest/` contexts. The old question "is THIS server (a) an Index,
+> (b) an FDP that pings, or (c) both via `INDEX_FEATURE_ENABLED`?" is
+> answered by composition: the **FDPneo distribution implements only the
+> outbound side** (8.1 below); the intake, entries, harvesting, admin,
+> and webhooks (formerly 8.1–8.2, 8.4–8.5) move to the FAIR Discovery
+> backlog — see `docs/adr/0021-fair-discovery-product.md` and
+> `docs/architecture/discovery.md`.
 
-Decide before starting: do we want THIS server to be (a) an Index that
-collects pings from other FDPs, (b) a regular FDP that pings an Index,
-or (c) both? The reference impl supports both modes via the
-`INDEX_FEATURE_ENABLED` flag.
+The wire protocol stays compatible with the reference implementation —
+FDPs ping an index with their URL, the index harvests their metadata —
+so a FDPneo deployment remains discoverable by the community indexes
+(e.g. `https://home.fairdatapoint.org`) and by FAIR Discovery
+deployments alike. "Index" remains the protocol vocabulary; FAIR
+Discovery is the product name (ADR-0021 §1).
 
-### 8.1 [ ] Index entries model and storage
+### 8.1 [ ] Outbound Ping service (FDPneo side — the only Phase 8 work in this distribution)
 
-Only if running as an Index. Postgres tables: `index_entries`,
-`index_events`, `index_webhooks` mirroring the reference repository
-models. An entry stores `(client_url, state, last_retrieval_at,
-metadata_iri, version, …)`. State machine: UNKNOWN → VALID → INVALID →
-EXPIRED.
-
-### 8.2 [ ] Incoming Ping endpoint (`POST /index/ping`)
-
-Unauthenticated. Body `{clientUrl: "https://other-fdp.example/"}`.
-Records the ping, enqueues a `MetadataRetrieval` event so the harvester
-fetches `clientUrl/spec` and stores the entry's metadata. Rate-limited
-per source IP to mitigate ping floods.
-
-### 8.3 [ ] Outbound Ping service
-
-Only if running as a regular FDP. A scheduled job (arq or the existing
-metrics rollup pattern) POSTs `{clientUrl: settings.base_url}` to every
-configured Index URL on a configurable interval (default 7 days).
+A scheduled job (arq or the existing metrics rollup pattern) POSTs
+`{clientUrl: settings.base_url}` to every configured index URL on a
+configurable interval (default 7 days), and additionally on publish
+events so indexes can harvest changes promptly (ping-on-change powers
+FAIR Discovery's incremental harvesting).
 Settings: `FDP_INDEX_PING_TARGETS=https://a.example,https://b.example`,
 `FDP_INDEX_PING_INTERVAL_SECONDS=604800`.
 
-### 8.4 [ ] Index admin API
+### 8.2 [moved] Intake side → FAIR Discovery
 
-Admin endpoints to list/inspect/permit/forbid index entries and replay
-events. Behind `policy.authorize(admin, manage, "fdp:index")`.
-
-### 8.5 [ ] Webhooks
-
-When an index entry changes state (VALID → INVALID, etc.), POST to
-configured webhook URLs with a signed payload. Supports retry with
-backoff. Persisted in `index_webhooks` for audit.
+Index entries model and state machine, incoming ping endpoint
+(`POST /index/ping`, unauthenticated, rate-limited), harvester, index
+admin API, and state-change webhooks are `registry/` and `harvest/`
+context work in the `discovery` distribution. Tracked in the FAIR
+Discovery design doc (`docs/architecture/discovery.md`), not here.
 
 References: `IndexEntryService.java`, `EventService.java`,
-`HarvesterService.java`, `WebhookService.java`, `IncomingPingUtils.java`.
+`HarvesterService.java`, `WebhookService.java`, `IncomingPingUtils.java`
+(reference impl, for wire compatibility).
 
 ---
 
@@ -1201,8 +1193,8 @@ indexer + audit log. `fdp search reindex` picks them up via the same seam.
 
 Deliver the **publishing** capability: stable dereferenceable IRIs +
 discovery catalogs + search, so another FDP can find a condition and
-reference its IRI. When the FDP Index protocol lands (Phase 8), include the
-policy/license catalogs in the harvest. **Defer** actively dereferencing
+reference its IRI. When FAIR Discovery ships (ADR-0021), its harvest can
+include the policy/license catalogs. **Defer** actively dereferencing
 and enforcing a *remote* FDP's policy at decision time — when added it is
 opt-in + allow-listed (same posture as remote schema sync 10.2). Leave a
 clearly-marked extension point in the resolver; do not implement the
@@ -1824,6 +1816,8 @@ References: ADR-0016, ADR-0017, `docs/dev-docs/07-contributing.md`.
 
 ## Phase 18 — Backup / restore / migration (ADR-0016 §2–§6)
 
+**Status: complete** (branch `feature/adr-0016-backup`, for v0.7.0). Commits: 18.2 `80a3c41`, 18.3 `8fced31`, 18.4 `3e330c6`, 18.6 `5e50035`, 18.5 `13ee48c`; runbook `docs/dev-docs/08-backup-restore.md`; ADR-0016 → Accepted.
+
 Implements the storage-level backup/restore/import from
 [ADR-0016](docs/adr/0016-backup-restore-migration.md); §1 (write-path hardening)
 already shipped in v0.4.0 (task 17.1). Read the ADR first.
@@ -1842,7 +1836,9 @@ schema / version IRIs). Target version: v0.5.0+ (sequence vs Phases 19/20 TBD).
 
 Shipped in v0.4.0 (task 17.1); listed here for ADR-0016 completeness.
 
-### 18.2 [ ] `fdp dump` — storage-level export
+### 18.2 [x] `fdp dump` — storage-level export
+
+_Done (commit 80a3c41): `fdp backup dump` in `metadata/backup/dump.py`._
 
 - CLI (admin-operated, adapter-level like `fdp pid rebase`): `records.nq` = **every
   named graph** in the store (record + `/meta` + `/audit` siblings, plus the
@@ -1857,7 +1853,9 @@ Shipped in v0.4.0 (task 17.1); listed here for ADR-0016 completeness.
 
 References: ADR-0016 §2; ADR-0019 §5 (profiles/versions are named graphs).
 
-### 18.3 [ ] `fdp restore` — faithful, verbatim import
+### 18.3 [x] `fdp restore` — faithful, verbatim import
+
+_Done: `fdp backup restore` in `metadata/backup/restore.py` (verbatim load, base/empty preconditions, --merge/--overwrite/--dry-run, audit insert, legacy→ADR-0019 migration, search reindex via shared `search/reindex.py`)._
 
 - Load the quads verbatim through the adapter — **no `MetaWriter` stamping**, so
   `dct:created`/`dct:modified`/creator/state, `dct:conformsTo`/`validatedAgainst`,
@@ -1873,7 +1871,9 @@ References: ADR-0016 §2; ADR-0019 §5 (profiles/versions are named graphs).
 
 References: ADR-0016 §3; ADR-0019 §6 (migration).
 
-### 18.4 [ ] `fdp import --rebase` — adoption from an FDPneo dump under a different base
+### 18.4 [x] `fdp import --rebase` — adoption from an FDPneo dump under a different base
+
+_Done: `fdp backup import --rebase` (restore_store rebase mode) re-roots graph IRIs + all IRI terms old→new via the shared `pid/rebase` rewrite, covering the ADR-0019 cross-references._
 
 - Compose restore with `pid/rebase.py`'s term rewriting applied in-flight: re-root
   every IRI under the old base to `identifier_base`, cross-record links included.
@@ -1886,7 +1886,9 @@ References: ADR-0016 §3; ADR-0019 §6 (migration).
 
 References: ADR-0016 §4 (FDPneo dump), §6; `pid/rebase.py`.
 
-### 18.5 [ ] `fdp import` — migration from a reference-FDP instance (depends on Phase 20)
+### 18.5 [x] `fdp import` — migration from a reference-FDP instance (depends on Phase 20)
+
+_Done: `fdp backup import --from <url>` (metadata/backup/import_fdp.py) crawls the source LDP tree (BFS over ldp:contains, egress-pinned to the source origin), re-roots each IRI to identifier_base via the shared rebase rewrite, carries source dct:issued/modified → meta created/modified (privileged write path 18.6), and preserves the old IRI as adms:identifier (ADR-0017). The CLI then binds imported records to this deployment's profiles via backfill_conformance + reindexes. Validation-as-report hook present; foreign sources (no conformsTo) are bound by the backfill._
 
 - Walk the source LDP tree (or consume its export); map each host-bound IRI to
   `identifier_base` + the same path; carry provenance (source
@@ -1902,7 +1904,9 @@ References: ADR-0016 §4 (FDPneo dump), §6; `pid/rebase.py`.
 
 References: ADR-0016 §4 (reference FDP); ADR-0017 §1; ADR-0019 §1. **Depends on Phase 20.**
 
-### 18.6 [ ] Privileged provenance write path (internal, CLI-only)
+### 18.6 [x] Privileged provenance write path (internal, CLI-only)
+
+_Done: `MetadataRepository.write_imported` + `build_meta_graph(created=…, modified=…)` write meta graphs with supplied provenance (dct:created/modified/creator/state), bypassing now-stamping. CLI-only; never on the HTTP surface (ADR-0016 §5). Consumed by 18.5._
 
 - Restore/import must write meta graphs with *supplied* timestamps/creator/state
   and write audit graphs. Add an internal repository path used **only** by these
@@ -1911,7 +1915,7 @@ References: ADR-0016 §4 (reference FDP); ADR-0017 §1; ADR-0019 §1. **Depends 
 
 References: ADR-0016 §5.
 
-### 18.7 [ ] Docs + release
+### 18.7 [x] Docs + release
 
 - Operator runbook: dump / restore / import, the mandatory search-reindex step,
   and the `record_audit` IRI-history boundary (ADR-0016 §6). CHANGELOG; version
