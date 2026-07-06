@@ -2099,3 +2099,113 @@ References: ADR-0019.
 (deferred, ADR-0019 §2); rich multi-resource profiles beyond `role:validation`
 (the model is growable but v1 wraps a single shape); a Signposting profile link
 relation.
+
+## Phase 21 — External (remote) label resolution (ADR-0012 extension)
+
+Third label source for `GET /fdp-api/labels`: dereference external identifiers
+(ROR, DOI, ORCID, SKOS terms) over content-negotiated RDF, extract a label, and
+serve it — **off by default**, allow-listed, SSRF-guarded, **lazy by default**
+with an opt-in bounded `?wait`. Pre-sanctioned by ADR-0012 §8 / architecture §8.6
+("remote-vocabulary labels", same posture as remote schema sync). Reuses the
+shared `httpx.AsyncClient`, `shared.ssrf.assert_public_url`, the schema-sync
+fetch/parse, and the search ORM/upsert patterns. Target release **v0.10.0**.
+
+### 21.1 [ ] Config: `RemoteLabelSettings`
+
+- `src/fdp/config.py`: `RemoteLabelSettings` mirroring `SchemaSyncSettings`,
+  `env_prefix="FDP_REMOTE_LABELS_"`: `enabled: bool = False`;
+  `allowed_hosts: Annotated[list[str], NoDecode]` with the shared CSV/JSON
+  `_split_hosts` validator (**empty denies all**); `timeout_seconds=5.0`,
+  `max_bytes=256*1024`, `max_redirects=5`, `max_concurrent_fetches=4`,
+  `positive_ttl_seconds=2592000`, `negative_ttl_seconds=86400`,
+  `max_wait_ms=3000`; `@property effective_enabled` = `enabled and bool(hosts)`.
+- Wire into `Settings` as `remote_labels` next to `index` / `schema_sync`.
+- Tests: env parsing (CSV + JSON), `effective_enabled` gate.
+
+References: ADR-0012 §8; architecture §8.6.
+
+### 21.2 [ ] Postgres persistent cache (table + repo)
+
+- Migration `migrations/versions/0009_external_labels.py` (`down_revision="0008"`):
+  table `metadata_external_labels` — composite PK `(iri String(2048),
+  language String(32))`, `label Text NULL` (NULL = cached miss), `resolved_at`
+  + `expires_at AwareDateTime` (index `expires_at`), `source_host String(255) NULL`.
+- `src/fdp/metadata/external_labels.py`: `ExternalLabelRow(Base)` ORM (mirror
+  `search/model.py`, `.with_variant(..., "sqlite")`); `ExternalLabelCache(session_factory)`
+  with `get_many(iris, language)` (only `expires_at > now`) and
+  `upsert(iri, language, label, *, ttl)` via `pg_insert(...).on_conflict_do_update`.
+- Tests (SQLite variant): upsert→get_many, expiry filtering, negative rows.
+
+References: CLAUDE.md (Postgres holds operational state; parameterized SQL).
+
+### 21.3 [ ] External fetcher (allow-list + SSRF + RDF extraction)
+
+- `src/fdp/metadata/external_labels.py`: `ExternalLabelFetcher(http_client, settings)`
+  `async fetch(iri) -> str | None`: `is_safe_iri` → initial host on allow-list →
+  manual redirect loop (≤ `max_redirects`) calling `assert_public_url(url,
+  allowed_hosts=...)` **on every hop** → streamed size-capped GET
+  (`Accept: text/turtle, application/rdf+xml;q=0.9, application/ld+json;q=0.8`) →
+  multi-format RDF parse (reuse `schema_sync._parse`).
+- `best_label_from_graph(...)`: graph analogue of `_pick_best_labels`
+  (`(language_band, predicate_rank)`) over `rdfs:label, skos:prefLabel, dct:title,
+  foaf:name, schema:name` (add `foaf`/`schema` to `shared/namespaces.py` if missing).
+- Concurrency: `asyncio.Semaphore(max_concurrent_fetches)` + in-flight dedupe set.
+  **Preserve R-01**: no remote JSON-LD `@context` fetch.
+- Tests: `httpx.MockTransport` — Turtle + JSON-LD resolve; scoring; off-allow-list
+  skipped; private/loopback blocked; over `max_bytes` rejected; miss cached negative.
+
+References: ADR-0012 §8; SECURE-DEVELOPMENT.md Rule 3; audit-2026-06-07 F-01/R-01/N-02.
+
+### 21.4 [ ] Resolver integration (lazy default + bounded wait)
+
+- Extend `LabelResolver.__init__` with optional `external_cache`,
+  `external_fetcher`, and a background task set.
+- `lookup(iris, *, language, wait_ms=0)`: after graph + inline, for unresolved IRIs
+  → (1) Postgres `get_many` (pos/neg short-circuit); (2) remaining allow-listed
+  unknowns: `wait_ms>0` → bounded `asyncio.wait_for` gather, persist + include what
+  returns; else (lazy) → schedule per-IRI background fetch (upserts Postgres + seeds
+  in-memory), **omit** from this response.
+- `effective_enabled` false → skip (1)+(2); behavior identical to today.
+- Tests: in-memory > Postgres > fetch precedence; lazy omits + schedules; `wait`
+  returns inline; disabled = current behavior.
+
+References: labels.py §6.1 lookup strategy.
+
+### 21.5 [ ] Router param + app wiring + shutdown
+
+- `labels.py` router: add `wait: Query(ge=0, le=max_wait_ms) = 0` (ms), pass to
+  `lookup(..., wait_ms=wait)`.
+- `src/fdp/main.py` `_build_shared_state`: build `ExternalLabelCache` +
+  `ExternalLabelFetcher` (shared `http_client`, `session_factory`,
+  `settings.remote_labels`), inject into `LabelResolver`; cancel/await outstanding
+  background fetches in the lifespan `finally` (mirror IndexPinger / job-registry).
+
+References: main.py lifespan; index_ping shutdown pattern.
+
+### 21.6 [ ] Integration tests
+
+- `tests/integration/metadata/`: real Postgres (testcontainers) — `ExternalLabelCache`
+  upsert/get + expiry; resolver end-to-end with a mocked HTTP transport writing
+  through to Postgres.
+
+### 21.7 [ ] Docs + ADR
+
+- Update `labels.py` module docstring (drop "deferred"; document the third source,
+  allow-list, lazy/`wait` semantics). Add `FDP_REMOTE_LABELS_*` to the deploy `.env`
+  example + `docs/dev-docs/`. Record the decision (amend ADR-0012 or short new ADR):
+  trust/allow-list/caching/lazy semantics; caveat that redirect-based conneg needs
+  terminal RDF hosts allow-listed (DOI → `data.crossref.org`/`data.datacite.org`).
+
+### 21.8 [ ] Quality gate + release (v0.10.0)
+
+- `uv run ruff check . && uv run ruff format --check . && uv run pyright &&
+  uv run pytest` green. Manual E2E: `FDP_REMOTE_LABELS_ENABLED=true` +
+  `FDP_REMOTE_LABELS_ALLOWED_HOSTS=ror.org,doi.org,orcid.org,api.ror.org,data.crossref.org`,
+  rebuild/restart, `GET /fdp-api/labels?iri=https://ror.org/006hf6230` (first omits →
+  background fetch → repeat returns; row in `metadata_external_labels`) and
+  `...&wait=3000` inline. CHANGELOG + version bump; coordinate `fdp-client`.
+
+**Out of scope (Phase 21):** per-source JSON adapters (ROR/Crossref JSON APIs) —
+generic RDF conneg only; scheduled bulk refresh / expired-row purge CLI (minimal
+purge may ride on 21.2); label resolution for access-controlled *local* records
+(unchanged — external only).
