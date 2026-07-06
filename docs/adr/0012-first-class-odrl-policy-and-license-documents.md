@@ -75,6 +75,22 @@ Versioning is `owl:versionInfo` bumped at the stable IRI (as for schemas), so a 
 
 **Required of operators:** nothing new at the infrastructure level. Bundled-profile offers become seeded managed policies; a small default license set ships with the profile.
 
+## Amendment (v0.10.0): remote-vocabulary labels (external label resolution)
+
+This ADR's consequences flagged remote resolution as deferred but "opt-in + allow-listed when added — the same posture as remote schema sync and remote-vocabulary labels." Phase 21 delivers the **remote-vocabulary labels** half of that promise. It is recorded here (rather than as a standalone ADR) because it is the concrete realization of a posture this ADR already decided.
+
+**What:** `GET /fdp-api/labels` gains a third label source behind the existing `LabelResolver` interface (after the local knowledge graph and the curated inline map). When an IRI has no local label, the resolver dereferences it over content-negotiated RDF (`text/turtle` › `application/rdf+xml` › `application/ld+json`), extracts a label for the requested subject (`rdfs:label` › `skos:prefLabel` › `dct:title` › `foaf:name` › `schema:name`, scored by language band then predicate rank), and caches it.
+
+**Decisions:**
+
+- **Off by default, allow-listed.** Governed by `FDP_REMOTE_LABELS_*` (`RemoteLabelSettings`): `effective_enabled` requires the switch *and* a non-empty host allow-list. Inert otherwise — the endpoint behaves exactly as before.
+- **SSRF-guarded like the data-provider proxy.** Every hop (redirects followed manually) passes `shared.ssrf.assert_public_url(url, allowed_hosts=…)`; fetches are size- and time-capped; the JSON-LD path keeps the remote-`@context` block (audit F-01/R-01). Because DOI/ORCID content-negotiation redirects to other hosts (`api.crossref.org`, `pub.orcid.org`), operators allow-list the terminal RDF hosts too.
+- **Persistent, two-layer cache.** A Postgres table (`metadata_external_labels`, migration `0009`, keyed by `(iri, language)`) is the durable layer, fronted by the resolver's in-memory TTL cache. Negatives are cached (shorter TTL) so an unresolvable IRI isn't re-fetched. Labels survive restarts and are shared across workers.
+- **Lazy by default, opt-in bounded wait.** A first-seen external IRI is fetched in a bounded background task and omitted from the current response; a later call serves it from cache. Callers that need it inline pass `?wait=<ms>` (capped by `max_wait_ms`). A stampede guard dedupes concurrent fetches of the same IRI.
+- **Generic RDF only.** Sources that don't content-negotiate to RDF (notably **ROR**, whose label lives behind a JSON API with a bespoke `names[]` shape) resolve to nothing under this path; a per-source adapter for them is a deferred follow-up.
+
+**Consequences:** the client renders external identifiers (DOIs, ORCIDs, SKOS terms) as human labels without hand-curating each one. The outbound-fetch surface is new but bounded and opt-in. Cross-FDP **policy** dereferencing (the other deferred half) remains future work; this changes nothing about the PDP.
+
 ## Related decisions
 
 - [ADR-0006](0006-odrl-profile-permission-prohibition.md) — the FDP ODRL profile these policies validate against and the PDP enforces.

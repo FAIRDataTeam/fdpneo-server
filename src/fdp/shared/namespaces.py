@@ -38,6 +38,7 @@ PROV = Namespace("http://www.w3.org/ns/prov#")
 RDFS = Namespace("http://www.w3.org/2000/01/rdf-schema#")
 # The W3C profile-role registry (prof:hasRole values, e.g. role:validation).
 ROLE = Namespace("http://www.w3.org/ns/dx/prof/role/")
+SDO = Namespace("https://schema.org/")
 SH = Namespace("http://www.w3.org/ns/shacl#")
 SKOS = Namespace("http://www.w3.org/2004/02/skos/core#")
 SPDX = Namespace("http://spdx.org/rdf/terms#")
@@ -116,6 +117,7 @@ PREFIXES: Mapping[str, Namespace] = MappingProxyType(
         "prov": PROV,
         "rdfs": RDFS,
         "role": ROLE,
+        "sdo": SDO,
         "sh": SH,
         "skos": SKOS,
         "spdx": SPDX,
@@ -169,6 +171,7 @@ __all__ = [
     "PROV",
     "RDFS",
     "ROLE",
+    "SDO",
     "SH",
     "SKOS",
     "SPDX",

@@ -5,6 +5,46 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.10.0] — 2026-07-07
+
+External (remote) label resolution for `GET /fdp-api/labels` (ADR-0012 extension):
+the endpoint can now dereference external identifiers to human labels, off by
+default and allow-listed.
+
+### Added
+
+- **Third label source** on `/fdp-api/labels`: when an IRI has no local label,
+  the resolver dereferences it over content-negotiated RDF (Turtle / RDF-XML /
+  JSON-LD), extracts a label (`rdfs:label` › `skos:prefLabel` › `dct:title` ›
+  `foaf:name` › `schema:name`, scored by language then predicate), and caches it.
+  Resolves DOIs, ORCIDs, and SKOS/linked-data vocabularies. **ROR is JSON-only
+  and not resolved by this generic RDF path** (a per-source adapter is deferred).
+- **`?wait=<ms>` query param** on `/labels`: external resolution is **lazy by
+  default** (a first-seen IRI is fetched in the background and returned on a later
+  call); `?wait` opts into a bounded inline wait (capped by `max_wait_ms`).
+- **Persistent cache** — a Postgres table `metadata_external_labels` (migration
+  `0009`, keyed by `(iri, language)`, negatives cached) fronted by the existing
+  in-memory TTL cache. Resolved labels survive restarts and are shared across
+  workers.
+- **`FDP_REMOTE_LABELS_*` settings** (`RemoteLabelSettings`): `enabled` +
+  `allowed_hosts` (empty denies all), fetch bounds (`timeout_seconds`,
+  `max_bytes`, `max_redirects`, `max_concurrent_fetches`), TTLs, and `max_wait_ms`.
+- The `sdo` (schema.org) namespace prefix.
+
+### Security
+
+- Off by default; runs only with the switch on **and** a non-empty host
+  allow-list. Every fetch is allow-listed and SSRF-guarded on each redirect hop
+  (`shared.ssrf.assert_public_url`), size- and time-capped, and parsed through
+  `shared.negotiation` so the JSON-LD remote-`@context` block (audit F-01/R-01)
+  is preserved.
+
+### Notes
+
+- Same outbound posture as remote schema sync; recorded as the "remote-vocabulary
+  labels" amendment to [ADR-0012](docs/adr/0012-first-class-odrl-policy-and-license-documents.md).
+- No API change when disabled — `/labels` behaves exactly as before.
+
 ## [0.9.0] — 2026-07-06
 
 Admin-only HTTP endpoints for backup/restore (ADR-0016 §5 amendment), so the web

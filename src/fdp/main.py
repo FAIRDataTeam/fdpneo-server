@@ -41,6 +41,7 @@ from fdp.metadata.backup import BackupJobRegistry, build_backup_admin_router
 from fdp.metadata.containment import ContainmentManager
 from fdp.metadata.dashboard import DashboardService, build_dashboard_router
 from fdp.metadata.extensions import build_extensions_router
+from fdp.metadata.external_labels import ExternalLabelCache, ExternalLabelFetcher
 from fdp.metadata.graphs import record_graph_uri
 from fdp.metadata.index_ping import IndexPinger
 from fdp.metadata.instances import InstanceLookupService, build_instances_router
@@ -328,12 +329,19 @@ def _build_shared_state(app: FastAPI) -> None:
     # autocomplete service, which both read from it.
     app.state.settings_repository = SettingsRepository(session_factory=app.state.session_factory)
 
-    # Label resolver: knowledge-graph labels (per-(iri, lang) TTL cache) plus a
-    # settings-backed inline source (6.1a) that supplies vocabulary labels
-    # (licenses, MIME types) the graph doesn't describe.
+    # Label resolver: knowledge-graph labels (per-(iri, lang) TTL cache), a
+    # settings-backed inline source (6.1a) for vocabulary labels the graph
+    # doesn't describe, and a third external source (Phase 21) that dereferences
+    # allow-listed external IRIs (DOI/ORCID/SKOS …) over RDF and caches them in
+    # Postgres. The external source is inert unless FDP_REMOTE_LABELS_* enable it.
     app.state.label_resolver = LabelResolver(
         adapter=app.state.triplestore,
         settings_repository=app.state.settings_repository,
+        external_cache=ExternalLabelCache(session_factory=app.state.session_factory),
+        external_fetcher=ExternalLabelFetcher(
+            http_client=http_client, settings=settings.remote_labels
+        ),
+        remote_settings=settings.remote_labels,
     )
 
     # Dashboard service: SPARQL + audit-log + PDP composition. No state.
@@ -416,6 +424,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.search_indexer.stop()
         await app.state.index_pinger.stop()
         await app.state.backup_job_registry.shutdown()
+        await app.state.label_resolver.shutdown()
         app.state.audit_log.stop()
         await app.state.metrics_rollup_scheduler.stop()
         app.state.metrics_pipeline.stop()
@@ -559,7 +568,11 @@ def create_app() -> FastAPI:
         prefix=RESERVED_API_PATH,
     )
     app.include_router(
-        build_labels_router(resolver=app.state.label_resolver), prefix=RESERVED_API_PATH
+        build_labels_router(
+            resolver=app.state.label_resolver,
+            max_wait_ms=settings.remote_labels.max_wait_ms,
+        ),
+        prefix=RESERVED_API_PATH,
     )
     app.include_router(
         build_dashboard_router(service=app.state.dashboard_service), prefix=RESERVED_API_PATH
