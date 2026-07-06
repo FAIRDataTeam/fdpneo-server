@@ -2124,7 +2124,7 @@ fetch/parse, and the search ORM/upsert patterns. Target release **v0.10.0**.
 
 References: ADR-0012 §8; architecture §8.6.
 
-### 21.2 [ ] Postgres persistent cache (table + repo)
+### 21.2 [x] Postgres persistent cache (table + repo)
 
 - Migration `migrations/versions/0009_external_labels.py` (`down_revision="0008"`):
   table `metadata_external_labels` — composite PK `(iri String(2048),
