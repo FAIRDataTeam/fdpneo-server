@@ -38,7 +38,7 @@ The server is implemented in Python (FastAPI, RDFLib, pySHACL) as a modular mono
 
 Three architectural decisions deserve attention up front. First, every metadata record lives in its own named graph, which reduces per-record access control to set membership over graph URIs and lets LDP PATCH map directly onto SPARQL Update. Second, ODRL access conditions are modelled as versioned Offers; grants materialize Agreements that reference the specific Offer version in force at grant time, giving a defensible audit trail. Third, the metrics pipeline strips personally identifying data at ingress — the metrics module is structurally incapable of producing user-identifying reports, satisfying GDPR by design rather than by policy.
 
-The architecture intentionally excludes some features. There is no FDP-to-FDP federation: cross-FDP query is the responsibility of a future FDP Index service. There is no internal user database: identity is fully delegated to an external OIDC provider. The first version supports only open-access data distributions; access-controlled data delivery is a future increment.
+The architecture intentionally excludes some features. There is no FDP-to-FDP federation: cross-FDP query is the responsibility of FAIR Discovery, the separate aggregation product (ADR-0021). There is no internal user database: identity is fully delegated to an external OIDC provider. The first version supports only open-access data distributions; access-controlled data delivery is a future increment.
 
 ---
 
@@ -61,7 +61,7 @@ The architecture intentionally excludes some features. There is no FDP-to-FDP fe
 
 ### 2.2 Non-goals (v1)
 
-- **FDP-to-FDP federation.** Cross-repository query is the responsibility of a future FDP Index service which will register and query individual FDPs.
+- **FDP-to-FDP federation.** Cross-repository query is the responsibility of FAIR Discovery (ADR-0021), the separate aggregation product that registers and harvests individual FDPs; this server keeps only the outbound index ping (TASKS.md Phase 8.1).
 - **Internal user management.** All identity, role assignment, and authentication flows are delegated to an external OIDC provider.
 - **Access-controlled data distribution.** The simple data provider serves only distributions whose policy permits anonymous read; restricted data delivery is a future increment.
 - **Property-level (sub-record) access control.** The unit of authorization is the named graph; finer-grained authorization is deferred.
@@ -341,7 +341,7 @@ There are **two separate subsystems**:
 
 Each is stored one-graph-per-record at a reserved, dereferenceable deployment IRI — `{base}/policies/{id}` and `{base}/licenses/{id}`, mirroring `{base}/schemas/{id}` — with its own descriptive metadata and meta-metadata sibling, runtime CRUD over an admin API, and the Section 12 publication-state lifecycle (draft → published → archived). The one policy-specific lifecycle rule: an **archived policy is retained and still enforced for records that already reference it**, but is not offered for new assignment, so archiving never silently breaks dependents. Published documents are indexed in search (Section 7) as `policy`/`license` content types and surface in the discovery catalogs.
 
-Cross-FDP reuse is delivered as **publish-and-discover** now — stable dereferenceable IRIs, discovery catalogs, search, and (when Phase 8 ships) Index harvesting — while actively dereferencing and **enforcing a remote FDP's policy** at decision time is deferred to an opt-in, allow-listed extension, the same posture as remote schema sync.
+Cross-FDP reuse is delivered as **publish-and-discover** now — stable dereferenceable IRIs, discovery catalogs, search, and (when FAIR Discovery ships, ADR-0021) index harvesting — while actively dereferencing and **enforcing a remote FDP's policy** at decision time is deferred to an opt-in, allow-listed extension, the same posture as remote schema sync.
 
 ---
 
@@ -372,7 +372,7 @@ Anonymous users sending updates are rejected at this step. Authenticated users c
 
 ### 9.2 SERVICE clauses are rejected
 
-The FDP does not support FDP-to-FDP federation (see [Section 2.2](#22-non-goals-v1)). Queries containing `SERVICE` clauses are rejected at parse time with a clear error message. Cross-FDP federation is the responsibility of the future FDP Index service.
+The FDP does not support FDP-to-FDP federation (see [Section 2.2](#22-non-goals-v1)). Queries containing `SERVICE` clauses are rejected at parse time with a clear error message. Cross-FDP federation is the responsibility of FAIR Discovery (ADR-0021).
 
 ### 9.3 Query rewriting
 
@@ -537,7 +537,7 @@ A profile is a bundle:
 
 *Figure 10: A profile bundle becomes an initialized FDP at bootstrap.*
 
-The FDP ships with a built-in default profile containing the standard FDP/DCAT schemas (Repository, Catalog, Dataset, DataService, Distribution) and a minimal seed populated from deployment config. Community profiles can replace the default entirely or, more commonly, import it and extend — adding biobank, sample, patient-registry, or publication types while keeping DCAT compatibility for federation with the future FDP Index.
+The FDP ships with a built-in default profile containing the standard FDP/DCAT schemas (Repository, Catalog, Dataset, DataService, Distribution) and a minimal seed populated from deployment config. Community profiles can replace the default entirely or, more commonly, import it and extend — adding biobank, sample, patient-registry, or publication types while keeping DCAT compatibility for federation with FAIR Discovery (ADR-0021).
 
 > **Custom-profile note — the manifest `name` and `version` are public.** When a profile is applied they are recorded in Postgres and surfaced, unauthenticated, through the FDP self-description endpoint (`GET /fdp-api/config`, the `profile` block), which clients read at startup to label the deployment. Treat them as a public-facing contract: choose a stable, human-meaningful `name` and bump `version` on every released change to a custom profile. (The server reads this state through an injected reader, so the endpoint carries no dependency on the profile machinery — relevant only if you embed the server.)
 
@@ -664,7 +664,7 @@ Test pyramid:
 
 These are flagged for discussion and resolution before the architecture is considered final.
 
-1. **Federation cutoff.** Confirmed: no FDP-to-FDP federation. The FDP Index, designed separately, will register and query individual FDPs.
+1. **Federation cutoff.** Confirmed: no FDP-to-FDP federation. FAIR Discovery (ADR-0021), designed separately, registers and harvests individual FDPs; this server keeps only the outbound index ping.
 2. **Default triple store.** GraphDB recommended; final decision deferred to deployment guidance.
 3. **SPARQL update restriction.** v1 restricts updates to forms with explicit graph specification. This will be revisited if community feedback shows it is too restrictive in practice. LDP `PATCH` is not affected.
 4. **Offer versioning aggressiveness.** Default: every edit produces a new version. The visual editor will surface the history and provide a "consolidate" action if logs become noisy.

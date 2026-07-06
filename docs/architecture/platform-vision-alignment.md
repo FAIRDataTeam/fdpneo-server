@@ -73,7 +73,7 @@ Everything else is either already aligned, a naming/lifecycle adjustment, or a
 | **Train** | — | ❌ Absent (correctly — FDS/Garage concern) |
 | **Audit** | `metadata/audit.py` (record audit graph) + `policy_decisions_audit` (Postgres) + structlog | ⚠️ Exists as two record-scoped mechanisms, **not a capability** |
 | **Storage** | `storage/` (triplestore adapter + Postgres) | ✅ Clean port/adapter |
-| **Federation** | Phase 8 (FDP Index protocol) — **not built** | ❌ Absent |
+| **Federation** | Phase 8 (index protocol) — outbound ping in FDPneo, **not built**; intake side rescoped to the FAIR Discovery product (ADR-0021) | ❌ Absent |
 | **Identity** | `identity/` (OIDC, JWKS, API keys, principal, user facade) | ✅ Strong |
 
 Legend: ✅ aligned · ⚠️ exists but needs realignment · ❌ missing.
@@ -288,17 +288,20 @@ subscriber + table + read API.
 
 ### H. Federation capability
 
-**Today.** Not built. Phase 8 (FDP Index protocol: ping, harvest, index entries,
-webhooks) is fully specified in `TASKS.md` but unimplemented.
+**Today.** Not built. Phase 8 was rescoped per ADR-0020/0021: the FDPneo
+distribution keeps only the **outbound ping** (TASKS.md Phase 8.1); the intake
+side — index entries, harvesting, admin, webhooks — is the **FAIR Discovery**
+product (`registry/` + `harvest/` contexts, `discovery` distribution), designed
+in `docs/architecture/discovery.md`.
 
 **Vision (§2.2 "Federation by Default", §5.3, §6.6).** Every component participates
 in federation; a Federation Hub product is *Metadata + Search + Federation*.
 
 **Suggested changes:**
 
-1. **Implement Phase 8 as the `federation/` capability** — the design already
-   exists. Outbound ping (FDP-as-node) is the minimum for an FDP to be discoverable;
-   the Index/Hub side is the Station Directory / Federation Hub product.
+1. **Implement Phase 8.1 (outbound ping)** — the minimum for an FDP to be
+   discoverable. The Index/Hub side is FAIR Discovery, which also subsumes the
+   Station Directory / Federation Hub product role (ADR-0021 §2).
 2. **Make the policy/license/schema catalogs harvestable** (Phase 14.7 already
    leaves the seam) so federated discovery of governance documents works.
 
@@ -353,7 +356,8 @@ Ordered by *unblocking value* and dependency, not by vision section number:
    future Authorization Service.
 5. **Extract the kernel + capability packages** (gap B) — only once interfaces are
    stable.
-6. **Implement Federation / Phase 8** (gap H) — already designed.
+6. **Implement Federation** (gap H) — outbound ping here (Phase 8.1); intake
+   side lands in the FAIR Discovery product (ADR-0021).
 7. **Governance lifecycle: Review/Approved/Deprecated** (gap E) — additive,
    independent, can slot in anytime.
 8. **Reify the Digital Object abstraction** (gap D) — refactor once the above
@@ -376,7 +380,9 @@ New or amended ADRs this vision implies (FDP-side):
 - **Amend ADR-0010** for the Review/Approved/Deprecated lifecycle.
 - **Amend ADR-0006** scope note for authorization validity periods / the PDP-as-port
   delegation seam.
-- **Promote Phase 8** (Index protocol) to the Federation capability.
+- ~~Promote Phase 8 (Index protocol) to the Federation capability~~ — resolved
+  by **ADR-0021** (FAIR Discovery product): intake side is a separate product;
+  FDPneo keeps outbound ping only.
 
 ---
 

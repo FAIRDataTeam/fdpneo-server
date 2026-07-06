@@ -51,10 +51,12 @@ A distribution is an explicit Python definition — a named list of `ModuleDef`s
 
 ```
 src/fdp/distributions/
-    fdp.py      # identity, metadata, policy, access, data, search, metrics
+    fdpneo.py   # identity, metadata, policy, access, data, search, metrics
     index.py    # identity, metadata, registry, search, metrics
-    fds.py      # fdp modules + train (future)
+    fds.py      # fdpneo modules + train (future)
 ```
+
+Naming: the product line is branded **fairplatform**; **FDPneo** names the product that replaces the original FDP reference implementation, hence the `fdpneo` distribution. The `fdp` import namespace is renamed to `fairplatform` as part of the manifest refactor (see `docs/architecture/repo-organization.md` for the full naming scheme).
 
 Composition is **static and explicit**. There is no dynamic plugin discovery, no entry-point scanning, no runtime toggle: what a product contains is readable in one file and auditable in review. Anticipated new contexts — a generic `registry/` context (registration, ping intake, scheduled harvest, health, corpus indexing) with Index/Directory/Depot as thin specializations, and later a `train/` context — plug into the same mechanism; this ADR defines the mechanism, not those modules.
 
@@ -64,9 +66,9 @@ Search currently lives inside `metadata` (`fdp/metadata/search/`). It is lifted 
 
 ### 4. Packaging: two stages, one contract
 
-**Stage A — wiring-level (now).** One package, one image; the distribution is selected by the entry point (`fdp serve --distribution fdp`) or a build argument producing per-product images. Unselected code ships but is never imported, wired, or migrated.
+**Stage A — wiring-level (now).** One package, one image; the distribution is selected by the entry point (`fdp serve --distribution fdpneo`) or a build argument producing per-product images. Unselected code ships but is never imported, wired, or migrated.
 
-**Stage B — package-level (when a second team or divergent release cadence arrives).** The repo becomes a **uv workspace**: each module an internal package (`fdp-shared`, `fdp-storage`, `fdp-metadata`, `fdp-policy`, `fdp-access`, `fdp-search`, `fdp-registry`, `fdp-train`, …) and each distribution a thin package declaring its subset as dependencies, built into its own Docker image containing only what it depends on. Core packages can then be published to a package index so an external team can pin `fdp-metadata==2.x` and release independently.
+**Stage B — package-level (when a second team or divergent release cadence arrives).** The repo becomes a **uv workspace**: each module an internal package (`fairplatform-shared`, `fairplatform-storage`, `fairplatform-metadata`, `fairplatform-policy`, `fairplatform-access`, `fairplatform-search`, `fairplatform-registry`, `fairplatform-train`, …) and each distribution a thin package declaring its subset as dependencies, built into its own Docker image containing only what it depends on. Core packages can then be published to a package index so an external team can pin `fairplatform-metadata==2.x` and release independently.
 
 The `ModuleDef` contract is identical in both stages, so moving a module from a sub-package of `fdp` to a workspace package is mechanical and can be done one module at a time.
 

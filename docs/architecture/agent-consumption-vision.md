@@ -27,7 +27,8 @@ satisfy a user, and it shows.
 
 One production system demonstrates what consumption looks like when it works:
 the **ERDERA Virtual Platform**. Its human-facing VP Portal queries the VP
-Index (an FDP Index instance) as its source of truth for *which API endpoints
+Index (a reference-implementation Index instance — the product role FAIR
+Discovery takes over, ADR-0021) as its source of truth for *which API endpoints
 support which Beacon 2 query types*, and configures itself dynamically from
 that metadata. This is metadata as a **control plane** — machine-actionability
 driving service discovery and query orchestration, not just browsing. The
@@ -81,10 +82,10 @@ capability trivially cheap to adopt. Design constraints that follow:
 │    a. fdp-mcp sidecar: MCP bridge over the public surface  │
 │       of ONE FDP (THIS increment, ADR-0018; mcp/ repo)     │
 │    b. Index-level MCP: network discovery + query dispatch  │
-│       (later; depends on Phase 8 FDP Index protocol)       │
+│       (later; depends on FAIR Discovery, ADR-0021)         │
 │    connective tissue: the capability profile (§5)          │
 ├────────────────────────────────────────────────────────────┤
-│ 1. Provisioning: FDP servers + FDP Index                   │
+│ 1. Provisioning: FDP servers + FAIR Discovery              │
 │    (exists; any spec-compliant FDP — FDPneo, Java          │
 │    reference impl, the ERDERA VP network)                  │
 └────────────────────────────────────────────────────────────┘
@@ -107,7 +108,7 @@ mitigated there.
 network-scoped operations — discover sources, resolve which endpoints support
 which query types, dispatch and aggregate (e.g. Beacon 2) queries — and is
 where the ERDERA control-plane pattern generalises. It is deliberately later:
-it depends on the FDP Index protocol work (Phase 8, not built) and on the
+it depends on the FAIR Discovery product (ADR-0021, not built) and on the
 capability profile (§5).
 
 ## 4. FDP-level MCP: tool surface v1 (read-only)
@@ -197,7 +198,7 @@ tool that surfaces whatever `DataService` metadata exists).
 |---|---|---|
 | **A (now)** | `fdp-mcp` sidecar (mcp/ repo), read-only tool surface v1, tool-surface spec, gap report, docs + demo script; server-side: deploy-profile wiring + gap triage (server Phase 19) | ADR-0018 |
 | **B** | Capability profile specification + schema package; `DataService` authoring guidance | A (feedback from real agent use) |
-| **C** | Index-level MCP: source discovery, capability resolution, query dispatch/aggregation | Phase 8 (FDP Index protocol), B, its own ADR |
+| **C** | Index-level MCP: source discovery, capability resolution, query dispatch/aggregation | FAIR Discovery (ADR-0021), B, its own ADR |
 | **D** | Access-request workflow tools (draft/submit requests against ODRL Offers) | A; policy/lifecycle design work |
 
 ## 9. Open questions
