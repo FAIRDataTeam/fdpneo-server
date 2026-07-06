@@ -2182,7 +2182,7 @@ References: labels.py §6.1 lookup strategy.
 
 References: main.py lifespan; index_ping shutdown pattern.
 
-### 21.6 [ ] Integration tests
+### 21.6 [x] Integration tests
 
 - `tests/integration/metadata/`: real Postgres (testcontainers) — `ExternalLabelCache`
   upsert/get + expiry; resolver end-to-end with a mocked HTTP transport writing
