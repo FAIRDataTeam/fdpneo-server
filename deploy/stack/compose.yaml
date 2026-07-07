@@ -136,6 +136,13 @@ services:
       FDP_IDP_ADMIN_CLIENT_SECRET: ${FDP_IDP_ADMIN_CLIENT_SECRET:-fdp-server-dev-secret}
       FDP_IDP_ADMIN_BASE_URL: http://keycloak:8080
       FDP_PROFILE_AUTO_APPLY: "true"
+      # External (remote) label resolution (Phase 21 / ADR-0012 extension): let
+      # GET /labels dereference external IRIs (DOI/ORCID/SKOS) to human labels.
+      # Allow-listed + SSRF-guarded; the list includes the terminal RDF hosts
+      # redirect-based content negotiation lands on (CrossRef/DataCite/ORCID).
+      # ROR is JSON-only and not resolved by the generic RDF path.
+      FDP_REMOTE_LABELS_ENABLED: ${FDP_REMOTE_LABELS_ENABLED:-true}
+      FDP_REMOTE_LABELS_ALLOWED_HOSTS: ${FDP_REMOTE_LABELS_ALLOWED_HOSTS:-doi.org,api.crossref.org,data.crossref.org,data.datacite.org,orcid.org,pub.orcid.org}
     ports:
       - "${SERVER_PORT:-8000}:8000"
 
