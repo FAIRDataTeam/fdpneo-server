@@ -1,6 +1,6 @@
 # ADR-0022: In-band affordance advertisement — closing the HATEOAS gap
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-09
 **Extends:** [ADR-0017](0017-alternative-identifiers-and-signposting.md) (Signposting §2); amends the LDP-paging deviation recorded in `docs/conformance/ldp-conformance.md`
 

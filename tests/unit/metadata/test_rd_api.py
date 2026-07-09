@@ -83,6 +83,7 @@ def _build(service: _FakeService, *, ctx: RequestContext) -> TestClient:
         build_resource_definition_router(
             service=service,  # type: ignore[arg-type]
             cache_provider=lambda: app.state.resource_definitions,
+            base_url=BASE,
         )
     )
     # Bind the request context the deps layer reads (no auth middleware here).
@@ -144,6 +145,52 @@ def test_get_one_by_slug() -> None:
 def test_get_unknown_slug_is_404() -> None:
     client = _build(_seeded(), ctx=_consumer())
     assert client.get("/resource-definitions/nope").status_code == 404
+
+
+def _build_with_base(service: _FakeService, *, base_url: str) -> TestClient:
+    app = FastAPI()
+    register_exception_handlers(app)
+    service.app = app
+    app.state.resource_definitions = service.cache()
+    app.include_router(
+        build_resource_definition_router(
+            service=service,  # type: ignore[arg-type]
+            cache_provider=lambda: app.state.resource_definitions,
+            base_url=base_url,
+        )
+    )
+    from fdp.identity.deps import current_context
+
+    app.dependency_overrides[current_context] = lambda: _consumer()
+    return TestClient(app)
+
+
+@pytest.mark.unit
+def test_view_carries_absolute_links_under_a_path_base() -> None:
+    # A non-root type: links are absolute, built from the serving base (ADR-0022 §4).
+    client = _build_with_base(_seeded(), base_url="https://example.org/fdp")
+    links = client.get("/resource-definitions/catalog").json()["links"]
+    assert links["self"] == "https://example.org/fdp/fdp-api/resource-definitions/catalog"
+    assert links["container"] == "https://example.org/fdp/catalog"
+    assert links["spec"] == "https://example.org/fdp/catalog/spec"
+
+
+@pytest.mark.unit
+def test_root_view_links_collapse_to_the_base() -> None:
+    client = _build_with_base(_seeded(), base_url="https://example.org/fdp")
+    links = client.get("/resource-definitions/repository").json()["links"]
+    # The root's container is the base itself; its spec is the root-level view.
+    assert links["container"] == "https://example.org/fdp"
+    assert links["spec"] == "https://example.org/fdp/spec"
+    assert links["self"] == "https://example.org/fdp/fdp-api/resource-definitions/repository"
+
+
+@pytest.mark.unit
+def test_list_view_includes_links_for_every_definition() -> None:
+    client = _build_with_base(_seeded(), base_url="https://example.org/fdp")
+    for d in client.get("/resource-definitions").json()["definitions"]:
+        assert set(d["links"]) == {"self", "container", "spec"}
+        assert d["links"]["self"].startswith("https://example.org/fdp/")
 
 
 # --- create ----------------------------------------------------------------

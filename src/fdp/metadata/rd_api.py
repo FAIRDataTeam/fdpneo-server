@@ -121,6 +121,19 @@ class ChildLinkView(BaseModel):
     tags_uri: str | None = Field(default=None, serialization_alias="tagsUri")
 
 
+class ResourceDefinitionLinks(BaseModel):
+    """Absolute, followable URLs for a resource definition (ADR-0022 §4).
+
+    Self-describing so a client need not concatenate ``urlPrefix`` onto a base it
+    must already know. Built from the *serving* base (ADR-0014 split), the host a
+    client actually calls.
+    """
+
+    self_: str = Field(serialization_alias="self")
+    container: str
+    spec: str
+
+
 class ResourceDefinitionView(BaseModel):
     """A resolved resource definition in a read response."""
 
@@ -132,6 +145,7 @@ class ResourceDefinitionView(BaseModel):
     schema_iri: str = Field(serialization_alias="schema")
     is_root: bool = Field(serialization_alias="isRoot")
     children: list[ChildLinkView]
+    links: ResourceDefinitionLinks
 
 
 class ResourceDefinitionListView(BaseModel):
@@ -151,7 +165,20 @@ def _child_view(link: ChildLinkInfo) -> ChildLinkView:
     )
 
 
-def _view(rd: ResourceDefinition) -> ResourceDefinitionView:
+def _links(rd: ResourceDefinition, base_url: str) -> ResourceDefinitionLinks:
+    base = base_url.rstrip("/")
+    slug = rd_record_slug(rd.url_prefix, rd.name)
+    # The root's container is the base itself (empty url_prefix); its spec is the
+    # root-level /spec view. Non-root types hang off /{urlPrefix}.
+    container = base if rd.is_root else f"{base}/{rd.url_prefix}"
+    return ResourceDefinitionLinks(
+        self_=f"{base}/{RESERVED_API_PREFIX}/resource-definitions/{slug}",
+        container=container,
+        spec=f"{container}/spec",
+    )
+
+
+def _view(rd: ResourceDefinition, base_url: str) -> ResourceDefinitionView:
     return ResourceDefinitionView(
         slug=rd_record_slug(rd.url_prefix, rd.name),
         url_prefix=rd.url_prefix,
@@ -159,6 +186,7 @@ def _view(rd: ResourceDefinition) -> ResourceDefinitionView:
         schema_iri=rd.schema_iri,
         is_root=rd.is_root,
         children=[_child_view(c) for c in rd.children],
+        links=_links(rd, base_url),
     )
 
 
@@ -169,12 +197,15 @@ def build_resource_definition_router(
     *,
     service: ResourceDefinitionService,
     cache_provider: Callable[[], ResourceDefinitionCache | None],
+    base_url: str,
     prefix: str = "/resource-definitions",
 ) -> APIRouter:
     """Construct the resource-definition catalog + admin router.
 
     ``cache_provider`` returns the current cache (``app.state.resource_definitions``)
-    so reads reflect runtime mutations without rebuilding the router.
+    so reads reflect runtime mutations without rebuilding the router. ``base_url``
+    is the serving base (ADR-0014) from which each view's absolute ``links`` are
+    built (ADR-0022 §4).
     """
     router = APIRouter(prefix=prefix, tags=["resource-definitions"])
 
@@ -212,11 +243,13 @@ def build_resource_definition_router(
 
     @router.get("", response_model=ResourceDefinitionListView, name="rd_list")
     async def list_definitions() -> ResourceDefinitionListView:  # pyright: ignore[reportUnusedFunction]
-        return ResourceDefinitionListView(definitions=[_view(rd) for rd in _cache().all()])
+        return ResourceDefinitionListView(
+            definitions=[_view(rd, base_url) for rd in _cache().all()]
+        )
 
     @router.get("/{slug}", response_model=ResourceDefinitionView, name="rd_get")
     async def get_definition(slug: str) -> ResourceDefinitionView:  # pyright: ignore[reportUnusedFunction]
-        return _view(_find(slug))
+        return _view(_find(slug), base_url)
 
     @router.post("", response_model=ResourceDefinitionView, status_code=201, name="rd_create")
     async def create_definition(  # pyright: ignore[reportUnusedFunction]
@@ -244,7 +277,7 @@ def build_resource_definition_router(
             )
         await _validate_writable(record)
         await service.put(record, subject=ctx.subject)
-        return _view(_find(slug))
+        return _view(_find(slug), base_url)
 
     @router.put("/{slug}", response_model=ResourceDefinitionView, name="rd_replace")
     async def replace_definition(  # pyright: ignore[reportUnusedFunction]
@@ -272,7 +305,7 @@ def build_resource_definition_router(
             )
         await _validate_writable(record)
         await service.put(record, subject=ctx.subject)
-        return _view(_find(slug))
+        return _view(_find(slug), base_url)
 
     @router.delete("/{slug}", status_code=204, name="rd_delete")
     async def delete_definition(  # pyright: ignore[reportUnusedFunction]

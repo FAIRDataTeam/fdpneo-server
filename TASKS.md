@@ -2227,7 +2227,7 @@ affordances go in `Link` headers (extension relation IRIs under
 `https://w3id.org/fdp/o#`) — never as triples in the record graph. Read the ADR
 before starting. Target release **v0.11.0**.
 
-### 22.1 [ ] Standard pagination links on `/page/{childPrefix}`
+### 22.1 [x] Standard pagination links on `/page/{childPrefix}`
 
 - `metadata/extensions.py` (paging handler, around the `X-FDP-Page-*` block at
   ~line 308): compute and emit RFC 8288 `Link` relations from
@@ -2244,7 +2244,7 @@ before starting. Target release **v0.11.0**.
 
 References: ADR-0022 §1; RFC 8288; `metadata/extensions.py`.
 
-### 22.2 [ ] Affordance link builder + LDP router wiring
+### 22.2 [x] Affordance link builder + LDP router wiring
 
 - `metadata/signposting.py`: new pure function
   `affordance_links(canonical_iri, *, is_container, url_prefix, child_prefixes, base_url) -> list[Link]`
@@ -2271,7 +2271,7 @@ References: ADR-0022 §1; RFC 8288; `metadata/extensions.py`.
 References: ADR-0022 §2; ADR-0017; `metadata/signposting.py`,
 `metadata/ldp/router.py`.
 
-### 22.3 [ ] Allowed state transitions in the `/meta` representation
+### 22.3 [x] Allowed state transitions in the `/meta` representation
 
 - `metadata/lifecycle.py`: expose the state machine's successor map (pure
   function `allowed_transitions(state) -> tuple[str, ...]`, e.g. DRAFT →
@@ -2290,7 +2290,7 @@ References: ADR-0022 §2; ADR-0017; `metadata/signposting.py`,
 
 References: ADR-0022 §3; ADR-0010; `metadata/lifecycle.py`, `metadata/meta.py`.
 
-### 22.4 [ ] Self-describing resource-definition catalog + discoverable API description
+### 22.4 [x] Self-describing resource-definition catalog + discoverable API description
 
 - `metadata/rd_api.py`: `ResourceDefinitionView` gains
   `links: {"self": ..., "container": ..., "spec": ...}` with **absolute** URLs
@@ -2310,7 +2310,7 @@ References: ADR-0022 §3; ADR-0010; `metadata/lifecycle.py`, `metadata/meta.py`.
 References: ADR-0022 §4; ADR-0014; ADR-0018 §G-05; `metadata/rd_api.py`,
 `main.py`.
 
-### 22.5 [ ] Conformance docs, client coordination, release (v0.11.0)
+### 22.5 [x] Conformance docs, client coordination, release (v0.11.0)
 
 - `docs/conformance/ldp-conformance.md`: rewrite the paging deviation (Web
   Linking pagination shipped; LDP Paging still not implemented — rationale per
@@ -2339,3 +2339,35 @@ ADR-0017/0022 — revisit if `MAX_LINKS` is hit in practice); HAL/Hydra JSON
 envelopes (rejected in ADR-0022); removing `X-FDP-Page-*` (v0.12.0, after one
 deprecation release); FDP-O vocabulary standardization of the extension rels
 (upstream WG work, tracked in the ADR).
+
+**Delivered (server-side).** All five sub-tasks shipped; ADR-0022 marked
+**Accepted**; version bumped to **0.11.0**.
+
+- **22.1** — `_pagination_links` in `metadata/extensions.py` emits RFC 8288
+  `first`/`prev`/`next`/`last` (preserving other query params) via
+  `signposting.render_link_header`; `X-FDP-Page-*` kept + marked deprecated in the
+  route's OpenAPI description (removal v0.12.0).
+- **22.2** — `signposting.affordance_links` + five `REL_*` extension-rel constants;
+  the LDP router's `_navigation_links` appends them on `GET`/`HEAD`, reserving
+  budget so they survive `MAX_LINKS` item-trimming. `ContainerRegistry` gained
+  `url_prefix_for`/`child_prefixes` (RD-cache-backed). Sibling (`/meta` etc.) GETs
+  do not re-advertise affordances.
+- **22.3** — `states.allowed_transitions` (derived from `_TRANSITIONS`, re-exported
+  from `lifecycle`); `meta.add_allowed_state_transitions` injects read-time
+  `fdp-o:allowedStateTransition` view triples on the served `/meta` graph only —
+  never stored/dumped/validated (`MetaWriter` untouched).
+- **22.4** — `ResourceDefinitionView.links` (absolute `self`/`container`/`spec`
+  from the serving base); root FDP record advertises `service-desc`/`service-doc`
+  (docs-gated)/`hasResourceDefinitions` via new `root_service_links` router param.
+- **22.5** — `ldp-conformance.md` paging deviation rewritten + affordance
+  Link-header inventory added; dev-doc §4.3.3a; CHANGELOG `[0.11.0]`;
+  `pyproject`/`uv.lock` → 0.11.0.
+
+Tests: `test_extensions.py` (+5 pagination), `test_signposting.py` (+6 affordance/
+reserved), `test_router.py` (+7 affordance/meta-view/root-links), `test_lifecycle.py`
+(+1 `allowed_transitions`), `test_meta.py` (+2 view triples), `test_rd_api.py`
+(+3 links). Full unit suite green (1153); ruff + pyright clean.
+
+**Client (cross-repo): pending** — `fdp-client` type regen + `rel="next"` paging
+migration + `X-FDP-Page-*` drop; `fdp-mcp` link-following swap (see the client
+coordination note in CHANGELOG `[0.11.0]`).

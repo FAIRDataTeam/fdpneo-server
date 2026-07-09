@@ -8,7 +8,13 @@ from rdflib.namespace import RDF
 
 from fdp.metadata.signposting import (
     MAX_LINKS,
+    REL_HAS_EXPANDED_VIEW,
+    REL_HAS_MEMBER_PAGE,
+    REL_HAS_META_METADATA,
+    REL_HAS_SPEC,
+    REL_HAS_STATE_TRANSITION,
     Link,
+    affordance_links,
     is_pid_iri,
     render_link_header,
     select_cite_as,
@@ -187,3 +193,90 @@ def test_render_link_header_rfc8288() -> None:
 @pytest.mark.unit
 def test_render_empty_is_empty_string() -> None:
     assert render_link_header([]) == ""
+
+
+# --- ADR-0022 affordance links --------------------------------------------
+
+
+def _rels(links: list[Link]) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for link in links:
+        out.setdefault(link.rel, []).append(link.target)
+    return out
+
+
+@pytest.mark.unit
+def test_affordance_links_for_a_leaf_member() -> None:
+    # A distribution: type with an RD but no children → no member pages.
+    canon = f"{BASE}/distribution/d1"
+    links = affordance_links(
+        canon, is_container=False, url_prefix="distribution", child_prefixes=[], base_url=BASE
+    )
+    rels = _rels(links)
+    assert rels[REL_HAS_META_METADATA] == [f"{canon}/meta"]
+    assert f"{canon}/spec" in rels[REL_HAS_SPEC]  # instance-level
+    assert f"{BASE}/distribution/spec" in rels[REL_HAS_SPEC]  # type-level
+    assert rels[REL_HAS_EXPANDED_VIEW] == [f"{canon}/expanded"]
+    assert rels[REL_HAS_STATE_TRANSITION] == [f"{canon}/state"]
+    assert REL_HAS_MEMBER_PAGE not in rels
+
+
+@pytest.mark.unit
+def test_affordance_links_container_gains_a_member_page_per_child() -> None:
+    canon = f"{BASE}/catalog/c1"
+    links = affordance_links(
+        canon,
+        is_container=True,
+        url_prefix="catalog",
+        child_prefixes=["dataset", "service"],
+        base_url=BASE,
+    )
+    pages = _rels(links)[REL_HAS_MEMBER_PAGE]
+    assert pages == [f"{canon}/page/dataset", f"{canon}/page/service"]
+
+
+@pytest.mark.unit
+def test_affordance_links_root_collapses_instance_and_type_spec() -> None:
+    # url_prefix "" (root): type-level spec == instance-level spec → one hasSpec.
+    links = affordance_links(
+        BASE, is_container=True, url_prefix="", child_prefixes=["catalog"], base_url=BASE
+    )
+    rels = _rels(links)
+    assert rels[REL_HAS_SPEC] == [f"{BASE}/spec"]
+    assert rels[REL_HAS_MEMBER_PAGE] == [f"{BASE}/page/catalog"]
+
+
+@pytest.mark.unit
+def test_affordance_links_without_resource_definition_emit_only_meta() -> None:
+    # An internal/managed doc (no RD) exposes only the /meta sibling.
+    canon = f"{BASE}/fdp-api/schemas/catalog"
+    links = affordance_links(
+        canon, is_container=False, url_prefix=None, child_prefixes=[], base_url=BASE
+    )
+    assert links == [Link(f"{canon}/meta", REL_HAS_META_METADATA)]
+
+
+@pytest.mark.unit
+def test_affordance_links_skip_type_spec_when_base_unknown() -> None:
+    canon = f"{BASE}/catalog/c1"
+    links = affordance_links(
+        canon, is_container=False, url_prefix="catalog", child_prefixes=[], base_url=None
+    )
+    # Only the instance-level spec (built from the canonical IRI) is present.
+    assert _rels(links)[REL_HAS_SPEC] == [f"{canon}/spec"]
+
+
+@pytest.mark.unit
+def test_signposting_reserved_shrinks_item_budget_for_fixed_affordances() -> None:
+    g = Graph()
+    canon = URIRef(CANON)
+    g.add((canon, RDF.type, DCAT.Catalog))
+    for i in range(100):
+        g.add((canon, LDP.contains, URIRef(f"{BASE}/dataset/d{i:03d}")))
+    reserved = 6
+    links = signposting_links(g, CANON, (TTL, JSONLD), reserved=reserved)
+    # cite-as(1) + describedby(2) + type(1) fixed = 4; items fill the rest of the
+    # budget after reserving room for the appended affordance links.
+    assert len(links) == MAX_LINKS - reserved
+    n_items = sum(1 for link in links if link.rel == "item")
+    assert n_items == MAX_LINKS - reserved - 4

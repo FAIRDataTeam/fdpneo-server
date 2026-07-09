@@ -5,6 +5,53 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.11.0] — 2026-07-09
+
+In-band affordance advertisement / HATEOAS completion
+([ADR-0022](docs/adr/0022-in-band-affordance-advertisement.md)): a generic RDF/LDP
+client can now reach every management view, page a container, and discover the API
+description by following links — no URL-template convention or OpenAPI required.
+Everything stays RDF + RFC 8288 Web Linking (no HAL/Hydra).
+
+### Added
+
+- **RFC 8288 pagination links** on `GET /{urlPrefix}/page/{childPrefix}`:
+  `Link: rel="first"/"prev"/"next"/"last"`, computed from `offset`/`limit`/`total`
+  (preserving the caller's other query params).
+- **Management-affordance `Link` relations** on record `GET`/`HEAD`, under the
+  provisional FDP-O extension namespace `https://w3id.org/fdp/o#` (pending FDP-O WG
+  harmonization; opaque extension rels, so a later IRI swap is compatible):
+  - `hasMetaMetadata` → `<record>/meta`
+  - `hasSpec` → `<record>/spec` (instance) and `<base>/<urlPrefix>/spec` (type)
+  - `hasExpandedView` → `<record>/expanded`
+  - `hasStateTransition` → `<record>/state`
+  - `hasMemberPage` → `<record>/page/{childPrefix}` (per child type, containers)
+
+  Advertised unconditionally (the PDP still authorizes each request); *fixed*
+  relations for the `MAX_LINKS` cap (only surplus `item` links are trimmed).
+- **Allowed next states** on the served `<record>/meta` representation:
+  read-time `fdp-o:allowedStateTransition` view triples derived from the lifecycle
+  state machine — **never persisted, never dumped, never SHACL-validated**.
+- **Self-describing resource-definition catalog**: `ResourceDefinitionView` gains
+  an absolute `links` object (`self`, `container`, `spec`) built from the serving
+  base. `urlPrefix` stays for compatibility.
+- **Root API-description links**: the root FDP record advertises
+  `service-desc` (`/fdp-api/openapi.json`), `service-doc` (`/fdp-api/docs`, when
+  the docs UIs are enabled), and `hasResourceDefinitions`
+  (`/fdp-api/resource-definitions`).
+
+### Deprecated
+
+- The `X-FDP-Page-Total/Offset/Limit` headers on `/page` are deprecated in favour
+  of the RFC 8288 navigation links; **removal targeted v0.12.0**.
+
+### Client coordination
+
+- `fdp-client`: regenerate API types for `ResourceDefinitionView.links`, migrate
+  paging to `rel="next"` traversal, and drop `X-FDP-Page-*` reads.
+- `fdp-mcp` (ADR-0018): can replace its URL-template knowledge for
+  `/spec`, `/meta`, and `/state` with link-following.
+
 ## [0.10.0] — 2026-07-07
 
 External (remote) label resolution for `GET /fdp-api/labels` (ADR-0012 extension):

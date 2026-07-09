@@ -16,11 +16,18 @@ from fdp.metadata.meta import (
     META_SHAPE_IRI,
     MetaWriter,
     Operation,
+    add_allowed_state_transitions,
     build_meta_graph,
 )
 from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
 from fdp.shared.errors import SchemaViolation
-from fdp.shared.namespaces import DCT, OWL, PROV
+from fdp.shared.namespaces import (
+    DCT,
+    FDP_ALLOWED_STATE_TRANSITION,
+    FDP_METADATA_STATE,
+    OWL,
+    PROV,
+)
 
 RECORD = "https://example.org/records/r1"
 RECORD_URI = URIRef(RECORD)
@@ -278,3 +285,28 @@ def test_created_modified_overrides_carry_source_provenance() -> None:
     assert (RECORD_URI, DCT.created, Literal(src_created)) in result.graph
     assert (RECORD_URI, DCT.modified, Literal(src_modified)) in result.graph
     assert (RECORD_URI, DCT.modified, Literal(NOW)) not in result.graph
+
+
+# --- ADR-0022 §3 allowed-state-transition view triples ---------------------
+
+
+@pytest.mark.unit
+def test_add_allowed_state_transitions_from_published() -> None:
+    g = Graph()
+    g.add((RECORD_URI, FDP_METADATA_STATE, Literal("PUBLISHED")))
+    add_allowed_state_transitions(g)
+    successors = {str(o) for o in g.objects(RECORD_URI, FDP_ALLOWED_STATE_TRANSITION)}
+    assert successors == {"DRAFT", "ARCHIVED"}
+    # The existing state triple is untouched.
+    assert (RECORD_URI, FDP_METADATA_STATE, Literal("PUBLISHED")) in g
+
+
+@pytest.mark.unit
+def test_add_allowed_state_transitions_noop_without_state() -> None:
+    g = Graph()
+    g.add((RECORD_URI, DCT.title, Literal("no state here")))
+    before = len(g)
+    add_allowed_state_transitions(g)
+    # Nothing to derive from → graph unchanged.
+    assert len(g) == before
+    assert (RECORD_URI, FDP_ALLOWED_STATE_TRANSITION, None) not in g

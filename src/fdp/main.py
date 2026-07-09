@@ -90,6 +90,7 @@ from fdp.metadata.search.service import SearchService
 from fdp.metadata.settings import SettingsRepository, build_settings_router
 from fdp.metadata.shacl import ShaclValidator
 from fdp.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
+from fdp.metadata.signposting import REL_HAS_RESOURCE_DEFINITIONS, Link
 from fdp.metrics.api import build_metrics_router
 from fdp.metrics.geo import open_geo_lookup
 from fdp.metrics.middleware import RequestObservationMiddleware
@@ -664,6 +665,7 @@ def create_app() -> FastAPI:
         build_resource_definition_router(
             service=app.state.resource_definition_service,
             cache_provider=lambda: app.state.resource_definitions,
+            base_url=settings.serving_base,
         ),
         prefix=RESERVED_API_PATH,
     )
@@ -717,6 +719,16 @@ def create_app() -> FastAPI:
     # PUT/PATCH validate the resource against its own type shape, and the
     # repository validates the meta graph against META_SHAPE_IRI.
     container_registry = _DynamicContainerRegistry(app)
+    # ADR-0022 §4: the root FDP record advertises the API description in-band.
+    # Relative-path references resolve against the request URL, so they are
+    # correct on whichever serving host answers. service-doc is emitted only when
+    # the interactive docs UIs are actually served (audit R-04).
+    root_service_links = [
+        Link(f"{RESERVED_API_PATH}/openapi.json", "service-desc"),
+        Link(f"{RESERVED_API_PATH}/resource-definitions", REL_HAS_RESOURCE_DEFINITIONS),
+    ]
+    if docs_on:
+        root_service_links.append(Link(f"{RESERVED_API_PATH}/docs", "service-doc"))
     app.include_router(
         build_ldp_router(
             repo=app.state.metadata_repository,
@@ -739,6 +751,7 @@ def create_app() -> FastAPI:
             # base. Identity when identifier_base is unset (== serving origin).
             identifier_base=settings.resolved_identifier_base,
             serving_origins=[settings.serving_base],
+            root_service_links=root_service_links,
             prefix="",
         )
     )
@@ -810,6 +823,14 @@ class _DynamicContainerRegistry:
     def member_relations(self, resource_iri: str) -> list[str]:
         cache = self._cache()
         return [] if cache is None else cache.member_relations(resource_iri)
+
+    def url_prefix_for(self, resource_iri: str) -> str | None:
+        cache = self._cache()
+        return None if cache is None else cache.url_prefix_for(resource_iri)
+
+    def child_prefixes(self, resource_iri: str) -> list[str]:
+        cache = self._cache()
+        return [] if cache is None else cache.child_prefixes(resource_iri)
 
     def _cache(self) -> ResourceDefinitionCache | None:
         return getattr(self._app.state, "resource_definitions", None)

@@ -55,6 +55,19 @@ def transition_requires_admin(frm: MetadataState, to: MetadataState) -> bool | N
     return _TRANSITIONS.get((frm, to))
 
 
+def allowed_transitions(state: MetadataState) -> tuple[MetadataState, ...]:
+    """The states ``state`` may transition to next, per the state machine.
+
+    Derived from :data:`_TRANSITIONS` (the single source of truth) — not
+    hardcoded — so it stays in step with the transition rules automatically.
+    Ordering is stable (definition order in ``_TRANSITIONS``). Admin-only
+    transitions are included: the successor is *reachable*; whether the caller
+    may take it is a per-request authorization concern (ADR-0010 §3), mirrored by
+    the ADR-0022 §3 view triples which advertise the affordance, not the grant.
+    """
+    return tuple(to for (frm, to) in _TRANSITIONS if frm == state)
+
+
 def is_visible_state(state: MetadataState | None) -> bool:
     """True iff ``state`` is publicly visible (``PUBLISHED``).
 
@@ -68,6 +81,7 @@ __all__ = [
     "DEFAULT_STATE",
     "SEED_STATE",
     "MetadataState",
+    "allowed_transitions",
     "is_visible_state",
     "transition_requires_admin",
 ]

@@ -98,6 +98,15 @@ Lives in ``<record>/meta`` alongside ``dct:modified`` and ``owl:versionInfo``;
 changed only through the ``POST /{record}/state`` transition API, never by a
 record-content edit."""
 
+FDP_ALLOWED_STATE_TRANSITION = FDP_DEFAULT["allowedStateTransition"]
+"""Read-time *view* predicate on a served ``<record>/meta`` representation
+(ADR-0022 §3). One literal object (``DRAFT`` / ``PUBLISHED`` / ``ARCHIVED``) per
+state the record may transition to next, computed from the lifecycle state
+machine when the meta graph is served. **Never persisted** — it is not stored,
+not returned by ``fdp dump``, and not seen by the meta-graph SHACL validator;
+it advertises the ``POST /{record}/state`` affordance so a client learns what a
+record may become without consulting OpenAPI."""
+
 PREFIXES: Mapping[str, Namespace] = MappingProxyType(
     {
         "adms": ADMS,
@@ -152,6 +161,7 @@ __all__ = [
     "ADMS",
     "DCAT",
     "DCT",
+    "FDP_ALLOWED_STATE_TRANSITION",
     "FDP_CHILD_LINK",
     "FDP_CHILD_TAGS_URI",
     "FDP_CHILD_TARGET",

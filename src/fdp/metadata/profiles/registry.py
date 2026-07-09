@@ -180,6 +180,24 @@ class ResourceDefinitionCache:
         rd = self.for_url(resource_iri)
         return [child.relation_uri for child in rd.children] if rd is not None else []
 
+    def url_prefix_for(self, resource_iri: str) -> str | None:
+        """The ``url_prefix`` of the type responsible for ``resource_iri``.
+
+        ``""`` for the root, ``"catalog"`` for a catalog collection or member, and
+        ``None`` when the IRI is not under a declared type (an internal/managed
+        document). Used by the ADR-0022 affordance builder to name the type-level
+        ``/spec`` view and gate the resource-definition-driven links.
+        """
+        rd = self.for_url(resource_iri)
+        return rd.url_prefix if rd is not None else None
+
+    def child_prefixes(self, resource_iri: str) -> list[str]:
+        """The ``target_prefix`` of each child link the type at ``resource_iri``
+        declares — the child types reachable via ``/page/{childPrefix}`` (ADR-0022
+        member-page affordances). Empty for a leaf type or an unknown URL."""
+        rd = self.for_url(resource_iri)
+        return [child.target_prefix for child in rd.children] if rd is not None else []
+
     def containment_relation(self, parent_iri: str, child_iri: str) -> str | None:
         """The typed forward predicate a ``parent`` uses to point at ``child``.
 

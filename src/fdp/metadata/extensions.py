@@ -39,6 +39,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import structlog
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -47,6 +48,7 @@ from rdflib.namespace import DCTERMS
 
 from fdp.identity.deps import current_context
 from fdp.metadata.shacl import UnknownShapeError
+from fdp.metadata.signposting import Link, render_link_header
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
@@ -304,14 +306,30 @@ def build_extensions_router(
 
         media = _negotiate(request)
         body = serialize(result, media)
+        # RFC 8288 navigation links (ADR-0022 §1) are the standard, client-generic
+        # way to page. The legacy ``X-FDP-Page-*`` headers remain for one minor
+        # release (deprecated; removal targeted v0.12.0) so existing callers keep
+        # working while ``fdp-client`` migrates to ``rel="next"`` traversal.
         headers = {
             "X-FDP-Page-Total": str(total),
             "X-FDP-Page-Offset": str(offset),
             "X-FDP-Page-Limit": str(limit),
+            "Link": render_link_header(
+                _pagination_links(str(request.url), offset=offset, limit=limit, total=total)
+            ),
         }
         return Response(content=body, status_code=200, media_type=media, headers=headers)
 
-    @router.get("/page/{child_prefix}", name="ext_root_page")
+    @router.get(
+        "/page/{child_prefix}",
+        name="ext_root_page",
+        description=(
+            "Paginated listing of a container's children. Navigate with the "
+            'RFC 8288 `Link` header (`rel="first"/"prev"/"next"/"last"`). '
+            "The `X-FDP-Page-Total/Offset/Limit` headers are **deprecated** "
+            "(removal targeted v0.12.0); prefer the `Link` relations."
+        ),
+    )
     async def root_page(  # pyright: ignore[reportUnusedFunction]
         child_prefix: str,
         request: Request,
@@ -356,6 +374,34 @@ def build_extensions_router(
 
 
 # --- helpers ---------------------------------------------------------------
+
+
+def _pagination_links(request_url: str, *, offset: int, limit: int, total: int) -> list[Link]:
+    """RFC 8288 page-navigation links for a paged listing (ADR-0022 §1).
+
+    ``first`` and ``last`` are always emitted; ``prev`` only when ``offset > 0``
+    and ``next`` only when a further page exists (``offset + limit < total``).
+    Each link URL is ``request_url`` with its ``offset`` query parameter rewritten
+    to the target page; every other query parameter the caller sent (``limit``,
+    negotiated ``format``, …) is preserved and re-encoded.
+    """
+    parts = urlsplit(request_url)
+    preserved = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "offset"]
+
+    def page_url(new_offset: int) -> str:
+        query = urlencode([*preserved, ("offset", str(new_offset))])
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+    # Offset of the final page: the largest multiple of ``limit`` still < total.
+    last_offset = ((total - 1) // limit) * limit if total > 0 else 0
+
+    links = [Link(page_url(0), "first")]
+    if offset > 0:
+        links.append(Link(page_url(max(offset - limit, 0)), "prev"))
+    if offset + limit < total:
+        links.append(Link(page_url(offset + limit), "next"))
+    links.append(Link(page_url(last_offset), "last"))
+    return links
 
 
 def _negotiate(request: Request) -> str:

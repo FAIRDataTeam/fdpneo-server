@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Protocol
 
 import structlog
@@ -44,12 +45,22 @@ from rdflib import Graph, URIRef
 from fdp.identity.deps import current_context
 from fdp.metadata.etag import compute_etag
 from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
-from fdp.metadata.graphs import record_graph_uri
+from fdp.metadata.graphs import (
+    is_meta_graph_uri,
+    record_graph_uri,
+    record_uri_from_sibling,
+)
 from fdp.metadata.identifiers import reconcile_identifiers
+from fdp.metadata.meta import add_allowed_state_transitions
 from fdp.metadata.patch import simulate_update
 from fdp.metadata.prof import ensure_conformance
 from fdp.metadata.profiles.applier import direct_container_config
-from fdp.metadata.signposting import render_link_header, signposting_links
+from fdp.metadata.signposting import (
+    Link,
+    affordance_links,
+    render_link_header,
+    signposting_links,
+)
 from fdp.policy.model import Action, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import (
@@ -126,6 +137,10 @@ class ContainerRegistry(Protocol):
 
     def member_relations(self, resource_iri: str) -> list[str]: ...
 
+    def url_prefix_for(self, resource_iri: str) -> str | None: ...
+
+    def child_prefixes(self, resource_iri: str) -> list[str]: ...
+
 
 class DefaultContainerRegistry:
     """Skeleton default — nothing is a container, no shape is bound."""
@@ -145,6 +160,12 @@ class DefaultContainerRegistry:
     def member_relations(self, resource_iri: str) -> list[str]:  # noqa: ARG002
         return []
 
+    def url_prefix_for(self, resource_iri: str) -> str | None:  # noqa: ARG002
+        return None
+
+    def child_prefixes(self, resource_iri: str) -> list[str]:  # noqa: ARG002
+        return []
+
 
 def build_ldp_router(
     *,
@@ -158,6 +179,7 @@ def build_ldp_router(
     containment: ContainmentManager | None = None,
     identifier_base: str | None = None,
     serving_origins: list[str] | None = None,
+    root_service_links: Sequence[Link] | None = None,
     prefix: str = "/ldp",
 ) -> APIRouter:
     """Build the LDP router wired with ``repo`` + ``pdp`` + optional helpers.
@@ -331,6 +353,38 @@ def build_ldp_router(
         for triple in direct_container_config(URIRef(iri), relations) if relations else []:
             graph.add(triple)
 
+    def _navigation_links(iri: str, graph: Graph) -> str:
+        """Combined FAIR Signposting + ADR-0022 affordance ``Link`` header value.
+
+        The affordance links (``/meta``, ``/spec``, ``/expanded``, ``/state``,
+        member pages) are *fixed* relations; ``reserved`` shrinks the signposting
+        ``item`` budget by their count so the combined set still honours
+        :data:`~fdp.metadata.signposting.MAX_LINKS` while affordances always
+        survive — only surplus ``item`` links are trimmed. ``base_url`` (the PID
+        base, when configured) names the type-level ``/spec`` view.
+        """
+        # A /meta, /audit or /data sibling is not itself a record — it must not
+        # advertise its own management affordances (that would mint nonsensical
+        # IRIs like ``{record}/meta/spec``). Only the record it belongs to does.
+        affordances: list[Link] = []
+        if record_uri_from_sibling(iri) is None:
+            url_prefix = registry.url_prefix_for(iri)
+            child_prefixes = registry.child_prefixes(iri)
+            affordances = affordance_links(
+                iri,
+                is_container=bool(child_prefixes),
+                url_prefix=url_prefix,
+                child_prefixes=child_prefixes,
+                base_url=_id_base,
+            )
+            # The root FDP record (empty url_prefix) additionally advertises the
+            # API description: OpenAPI (service-desc), the docs UI (service-doc,
+            # when enabled), and the resource-definition catalog (ADR-0022 §4).
+            if url_prefix == "" and root_service_links:
+                affordances.extend(root_service_links)
+        sign = signposting_links(graph, iri, SUPPORTED_TYPES, reserved=len(affordances))
+        return render_link_header([*sign, *affordances])
+
     @router.get("/{path:path}", name="ldp_get")
     async def http_get(  # pyright: ignore[reportUnusedFunction]
         request: Request,
@@ -345,14 +399,20 @@ def build_ldp_router(
             raise NotFound(f"resource not found: {iri}")
         if state_gate is not None:
             await state_gate.ensure_visible(ctx, iri)
+        if is_meta_graph_uri(iri):
+            # ADR-0022 §3: advertise the record's allowed next states as read-time
+            # view triples on the served meta representation. Added to the fetched
+            # graph only (never stored / dumped / SHACL-validated).
+            add_allowed_state_transitions(graph)
         is_container = registry.is_container(iri)
         # ETag is the *full-resource* validator (used for If-Match), computed
         # before any Prefer-driven minimisation so a conditional write keyed off
         # a minimized GET still matches the stored resource.
         etag = compute_etag(graph)
-        # Signposting from the full graph (before any Prefer minimisation) so
-        # cite-as/type/… are always present and item links reflect real membership.
-        signposting = render_link_header(signposting_links(graph, iri, SUPPORTED_TYPES))
+        # Signposting + affordance links from the full graph (before any Prefer
+        # minimisation) so cite-as/type/… are always present and item links
+        # reflect real membership.
+        navigation = _navigation_links(iri, graph)
         omit_containment, omit_membership = (
             _parse_prefer(request.headers.get("prefer")) if is_container else (False, False)
         )
@@ -360,7 +420,7 @@ def build_ldp_router(
             _minimize_container(graph, iri, omit_containment, omit_membership)
         body = serialize(graph, media)
         headers = _response_headers(
-            etag, is_container, constrained_by=registry.shape_for(iri), extra_links=signposting
+            etag, is_container, constrained_by=registry.shape_for(iri), extra_links=navigation
         )
         headers["Content-Type"] = media
         if is_container:
@@ -385,9 +445,9 @@ def build_ldp_router(
             await state_gate.ensure_visible(ctx, iri)
         is_container = registry.is_container(iri)
         etag = compute_etag(graph)
-        signposting = render_link_header(signposting_links(graph, iri, SUPPORTED_TYPES))
+        navigation = _navigation_links(iri, graph)
         headers = _response_headers(
-            etag, is_container, constrained_by=registry.shape_for(iri), extra_links=signposting
+            etag, is_container, constrained_by=registry.shape_for(iri), extra_links=navigation
         )
         headers["Content-Type"] = media
         if is_container:
