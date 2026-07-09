@@ -2209,3 +2209,133 @@ References: main.py lifespan; index_ping shutdown pattern.
 generic RDF conneg only; scheduled bulk refresh / expired-row purge CLI (minimal
 purge may ride on 21.2); label resolution for access-controlled *local* records
 (unchanged — external only).
+
+---
+
+## Phase 22 — In-band affordance advertisement / HATEOAS completion (ADR-0022)
+
+A HATEOAS audit (2026-07-09, this server vs. the Java reference impl) found the
+LDP surface solidly Level 3 but four affordances still discoverable only by
+URL-template convention or OpenAPI: paging (custom `X-FDP-Page-*` headers, no
+`rel="next"` chain — a regression vs. the reference impl's RFC 8288 pagination
+links), the management views (`/spec`, `/expanded`, `/page`, `POST …/state`,
+`<record>/meta`) never linked from responses, publication state not surfaced as
+an affordance, and `GET /fdp-api/resource-definitions` returning bare
+`urlPrefix` fragments. [ADR-0022](docs/adr/0022-in-band-affordance-advertisement.md)
+decides the fixes: everything stays RDF + RFC 8288 Web Linking (no HAL/Hydra),
+affordances go in `Link` headers (extension relation IRIs under
+`https://w3id.org/fdp/o#`) — never as triples in the record graph. Read the ADR
+before starting. Target release **v0.11.0**.
+
+### 22.1 [ ] Standard pagination links on `/page/{childPrefix}`
+
+- `metadata/extensions.py` (paging handler, around the `X-FDP-Page-*` block at
+  ~line 308): compute and emit RFC 8288 `Link` relations from
+  `offset`/`limit`/`total` — `first` + `last` always, `prev` when `offset > 0`,
+  `next` when `offset + limit < total`. Preserve the caller's other query params
+  (`limit`, format) in the generated URLs; URL-encode properly.
+- Reuse/extract the header-rendering helper from `signposting.render_link_header`
+  rather than hand-formatting (one `Link:` value, comma-joined, per RFC 8288).
+- Keep `X-FDP-Page-*` emission unchanged but mark it deprecated in the OpenAPI
+  description + `ldp-conformance.md` (removal targeted v0.12.0).
+- Tests (`tests/unit/metadata/test_extensions.py`): first page (no `prev`),
+  middle page (all four), last page (no `next`), single-page (`first`==`last`,
+  no `prev`/`next`), param preservation.
+
+References: ADR-0022 §1; RFC 8288; `metadata/extensions.py`.
+
+### 22.2 [ ] Affordance link builder + LDP router wiring
+
+- `metadata/signposting.py`: new pure function
+  `affordance_links(canonical_iri, *, is_container, url_prefix, child_prefixes, base_url) -> list[Link]`
+  emitting (per ADR-0022 §2, extension rels under `https://w3id.org/fdp/o#`):
+  `{record}/meta` → `fdp-o#hasMetaMetadata`; `{record}/spec` → `fdp-o#hasSpec`;
+  `{base}/{urlPrefix}/spec` (type-level) → `fdp-o#hasSpec`;
+  `{record}/expanded` → `fdp-o#hasExpandedView`; `{record}/state` →
+  `fdp-o#hasStateTransition`; and, for containers, one
+  `{record}/page/{childPrefix}` → `fdp-o#hasMemberPage` per child link.
+  Define the rel IRIs as module constants next to `MAX_LINKS`.
+- Emit unconditionally (the link advertises the affordance; the PDP still gates
+  the request — do NOT try to pre-authorize link emission).
+- `metadata/ldp/router.py` `_response_headers`: append affordance links on
+  GET/HEAD for existing records, after signposting links. Affordance links are
+  **fixed** relations for the `MAX_LINKS` trim policy (only surplus `item`
+  links are trimmed — extend the existing trim logic + its test).
+- Resolve `url_prefix`/`child_prefixes` from the resource-definition cache the
+  router already consults for containment; records of types without an RD
+  (edge: internal/managed docs) emit only `/meta`.
+- Tests (`tests/unit/metadata/test_signposting.py` + router tests): leaf record
+  rels, container gains `hasMemberPage` per child, fixed-rel survival under
+  trimming, absent on 404/anonymous-403 paths.
+
+References: ADR-0022 §2; ADR-0017; `metadata/signposting.py`,
+`metadata/ldp/router.py`.
+
+### 22.3 [ ] Allowed state transitions in the `/meta` representation
+
+- `metadata/lifecycle.py`: expose the state machine's successor map (pure
+  function `allowed_transitions(state) -> tuple[str, ...]`, e.g. DRAFT →
+  (PUBLISHED,), PUBLISHED → (ARCHIVED,) — read the actual machine, don't
+  hardcode here).
+- `metadata/meta.py` (or the meta GET path in the LDP router): when serving
+  `<record>/meta`, add computed-at-read-time triples
+  `<record> fdp-o:allowedStateTransition "<STATE>"` for each successor. These
+  are **view triples** — never persisted, never exported by `fdp dump`, and
+  excluded from meta-graph SHACL validation input (or the meta shape gains
+  them as optional — decide by whichever keeps `MetaWriter` untouched;
+  document the choice inline).
+- Tests: meta GET carries exactly the successors for each state; the stored
+  meta graph is unchanged (fetch raw graph vs. served representation); dump
+  excludes them.
+
+References: ADR-0022 §3; ADR-0010; `metadata/lifecycle.py`, `metadata/meta.py`.
+
+### 22.4 [ ] Self-describing resource-definition catalog + discoverable API description
+
+- `metadata/rd_api.py`: `ResourceDefinitionView` gains
+  `links: {"self": ..., "container": ..., "spec": ...}` with **absolute** URLs
+  built from `settings.base_url` (mind the ADR-0014 identifier/serving base
+  split — use the *serving* base, same as the router's canonical URL logic).
+  `urlPrefix` stays. Update the OpenAPI examples.
+- Root API-description links: on GET/HEAD of the **root FDP record only**, add
+  `Link: <{base}/fdp-api/openapi.json>; rel="service-desc"`,
+  `<{base}/fdp-api/docs>; rel="service-doc"` (only when docs are enabled), and
+  `<{base}/fdp-api/resource-definitions>; rel="https://w3id.org/fdp/o#hasResourceDefinitions"`.
+  Root detection: canonical IRI == base (the router already special-cases the
+  root for the ADR-0018 service advertisement — hook the same branch).
+- Tests: RD list/detail carry absolute links under a non-root `base_url`
+  (e.g. `https://example.org/fdp`); root GET carries the three rels; non-root
+  records don't.
+
+References: ADR-0022 §4; ADR-0014; ADR-0018 §G-05; `metadata/rd_api.py`,
+`main.py`.
+
+### 22.5 [ ] Conformance docs, client coordination, release (v0.11.0)
+
+- `docs/conformance/ldp-conformance.md`: rewrite the paging deviation (Web
+  Linking pagination shipped; LDP Paging still not implemented — rationale per
+  ADR-0022); add the affordance rels to the Link-header inventory; note the
+  `X-FDP-Page-*` deprecation window.
+- Docs: signposting/affordance section in `docs/dev-docs/`; CHANGELOG entries
+  for the five FDP-O extension rel IRIs (flagged as provisional pending FDP-O
+  WG harmonization, per the ADR).
+- Cross-repo: `fdp-client` regenerates API types (`links` on
+  `ResourceDefinitionView`), migrates paging to `rel="next"` navigation, and
+  drops `X-FDP-Page-*` reads; `fdp-mcp` (ADR-0018) can replace its URL-template
+  knowledge for `/spec`//meta`/state with link-following — file the gap-report
+  per the 19.2 triage loop.
+- Quality gate: `uv run ruff check . && uv run ruff format --check . &&
+  uv run pyright && uv run pytest` green; run the LDP conformance suite
+  (`tests/conformance/test_ldp.py`); manual E2E on the GraphDB dev stack —
+  `curl -sI` a catalog record and verify the full Link set, walk a paginated
+  container purely via `rel="next"`. Version bump + CHANGELOG; mark ADR-0022
+  Accepted.
+
+References: ADR-0022 (Consequences); `docs/conformance/ldp-conformance.md`;
+Phase 19.2 (gap-report loop).
+
+**Out of scope (Phase 22):** Signposting Level 2 `linkset` (still deferred per
+ADR-0017/0022 — revisit if `MAX_LINKS` is hit in practice); HAL/Hydra JSON
+envelopes (rejected in ADR-0022); removing `X-FDP-Page-*` (v0.12.0, after one
+deprecation release); FDP-O vocabulary standardization of the extension rels
+(upstream WG work, tracked in the ADR).
