@@ -86,6 +86,37 @@ LDP delegates body validation to `ldp:constrainedBy`. The FDP enforces it: a
 the resource's own type shape; a violation → **422** with the SHACL report. This
 is stricter than LDP requires and is intentional (ADR-0008 "SHACL-on-write").
 
+## In-band affordance advertisement (FDP extension beyond LDP)
+
+Beyond the LDP interaction-model and `constrainedBy` links, a record's
+`GET`/`HEAD` response advertises its management affordances and (for the root)
+the API description in the RFC 8288 `Link` header, so a generic client reaches
+them by link-following rather than URL-template convention or OpenAPI
+([ADR-0022](../adr/0022-in-band-affordance-advertisement.md)). These use FAIR
+Signposting Level-1 relations plus FDP-O extension relation IRIs under
+`https://w3id.org/fdp/o#` (provisional, pending FDP-O WG harmonization — being
+opaque extension rels, a later IRI substitution is compatible):
+
+| Relation | Target | Emitted on |
+|---|---|---|
+| `cite-as`, `describedby`, `type`, `license`, `author`, `item`, `collection` | FAIR Signposting Level 1 (ADR-0017) | every record `GET`/`HEAD` |
+| `https://w3id.org/fdp/o#hasMetaMetadata` | `<record>/meta` | every record |
+| `https://w3id.org/fdp/o#hasSpec` | `<record>/spec` (instance) + `<base>/<urlPrefix>/spec` (type) | records of a declared type |
+| `https://w3id.org/fdp/o#hasExpandedView` | `<record>/expanded` | records of a declared type |
+| `https://w3id.org/fdp/o#hasStateTransition` | `<record>/state` | records of a declared type |
+| `https://w3id.org/fdp/o#hasMemberPage` | `<record>/page/{childPrefix}` (per child type) | container records |
+| `service-desc`, `service-doc`, `https://w3id.org/fdp/o#hasResourceDefinitions` | `/fdp-api/openapi.json`, `/fdp-api/docs`, `/fdp-api/resource-definitions` | the root FDP record only |
+
+Affordance/API-description links are advertised **unconditionally** — the link
+names the affordance; the PDP still authorizes each request (a `/state` link on a
+record the caller cannot transition is normal, the endpoint answers 401/403).
+They are *fixed* relations for the `MAX_LINKS` cap (only surplus `item` links are
+trimmed). The `<record>/meta` representation additionally carries read-time
+`fdp-o:allowedStateTransition` view triples (never stored, never dumped); the
+`/page` responses carry the RFC 8288 pagination links above. Affordance links are
+served only for records — a `/meta`, `/audit` or `/data` sibling GET does not
+re-advertise them.
+
 ## Deliberate deviations
 
 These are divergences the project has chosen, each sanctioned by an ADR. They are
@@ -94,7 +125,7 @@ These are divergences the project has chosen, each sanctioned by an ADR. They ar
 | Deviation | LDP feature foregone | Rationale | ADR |
 |---|---|---|---|
 | **SPARQL-Update PATCH only** | LD-PATCH (`application/ldpatch`, §4.2.7 / LD-PATCH note) | SPARQL Update reuses the SPARQL endpoint's parser, classifier, and authorization pipeline, and is more widely supported by RDF client libraries. LD-PATCH may be added in v1.x as an additional accepted content type without architectural change. | [ADR-0008](../adr/0008-full-ldp-with-patch.md) |
-| **Custom `X-FDP-Page-*` paging** | LDP Paging (§7) — `Prefer`-driven first-page links + `Link: rel="next"` page resources | The client's discovery pages need a simple offset/limit contract; LDP Paging's page-resource model is heavier than the FDP's needs. Documented and stable as `X-FDP-Page-*` headers on the `/page` extension. | [ADR-0008](../adr/0008-full-ldp-with-patch.md), architecture §10 |
+| **Offset/limit paging with RFC 8288 navigation links, not LDP Paging** | LDP Paging (§7) — the `Prefer`-driven page-resource protocol | The client's discovery pages need a simple offset/limit contract; LDP Paging's page-resource model is heavier than the FDP needs, is a W3C Note (not a REC), and has negligible client support. The `/page` extension now emits standard RFC 8288 `Link: rel="first"/"prev"/"next"/"last"` navigation (ADR-0022 §1), so a generic client can walk pages without out-of-band knowledge — we speak Web Linking for pagination even though we do not implement the LDP Paging protocol. The legacy `X-FDP-Page-Total/Offset/Limit` headers remain **deprecated** for one minor release (removal targeted **v0.12.0**); prefer the `Link` relations. | [ADR-0008](../adr/0008-full-ldp-with-patch.md), [ADR-0022](../adr/0022-in-band-affordance-advertisement.md), architecture §10 |
 | **No LDP Non-RDF Sources** | LDP-NR (§4.2 non-RDF representations, `Link: rel="describedby"`) | Binary payloads are served by the data provider via `dcat:downloadURL`; metadata records are pure RDF. There is no LDP-NR resource class in the FDP. | architecture §5.6 |
 | **Property-level write scope** | (LDP imposes none; noted for completeness) | `odrl:modify` on a record permits `PATCH` of any property in it; sub-record access control is a v2 concern. | [ADR-0008](../adr/0008-full-ldp-with-patch.md) §"Property-level access control" |
 

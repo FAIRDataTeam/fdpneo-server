@@ -29,6 +29,7 @@ from fdp.metadata.states import (
     DEFAULT_STATE,
     SEED_STATE,
     MetadataState,
+    allowed_transitions,
     is_visible_state,
     transition_requires_admin,
 )
@@ -141,6 +142,16 @@ def test_transition_table() -> None:
     # not in the machine
     assert transition_requires_admin(st.DRAFT, st.ARCHIVED) is None
     assert transition_requires_admin(st.ARCHIVED, st.PUBLISHED) is None
+
+
+@pytest.mark.unit
+def test_allowed_transitions_derives_successors_from_the_machine() -> None:
+    st = MetadataState
+    # Successors match the transition table exactly (admin-only ARCHIVED→DRAFT
+    # is still reachable — the grant is a per-request concern, ADR-0022 §3).
+    assert allowed_transitions(st.DRAFT) == (st.PUBLISHED,)
+    assert allowed_transitions(st.PUBLISHED) == (st.DRAFT, st.ARCHIVED)
+    assert allowed_transitions(st.ARCHIVED) == (st.DRAFT,)
 
 
 # --- meta builder state ----------------------------------------------------

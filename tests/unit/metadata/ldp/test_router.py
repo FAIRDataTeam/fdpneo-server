@@ -18,11 +18,26 @@ from fdp.metadata.graphs import meta_graph_uri
 from fdp.metadata.ldp import ContainerRegistry, build_ldp_router
 from fdp.metadata.repository import MetadataRepository
 from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
+from fdp.metadata.signposting import (
+    REL_HAS_EXPANDED_VIEW,
+    REL_HAS_MEMBER_PAGE,
+    REL_HAS_META_METADATA,
+    REL_HAS_RESOURCE_DEFINITIONS,
+    REL_HAS_SPEC,
+    REL_HAS_STATE_TRANSITION,
+    Link,
+)
 from fdp.policy.model import Action, Decision, Outcome
 from fdp.shared.context import RequestContext
 from fdp.shared.errors import register_exception_handlers
 from fdp.shared.events import EventBus
-from fdp.shared.namespaces import DCT, LDP, OWL
+from fdp.shared.namespaces import (
+    DCT,
+    FDP_ALLOWED_STATE_TRANSITION,
+    FDP_METADATA_STATE,
+    LDP,
+    OWL,
+)
 from fdp.shared.negotiation import (
     JSON_LD,
     N_TRIPLES,
@@ -148,12 +163,16 @@ class FixedContainerRegistry:
         resource_shapes: dict[str, str] | None = None,
         relations: dict[tuple[str, str], str] | None = None,
         member_relations: dict[str, list[str]] | None = None,
+        url_prefixes: dict[str, str] | None = None,
+        child_prefixes: dict[str, list[str]] | None = None,
     ) -> None:
         self._containers = set(container_iris)
         self._members = dict(member_shapes or {})
         self._resources = dict(resource_shapes or {})
         self._relations = dict(relations or {})
         self._member_relations = dict(member_relations or {})
+        self._url_prefixes = dict(url_prefixes or {})
+        self._child_prefixes = dict(child_prefixes or {})
 
     def is_container(self, resource_iri: str) -> bool:
         return resource_iri in self._containers
@@ -169,6 +188,12 @@ class FixedContainerRegistry:
 
     def member_relations(self, resource_iri: str) -> list[str]:
         return self._member_relations.get(resource_iri, [])
+
+    def url_prefix_for(self, resource_iri: str) -> str | None:
+        return self._url_prefixes.get(resource_iri)
+
+    def child_prefixes(self, resource_iri: str) -> list[str]:
+        return self._child_prefixes.get(resource_iri, [])
 
 
 # --- Fixtures ---------------------------------------------------------------
@@ -204,6 +229,7 @@ def _build_app(
     validator: ShaclValidator | None = None,
     triplestore: FakeAdapter | None = None,
     event_bus: EventBus | None = None,
+    root_service_links: list[Link] | None = None,
 ) -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
@@ -215,6 +241,7 @@ def _build_app(
             containers=containers,
             triplestore=triplestore,  # type: ignore[arg-type]
             event_bus=event_bus,
+            root_service_links=root_service_links,
         )
     )
     app.dependency_overrides[current_context] = lambda: ctx or _authenticated_ctx()
@@ -391,6 +418,147 @@ async def test_get_container_carries_item_links() -> None:
         resp = client.get(CONTAINER_PATH, headers={"Accept": "text/turtle"})
     assert resp.status_code == 200
     assert f'<{child}>; rel="item"' in resp.headers["link"]
+
+
+@pytest.mark.unit
+async def test_get_record_advertises_affordance_links() -> None:
+    """A record of a declared type advertises its management views (ADR-0022 §2)."""
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    containers = FixedContainerRegistry(container_iris=set(), url_prefixes={RECORD_IRI: "catalogs"})
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
+    with TestClient(app) as client:
+        link = client.get(RECORD_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+    assert f'<{RECORD_IRI}/meta>; rel="{REL_HAS_META_METADATA}"' in link
+    assert f'<{RECORD_IRI}/spec>; rel="{REL_HAS_SPEC}"' in link
+    assert f'<{RECORD_IRI}/expanded>; rel="{REL_HAS_EXPANDED_VIEW}"' in link
+    assert f'<{RECORD_IRI}/state>; rel="{REL_HAS_STATE_TRANSITION}"' in link
+    # No children declared → no member-page affordance.
+    assert REL_HAS_MEMBER_PAGE not in link
+
+
+@pytest.mark.unit
+async def test_get_container_advertises_member_page_per_child() -> None:
+    repo, _ = _make_repo()
+    graph = Graph()
+    graph.add((URIRef(CONTAINER_IRI), DCT.title, Literal("container")))
+    await repo.put_graph(CONTAINER_IRI, graph, subject=ALICE)
+    containers = FixedContainerRegistry(
+        container_iris={CONTAINER_IRI},
+        url_prefixes={CONTAINER_IRI: "catalogs"},
+        child_prefixes={CONTAINER_IRI: ["dataset", "service"]},
+    )
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
+    with TestClient(app) as client:
+        link = client.get(CONTAINER_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+    assert f'<{CONTAINER_IRI}/page/dataset>; rel="{REL_HAS_MEMBER_PAGE}"' in link
+    assert f'<{CONTAINER_IRI}/page/service>; rel="{REL_HAS_MEMBER_PAGE}"' in link
+
+
+@pytest.mark.unit
+async def test_affordance_links_survive_item_trimming() -> None:
+    """Affordances are fixed relations: they are kept even when a huge container's
+    ``item`` links are trimmed to fit MAX_LINKS (ADR-0022 §2)."""
+    repo, _ = _make_repo()
+    graph = Graph()
+    graph.add((URIRef(CONTAINER_IRI), DCT.title, Literal("big")))
+    for i in range(100):
+        graph.add((URIRef(CONTAINER_IRI), LDP.contains, URIRef(f"{CONTAINER_IRI}/d{i:03d}")))
+    await repo.put_graph(CONTAINER_IRI, graph, subject=ALICE)
+    containers = FixedContainerRegistry(
+        container_iris={CONTAINER_IRI},
+        url_prefixes={CONTAINER_IRI: "catalogs"},
+        child_prefixes={CONTAINER_IRI: ["dataset"]},
+    )
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
+    with TestClient(app) as client:
+        link = client.get(CONTAINER_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+    # Every affordance relation is present despite item trimming.
+    for rel in (
+        REL_HAS_META_METADATA,
+        REL_HAS_SPEC,
+        REL_HAS_EXPANDED_VIEW,
+        REL_HAS_STATE_TRANSITION,
+        REL_HAS_MEMBER_PAGE,
+    ):
+        assert f'rel="{rel}"' in link
+    # The combined Link set is still bounded (items were trimmed, not affordances).
+    assert link.count('rel="item"') < 100
+
+
+@pytest.mark.unit
+async def test_no_affordance_links_on_missing_or_denied_get() -> None:
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    containers = FixedContainerRegistry(container_iris=set(), url_prefixes={RECORD_IRI: "catalogs"})
+    # 404: a missing record carries no affordance advertisement.
+    missing = _build_app(repo=repo, pdp=FakePDP(), containers=containers)
+    with TestClient(missing) as client:
+        r404 = client.get("/ldp/catalogs/nope")
+    assert r404.status_code == 404
+    assert REL_HAS_META_METADATA not in r404.headers.get("link", "")
+    # 401: anonymous denial carries no affordance advertisement either.
+    denied = _build_app(
+        repo=repo, pdp=FakePDP(default=Outcome.DENY), ctx=_anonymous_ctx(), containers=containers
+    )
+    with TestClient(denied) as client:
+        r401 = client.get(RECORD_PATH)
+    assert r401.status_code == 401
+    assert REL_HAS_META_METADATA not in r401.headers.get("link", "")
+
+
+@pytest.mark.unit
+async def test_root_record_advertises_api_description_links() -> None:
+    """The root FDP record (empty url_prefix) advertises the API description
+    (ADR-0022 §4); non-root records do not."""
+    root_links = [
+        Link("/fdp-api/openapi.json", "service-desc"),
+        Link("/fdp-api/resource-definitions", REL_HAS_RESOURCE_DEFINITIONS),
+        Link("/fdp-api/docs", "service-doc"),
+    ]
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    # Registry reports this record as the root (url_prefix == "").
+    root_reg = FixedContainerRegistry(container_iris=set(), url_prefixes={RECORD_IRI: ""})
+    app = _build_app(repo=repo, pdp=FakePDP(), containers=root_reg, root_service_links=root_links)
+    with TestClient(app) as client:
+        link = client.get(RECORD_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+    assert '</fdp-api/openapi.json>; rel="service-desc"' in link
+    assert '</fdp-api/docs>; rel="service-doc"' in link
+    assert f'</fdp-api/resource-definitions>; rel="{REL_HAS_RESOURCE_DEFINITIONS}"' in link
+
+    # A non-root record (url_prefix "catalogs") gets none of the API-description rels.
+    nonroot_reg = FixedContainerRegistry(
+        container_iris=set(), url_prefixes={RECORD_IRI: "catalogs"}
+    )
+    app2 = _build_app(
+        repo=repo, pdp=FakePDP(), containers=nonroot_reg, root_service_links=root_links
+    )
+    with TestClient(app2) as client:
+        link2 = client.get(RECORD_PATH, headers={"Accept": "text/turtle"}).headers["link"]
+    assert "service-desc" not in link2
+    assert REL_HAS_RESOURCE_DEFINITIONS not in link2
+
+
+@pytest.mark.unit
+async def test_meta_get_carries_allowed_state_transition_view_triples() -> None:
+    """GET <record>/meta advertises the record's next states (ADR-0022 §3), and
+    the stored meta graph is left untouched (so ``fdp dump`` excludes them)."""
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)  # meta writer stamps DRAFT
+    app = _build_app(repo=repo, pdp=FakePDP())
+    with TestClient(app) as client:
+        resp = client.get(f"{RECORD_PATH}/meta", headers={"Accept": "text/turtle"})
+    assert resp.status_code == 200
+    served = Graph()
+    served.parse(data=resp.text, format="turtle")
+    # DRAFT's only successor is PUBLISHED.
+    successors = {str(o) for o in served.objects(URIRef(RECORD_IRI), FDP_ALLOWED_STATE_TRANSITION)}
+    assert successors == {"PUBLISHED"}
+    assert (URIRef(RECORD_IRI), FDP_METADATA_STATE, Literal("DRAFT")) in served
+    # The persisted meta graph never gains the view triples (dump reads storage).
+    stored = await repo.get_meta(RECORD_IRI)
+    assert (URIRef(RECORD_IRI), FDP_ALLOWED_STATE_TRANSITION, None) not in stored
 
 
 @pytest.mark.unit

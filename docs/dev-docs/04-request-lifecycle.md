@@ -101,6 +101,15 @@ On a successful `GET`/`HEAD` of an existing record, the handlers append **FAIR S
 
 The total is capped (`signposting.MAX_LINKS`) so a large container cannot bloat the header; surplus `item` links are trimmed first (Level-2 `linkset` is deferred). `HEAD` carries the same `Link` header as `GET`.
 
+### 4.3.3a In-band affordances on read (v0.11.0, ADR-0022)
+
+Alongside the signposting relations, `GET`/`HEAD` appends the record's **management affordances** so a client reaches them by link-following, not URL-template convention or OpenAPI ([metadata/signposting.py](../../src/fdp/metadata/signposting.py) `affordance_links`, wired through the router's `_navigation_links`). All use extension relation IRIs under `https://w3id.org/fdp/o#` (provisional; opaque to conforming clients, so a later IRI swap is compatible):
+
+- `hasMetaMetadata` → `<record>/meta`; `hasSpec` → `<record>/spec` (instance) and `<base>/<urlPrefix>/spec` (type-level, what create forms need); `hasExpandedView` → `<record>/expanded`; `hasStateTransition` → `<record>/state`; `hasMemberPage` → `<record>/page/{childPrefix}` per child type (containers).
+- The **root** FDP record additionally advertises the API description: `service-desc` (`/fdp-api/openapi.json`), `service-doc` (`/fdp-api/docs`, only when docs UIs are enabled), and `hasResourceDefinitions` (`/fdp-api/resource-definitions`). Root is detected via the RD cache (`url_prefix == ""`), and the links are relative-path references so they resolve on whichever serving host answered.
+
+Affordance links are advertised **unconditionally** — the link names the affordance; the PDP still authorizes each request. They are *fixed* relations for the `MAX_LINKS` cap (the signposting `item` budget is shrunk by their count via the `reserved` param, so affordances always survive and only surplus `item` links are trimmed). A `/meta`, `/audit` or `/data` **sibling** GET does *not* re-advertise them (only the record does). The served `<record>/meta` representation also gains read-time `fdp-o:allowedStateTransition` **view triples** (the record's next states, from the lifecycle machine) — never stored, dumped, or SHACL-validated. Paginated `/page` responses carry RFC 8288 `rel="first"/"prev"/"next"/"last"` navigation (the legacy `X-FDP-Page-*` headers are deprecated, removal v0.12.0).
+
 ### 4.3.4 Self-describing conformance binding (v0.5.0, ADR-0019)
 
 A record write (`PUT`/`POST`/`PATCH`) makes the stored record **self-describing at rest**. After SHACL validation and *before* the record graph is persisted, the LDP router ([ldp/router.py](../../src/fdp/metadata/ldp/router.py) `_stamp_conformance`) does two things:

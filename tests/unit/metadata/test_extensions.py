@@ -18,9 +18,11 @@ or Postgres.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import FastAPI
@@ -454,3 +456,82 @@ def test_root_page_normalizes_trailing_slash_to_find_children() -> None:
     g.parse(data=response.text, format="turtle")
     children = list(g.objects(URIRef(BASE_URL), URIRef(DCAT_CATALOG)))
     assert len(children) == 4
+
+
+# --- /page RFC 8288 navigation links (ADR-0022 §1) -------------------------
+
+
+def _link_rels(header: str) -> dict[str, str]:
+    """Parse an RFC 8288 ``Link`` header into ``{rel: target}`` (targets are
+    URL-encoded query strings, so commas never appear inside a value)."""
+    rels: dict[str, str] = {}
+    for part in header.split(","):
+        target = re.search(r"<([^>]*)>", part)
+        rel = re.search(r'rel="([^"]*)"', part)
+        if target and rel:
+            rels[rel.group(1)] = target.group(1)
+    return rels
+
+
+def _offset_of(url: str) -> str:
+    return parse_qs(urlsplit(url).query)["offset"][0]
+
+
+@pytest.mark.unit
+def test_page_first_page_has_no_prev_link() -> None:
+    repo = _repo_with_catalogs(10)
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
+    response = TestClient(app).get("/page/catalog?limit=3&offset=0")
+    rels = _link_rels(response.headers["Link"])
+    assert set(rels) == {"first", "next", "last"}
+    assert _offset_of(rels["first"]) == "0"
+    assert _offset_of(rels["next"]) == "3"
+    assert _offset_of(rels["last"]) == "9"  # ((10-1)//3)*3
+
+
+@pytest.mark.unit
+def test_page_middle_page_has_all_four_links() -> None:
+    repo = _repo_with_catalogs(10)
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
+    response = TestClient(app).get("/page/catalog?limit=3&offset=3")
+    rels = _link_rels(response.headers["Link"])
+    assert set(rels) == {"first", "prev", "next", "last"}
+    assert _offset_of(rels["first"]) == "0"
+    assert _offset_of(rels["prev"]) == "0"
+    assert _offset_of(rels["next"]) == "6"
+    assert _offset_of(rels["last"]) == "9"
+
+
+@pytest.mark.unit
+def test_page_last_page_has_no_next_link() -> None:
+    repo = _repo_with_catalogs(10)
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
+    response = TestClient(app).get("/page/catalog?limit=3&offset=9")
+    rels = _link_rels(response.headers["Link"])
+    assert set(rels) == {"first", "prev", "last"}
+    assert _offset_of(rels["prev"]) == "6"
+    assert _offset_of(rels["last"]) == "9"
+
+
+@pytest.mark.unit
+def test_page_single_page_has_only_first_and_last() -> None:
+    repo = _repo_with_catalogs(3)  # default limit 50 → everything on one page
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
+    response = TestClient(app).get("/page/catalog")
+    rels = _link_rels(response.headers["Link"])
+    assert set(rels) == {"first", "last"}
+    assert _offset_of(rels["first"]) == "0"
+    assert _offset_of(rels["last"]) == "0"
+
+
+@pytest.mark.unit
+def test_page_links_preserve_other_query_params() -> None:
+    repo = _repo_with_catalogs(10)
+    app = _build_app(repo=repo, pdp=_FakePDP(), cache=_two_level_cache())
+    response = TestClient(app).get("/page/catalog?limit=3&offset=3&foo=bar")
+    rels = _link_rels(response.headers["Link"])
+    for target in rels.values():
+        params = parse_qs(urlsplit(target).query)
+        assert params["limit"] == ["3"]  # caller's limit carried through
+        assert params["foo"] == ["bar"]  # arbitrary params preserved
+        assert "offset" in params  # only offset is rewritten per link

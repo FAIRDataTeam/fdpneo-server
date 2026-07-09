@@ -32,6 +32,7 @@ from fdp.identity.deps import require_auth
 from fdp.metadata.events import RecordStateChanged
 from fdp.metadata.states import (
     MetadataState,
+    allowed_transitions,
     transition_requires_admin,
 )
 from fdp.policy.model import Action, Outcome
@@ -347,5 +348,6 @@ __all__ = [
     "StateTransitionRequest",
     "StateTransitionResponse",
     "TransitionResult",
+    "allowed_transitions",
     "build_state_router",
 ]
