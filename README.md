@@ -133,7 +133,7 @@ This compose starts GraphDB, PostgreSQL, and a Keycloak instance pre-configured 
 
 ## License
 
-To be determined. The current FDP reference implementation is Apache 2.0; the v2 implementation is expected to follow the same.
+[MIT](./LICENSE), matching the FDP reference implementation. Contributions require a DCO sign-off — see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## See also
 
