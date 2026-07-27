@@ -1,5 +1,5 @@
 [project]
-name = "fdp"
+name = "fdpneo"
 version = "0.11.1"
 description = "FAIR Data Point v2 server — a FAIR-aligned metadata repository implementing the FDP specifications."
 readme = "README.md"

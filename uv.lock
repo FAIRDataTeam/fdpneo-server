@@ -725,7 +725,7 @@ wheels = [
 ]
 
 [[package]]
-name = "fdp"
+name = "fdpneo"
 version = "0.11.1"
 source = { editable = "." }
 dependencies = [
