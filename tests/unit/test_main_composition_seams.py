@@ -11,15 +11,20 @@ Two seams, both keyword-only and optional:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
+from pydantic import HttpUrl, ValidationError
 
 from fdpneo_server.config import TripleStoreSettings, get_settings
 from fdpneo_server.main import create_app
 from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
 pytestmark = pytest.mark.unit
+
+_TS_ENV_VARS = ("FDP_TRIPLESTORE_QUERY_ENDPOINT", "FDP_TRIPLESTORE_UPDATE_ENDPOINT")
 
 
 @pytest.fixture(autouse=True)
@@ -31,16 +36,27 @@ class _MediatingAdapter(TripleStoreAdapter):
     """Stand-in for a downstream wrapper (telemetry, driver quirks, budgets)."""
 
 
+def _embedder_adapter() -> _MediatingAdapter:
+    """An adapter configured by the embedder itself, not by FDP env vars."""
+    return _MediatingAdapter.from_settings(
+        TripleStoreSettings(
+            query_endpoint=HttpUrl("http://embedder.local/query"),
+            update_endpoint=HttpUrl("http://embedder.local/update"),
+        )
+    )
+
+
 def test_default_adapter_is_used_without_a_factory() -> None:
     app = create_app()
     assert type(app.state.triplestore) is TripleStoreAdapter
 
 
 def test_triple_store_factory_builds_the_shared_adapter() -> None:
-    seen: list[TripleStoreSettings] = []
+    seen: list[TripleStoreSettings | None] = []
 
-    def factory(ts_settings: TripleStoreSettings) -> TripleStoreAdapter:
+    def factory(ts_settings: TripleStoreSettings | None) -> TripleStoreAdapter:
         seen.append(ts_settings)
+        assert ts_settings is not None  # the test env configures a store
         return _MediatingAdapter.from_settings(ts_settings)
 
     app = create_app(triple_store_factory=factory)
@@ -50,6 +66,58 @@ def test_triple_store_factory_builds_the_shared_adapter() -> None:
     # …and its product is the shared adapter every service composes over.
     assert isinstance(app.state.triplestore, _MediatingAdapter)
     assert app.state.metadata_repository._adapter is app.state.triplestore
+
+
+def test_factory_app_builds_without_any_triplestore_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The downstream acceptance criterion (ADR-0023 amendment).
+
+    With every ``FDP_TRIPLESTORE_*`` variable *removed* — not overridden —
+    an embedder-supplied factory is enough: the app builds, the factory
+    receives ``None``, and its adapter lands on ``app.state.triplestore``.
+    """
+    monkeypatch.chdir(tmp_path)  # out of reach of a developer's local .env
+    for var in _TS_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    get_settings.cache_clear()
+
+    adapter = _embedder_adapter()
+    seen: list[TripleStoreSettings | None] = []
+
+    def factory(ts_settings: TripleStoreSettings | None) -> TripleStoreAdapter:
+        seen.append(ts_settings)
+        return adapter
+
+    app = create_app(triple_store_factory=factory)
+
+    assert seen == [None]
+    assert app.state.triplestore is adapter
+
+
+def test_missing_triplestore_without_factory_raises_actionable_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No store configured and no factory: a clear error naming both fixes."""
+    monkeypatch.chdir(tmp_path)  # out of reach of a developer's local .env
+    for var in _TS_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError, match="FDP_TRIPLESTORE_QUERY_ENDPOINT"):
+        create_app()
+
+
+def test_half_configured_triplestore_still_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Misconfigured is not unconfigured: one endpoint set must not become None."""
+    monkeypatch.chdir(tmp_path)  # out of reach of a developer's local .env
+    monkeypatch.delenv("FDP_TRIPLESTORE_UPDATE_ENDPOINT", raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(ValidationError, match="update_endpoint"):
+        get_settings()
 
 
 def test_extension_router_wins_over_the_ldp_catch_all() -> None:

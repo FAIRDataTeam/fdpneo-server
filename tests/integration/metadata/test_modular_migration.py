@@ -208,7 +208,7 @@ async def _run() -> None:
     catalog_iri = f"{BASE_URL}/catalog/c1"
     modular = load_profile(DEFAULT_PROFILE)
 
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         repository = MetadataRepository(adapter)
 
         # Pre-state: root typed fdp:Repository; author a Catalog member.

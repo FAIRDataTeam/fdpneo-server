@@ -246,7 +246,7 @@ async def _run_modular_migration(profile: DeploymentProfile) -> ModularMigration
     from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         repository = MetadataRepository(adapter)
         validator = ShaclValidator(MetadataShapeProvider(repository))
         return await migrate_to_modular_profile(
@@ -295,7 +295,7 @@ async def _run_conformance_backfill() -> ConformanceBackfillReport:
     from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         repository = MetadataRepository(adapter)
         cache = await build_cache_from_repository(
             adapter, base_url=settings.resolved_identifier_base
@@ -395,7 +395,7 @@ async def _run_search_reindex() -> int:
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
     try:
-        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
             return await reindex_all(
                 adapter,
                 session_factory,
@@ -508,7 +508,7 @@ async def _run_schema_migration(profile: DeploymentProfile) -> MigrationReport:
     from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         repository = MetadataRepository(adapter)
         validator = ShaclValidator(MetadataShapeProvider(repository))
         return await migrate_schema_namespace(
@@ -560,7 +560,7 @@ async def _run_membership_backfill() -> MembershipBackfillReport:
     from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         repository = MetadataRepository(adapter)
         cache = await build_cache_from_repository(
             adapter, base_url=settings.resolved_identifier_base
@@ -584,7 +584,7 @@ async def _run_schema_sync() -> SyncReport:
 
     settings = get_settings()
     async with (
-        TripleStoreAdapter.from_settings(settings.triplestore) as adapter,
+        TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter,
         httpx.AsyncClient() as http_client,
     ):
         repository = MetadataRepository(adapter)
@@ -654,7 +654,7 @@ async def _run_apply(profile: DeploymentProfile, *, force: bool) -> ApplyReport:
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
     try:
-        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
             repository = MetadataRepository(adapter)
             async with session_factory() as session:
                 state = ProfileStateRepository(session)
@@ -874,7 +874,7 @@ async def _run_pid_rebase(from_base: str, to_base: str, dry_run: bool) -> Rebase
     from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         return await rebase_identifiers(
             adapter=adapter, old_base=from_base, new_base=to_base, dry_run=dry_run
         )
@@ -981,7 +981,7 @@ async def _run_restore(
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
     try:
-        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
             outcome = await orchestrate_restore(
                 adapter,
                 session_factory,
@@ -1123,7 +1123,7 @@ async def _run_import_reference(from_url: str, *, dry_run: bool) -> tuple[Import
     indexed = 0
     try:
         async with (
-            TripleStoreAdapter.from_settings(settings.triplestore) as adapter,
+            TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter,
             httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as http_client,
         ):
             repository = MetadataRepository(adapter)
@@ -1166,7 +1166,7 @@ async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
     try:
-        async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+        async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
             return await dump_store(
                 adapter,
                 out_dir,
