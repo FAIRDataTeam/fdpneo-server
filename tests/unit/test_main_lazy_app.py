@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -69,8 +70,9 @@ def test_app_attribute_resolves_lazily_and_is_cached() -> None:
     import fdpneo_server.main as main
 
     # Drop a cached instance so this test exercises the __getattr__ path
-    # regardless of what earlier tests touched.
-    vars(main).pop("app", None)
+    # regardless of what earlier tests touched. The cast keeps newer
+    # pyright happy — module ``vars()`` is a plain writable dict at runtime.
+    cast("dict[str, Any]", vars(main)).pop("app", None)
 
     first = main.app
     assert isinstance(first, FastAPI)
