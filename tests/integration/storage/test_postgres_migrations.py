@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Iterator
-from pathlib import Path
+from importlib.resources import files
 
 import pytest
 import sqlalchemy as sa
@@ -18,7 +18,6 @@ from alembic.config import Config
 from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 EXPECTED_TABLES = {
     "metrics_hourly",
     "metrics_daily",
@@ -70,8 +69,7 @@ def alembic_config(postgres_container: PostgresContainer) -> Iterator[Config]:
     os.environ["POSTGRES_DSN"] = async_dsn
     get_settings.cache_clear()
 
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
 
     try:
         yield config

@@ -5,6 +5,19 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [Unreleased]
+
+### Fixed
+
+- **`fdp db migrate` now works from an installed wheel.** `migrations/` and
+  `alembic.ini` moved into the package (`src/fdp/`) and ship as package data;
+  the CLI and tests resolve them with `importlib.resources` instead of
+  `Path(__file__).parents[2]`, and `alembic.ini` points at the packaged scripts
+  via `script_location = fdp:migrations`. Downstream deployers no longer need to
+  vendor the migration tree next to the venv, and the Dockerfile no longer copies
+  `alembic.ini`/`migrations/` separately. Dev note: create revisions with
+  `uv run alembic -c src/fdp/alembic.ini revision --autogenerate -m "..."`.
+
 ## [0.11.0] — 2026-07-09
 
 In-band affordance advertisement / HATEOAS completion

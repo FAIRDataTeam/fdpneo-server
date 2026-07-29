@@ -124,7 +124,7 @@ For working on the server itself, run only the backing services in Docker and ru
 # clone, then:
 docker compose -f deploy/compose.yaml up -d       # GraphDB + PostgreSQL + Keycloak
 uv sync
-uv run alembic upgrade head
+uv run fdp db migrate
 uv run fdp profile apply ./profiles/default
 uv run fastapi dev src/fdp/main.py
 ```

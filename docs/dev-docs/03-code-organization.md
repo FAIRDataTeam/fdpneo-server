@@ -120,7 +120,7 @@ These are enforced in review and by the CI quality gate. Full list in [CLAUDE.md
 ```bash
 uv sync                                  # install/sync deps (uv, not pip)
 uv run fastapi dev src/fdp/main.py       # dev server (auto-reload)
-uv run alembic upgrade head              # run migrations
+uv run fdp db migrate                    # run migrations
 uv run fdp profile apply ./profiles/default
 uv run ruff check . && uv run ruff format .
 uv run pyright

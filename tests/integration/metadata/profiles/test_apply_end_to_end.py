@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator, Iterator
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,6 @@ from fdp.metadata.repository import MetadataRepository
 from fdp.shared.errors import Conflict
 from fdp.storage.triplestore.adapter import TripleStoreAdapter
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 OXIGRAPH_PORT = 7878
 
 PROFILE_MANIFEST = """\
@@ -112,8 +112,7 @@ def migrated_postgres(postgres_container: PostgresContainer) -> Iterator[Postgre
     original = os.environ.get("POSTGRES_DSN")
     os.environ["POSTGRES_DSN"] = _async_dsn(postgres_container)
     get_settings.cache_clear()
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     try:
         command.upgrade(config, "head")
         yield postgres_container

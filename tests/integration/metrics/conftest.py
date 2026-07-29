@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
+from importlib.resources import files
 
 import pytest
 from alembic import command
@@ -18,8 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from testcontainers.postgres import PostgresContainer
 
 from fdp.metrics.repository import MetricsRepository
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _async_dsn(container: PostgresContainer) -> str:
@@ -45,8 +43,7 @@ def migrated(postgres_container: PostgresContainer) -> Iterator[PostgresContaine
     os.environ["POSTGRES_DSN"] = async_dsn
     get_settings.cache_clear()
 
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     try:
         command.upgrade(config, "head")
         yield postgres_container

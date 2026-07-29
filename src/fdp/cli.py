@@ -302,12 +302,12 @@ async def _run_conformance_backfill() -> ConformanceBackfillReport:
 @db_app.command("migrate")
 def db_migrate() -> None:
     """Run database migrations to the latest revision."""
+    from importlib.resources import files
+
     from alembic import command
     from alembic.config import Config
 
-    repo_root = Path(__file__).resolve().parents[2]
-    config = Config(str(repo_root / "alembic.ini"))
-    config.set_main_option("script_location", str(repo_root / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     command.upgrade(config, "head")
     console.print("[green]migrations applied to head[/]")
 

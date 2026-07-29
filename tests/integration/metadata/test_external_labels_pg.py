@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Iterator
-from pathlib import Path
+from importlib.resources import files
 from typing import Any
 
 import pytest
@@ -27,7 +27,6 @@ from fdp.metadata.labels import LabelResolver
 
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 DOI = "https://doi.example/10.1/x"
 
@@ -69,8 +68,7 @@ def pg_dsn() -> Iterator[str]:
         saved = os.environ.get("POSTGRES_DSN")
         os.environ["POSTGRES_DSN"] = dsn
         get_settings.cache_clear()
-        config = Config(str(REPO_ROOT / "alembic.ini"))
-        config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+        config = Config(str(files("fdp") / "alembic.ini"))
         command.upgrade(config, "head")
         try:
             yield dsn

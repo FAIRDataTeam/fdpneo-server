@@ -16,7 +16,7 @@ docker compose -f deploy/compose.yaml up -d
 uv sync
 
 # 3. Run migrations
-uv run alembic upgrade head
+uv run fdp db migrate
 
 # 4. Apply the default profile (or rely on first-boot auto-bootstrap)
 uv run fdp profile apply ./profiles/default

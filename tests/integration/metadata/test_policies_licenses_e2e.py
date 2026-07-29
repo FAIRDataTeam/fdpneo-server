@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,6 @@ from testcontainers.postgres import PostgresContainer
 from fdp.shared.context import RequestContext
 from tests.integration.conftest import GraphDBStore
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 BASE_URL = "http://testserver"
 
 pytestmark = pytest.mark.integration
@@ -213,8 +213,7 @@ def app_env(
     os.environ.update(env)
     get_settings.cache_clear()
 
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
