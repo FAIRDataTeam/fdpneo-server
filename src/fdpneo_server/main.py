@@ -12,21 +12,21 @@ dependencies (storage adapters, OIDC JWKS cache, event-bus subscribers).
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import structlog
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from rdflib import URIRef
 
 from fdpneo_server import __version__
 from fdpneo_server.access.router import build_sparql_router
-from fdpneo_server.config import get_settings
+from fdpneo_server.config import TripleStoreSettings, get_settings
 from fdpneo_server.data.router import build_data_router
 from fdpneo_server.identity import AuthenticationMiddleware, build_jwks_client
 from fdpneo_server.identity.api_keys import ApiKeyRepository, ApiKeyService, build_api_keys_router
@@ -120,6 +120,15 @@ from fdpneo_server.storage.triplestore.conformance import verify_named_graph_iso
 
 log = structlog.get_logger(__name__)
 
+TripleStoreFactory = Callable[[TripleStoreSettings], TripleStoreAdapter]
+"""Downstream seam (ADR-0023): builds the adapter every service will use.
+
+The default is :meth:`TripleStoreAdapter.from_settings`; a downstream that
+needs to mediate RDF I/O (driver quirks, telemetry, query budgets) passes
+its own callable to :func:`create_app` and returns a subclassed or wrapped
+adapter.
+"""
+
 
 def _docs_enabled(environment: str, expose_api_docs: bool) -> bool:
     """Whether to serve the interactive docs UIs (audit R-04).
@@ -130,7 +139,11 @@ def _docs_enabled(environment: str, expose_api_docs: bool) -> bool:
     return expose_api_docs or environment == "development"
 
 
-def _build_shared_state(app: FastAPI) -> None:
+def _build_shared_state(
+    app: FastAPI,
+    *,
+    triple_store_factory: TripleStoreFactory | None = None,
+) -> None:
     """Construct singletons and attach them to ``app.state``.
 
     Done in ``create_app`` rather than ``lifespan`` so routers that
@@ -173,8 +186,11 @@ def _build_shared_state(app: FastAPI) -> None:
 
     # Triple store adapter + metadata repository, shared across requests.
     # Each request that needs the adapter borrows the singleton; the
-    # underlying httpx client pools connections.
-    app.state.triplestore = TripleStoreAdapter.from_settings(settings.triplestore)
+    # underlying httpx client pools connections. A downstream may supply
+    # its own factory (ADR-0023) to mediate the adapter — every RDF read
+    # and write in the app goes through the instance built here.
+    build_adapter = triple_store_factory or TripleStoreAdapter.from_settings
+    app.state.triplestore = build_adapter(settings.triplestore)
     app.state.metadata_repository = MetadataRepository(app.state.triplestore)
     # Set True until the startup named-graph isolation self-test runs (audit R-03);
     # the lifespan flips it to the probe result. Until then reads behave normally.
@@ -436,11 +452,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await app.state.http_client.aclose()
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    triple_store_factory: TripleStoreFactory | None = None,
+    extension_routers: Sequence[APIRouter] | None = None,
+) -> FastAPI:
     """Construct the FastAPI app.
 
     Kept as a function (rather than a module-level instance) so tests can build
     isolated apps with different settings.
+
+    Both keyword parameters are downstream composition seams (ADR-0023) and
+    are public API:
+
+    * ``triple_store_factory`` — replaces the internal
+      ``TripleStoreAdapter.from_settings`` call, so a downstream can mediate
+      every RDF read/write (telemetry, driver quirks, query budgets).
+    * ``extension_routers`` — mounted after every reserved ``/fdp-api``
+      router and immediately before the LDP catch-all: their paths take
+      precedence over LDP resource resolution, but cannot shadow the FDP's
+      own fixed API. Paths they do not claim fall through to LDP unchanged.
     """
     settings = get_settings()
     configure_logging(
@@ -468,7 +499,7 @@ def create_app() -> FastAPI:
     )
 
     register_exception_handlers(app)
-    _build_shared_state(app)
+    _build_shared_state(app, triple_store_factory=triple_store_factory)
 
     # Middleware order: FastAPI's add_middleware registers outermost-first,
     # so the LAST add_middleware call runs INNERMOST. Putting the request
@@ -711,6 +742,11 @@ def create_app() -> FastAPI:
         build_users_router(directory=app.state.user_directory, event_bus=app.state.event_bus),
         prefix=RESERVED_API_PATH,
     )
+    # Downstream extension routers (ADR-0023): after every reserved router,
+    # before the LDP catch-all — so extensions win the paths they claim and
+    # everything else still resolves as an LDP resource.
+    for extension_router in extension_routers or ():
+        app.include_router(extension_router)
     # LDP last — its /{path:path} catch-all matches every method/URL not
     # already claimed above. The container registry is a lazy adapter
     # that reads app.state.resource_definitions on every call so the
