@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from fdp.config import IndexSettings
-from fdp.metadata.events import RecordCreated
-from fdp.metadata.index_ping import IndexPinger, ping_indexes
-from fdp.shared.events import EventBus
+from fdpneo_server.config import IndexSettings
+from fdpneo_server.metadata.events import RecordCreated
+from fdpneo_server.metadata.index_ping import IndexPinger, ping_indexes
+from fdpneo_server.shared.events import EventBus
 
 pytestmark = pytest.mark.unit
 

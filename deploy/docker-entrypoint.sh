@@ -12,4 +12,4 @@ echo "[entrypoint] applying database migrations (fdp db migrate)..."
 fdp db migrate
 
 echo "[entrypoint] starting uvicorn on 0.0.0.0:8000..."
-exec uvicorn fdp.main:app --host 0.0.0.0 --port 8000 --no-server-header
+exec uvicorn fdpneo_server.main:app --host 0.0.0.0 --port 8000 --no-server-header

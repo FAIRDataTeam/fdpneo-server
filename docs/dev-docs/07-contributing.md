@@ -19,10 +19,10 @@ uv sync
 uv run fdp db migrate
 
 # 4. Apply the default profile (or rely on first-boot auto-bootstrap)
-uv run fdp profile apply ./profiles/default
+uv run fdp profile apply   # defaults to the bundled profile
 
 # 5. Start the API in dev mode (auto-reload)
-uv run fastapi dev src/fdp/main.py
+uv run fastapi dev src/fdpneo_server/main.py
 ```
 
 Sanity checks once it's up (remember the `/fdp-api` prefix — [doc 4](04-request-lifecycle.md)):
@@ -65,7 +65,7 @@ Rules:
 
 - **Default to unit tests.** They're fast and carry most of the coverage. Logic that can be tested without I/O *should* be.
 - **Integration tests use testcontainers** to launch a real triple store and Postgres. Use them for genuine cross-module flows (a write that must land in the store, an access decision against real graphs). Don't put slow tests in the unit suite.
-- **The two highest-risk areas — the SPARQL rewriter and the auth cache — deserve adversarial tests.** If you touch [access/rewriter.py](../../src/fdp/access/rewriter.py) or [policy/cache.py](../../src/fdp/policy/cache.py), add tests that try to break isolation, not just the happy path. A bug here is a data-disclosure bug.
+- **The two highest-risk areas — the SPARQL rewriter and the auth cache — deserve adversarial tests.** If you touch [access/rewriter.py](../../src/fdpneo_server/access/rewriter.py) or [policy/cache.py](../../src/fdpneo_server/policy/cache.py), add tests that try to break isolation, not just the happy path. A bug here is a data-disclosure bug.
 - Run a slice while iterating: `uv run pytest tests/unit/access`, or `uv run pytest -k policy`.
 
 ## 7.4 How to add a feature without breaking a boundary

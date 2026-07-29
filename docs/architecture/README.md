@@ -571,7 +571,7 @@ The FDP CLI exposes four profile commands:
 | Command | Purpose |
 |---|---|
 | `fdp profile validate <path>` | Dry-run validation of a profile bundle |
-| `fdp profile apply <path>` | Bootstrap (refuses if already initialized) |
+| `fdp profile apply [path]` | Bootstrap (defaults to the bundled profile; refuses if already initialized) |
 | `fdp profile info` | Show the applied profile name and version |
 | `fdp profile export <path>` | Serialize current state to a portable profile |
 

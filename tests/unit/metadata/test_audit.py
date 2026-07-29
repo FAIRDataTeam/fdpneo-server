@@ -13,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from fdp.metadata.audit import AuditLog, AuditOperation, RecordAuditRow
-from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
-from fdp.shared.events import AdminActionAudited, EventBus
+from fdpneo_server.metadata.audit import AuditLog, AuditOperation, RecordAuditRow
+from fdpneo_server.metadata.events import RecordCreated, RecordDeleted, RecordModified
+from fdpneo_server.shared.events import AdminActionAudited, EventBus
 
 NOW = datetime(2026, 5, 28, 12, 34, 56, tzinfo=UTC)
 

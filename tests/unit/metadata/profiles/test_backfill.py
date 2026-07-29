@@ -10,11 +10,11 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.profiles.backfill import backfill_direct_container_membership
-from fdp.metadata.profiles.rd_records import ChildLinkRecord, ResourceDefinitionRecord
-from fdp.metadata.profiles.registry import resolve_cache
-from fdp.shared.graphs import meta_graph_uri, record_graph_uri
-from fdp.shared.namespaces import DCT, LDP
+from fdpneo_server.metadata.profiles.backfill import backfill_direct_container_membership
+from fdpneo_server.metadata.profiles.rd_records import ChildLinkRecord, ResourceDefinitionRecord
+from fdpneo_server.metadata.profiles.registry import resolve_cache
+from fdpneo_server.shared.graphs import meta_graph_uri, record_graph_uri
+from fdpneo_server.shared.namespaces import DCT, LDP
 
 BASE = "http://localhost:8000"
 DCAT_CATALOG = URIRef("http://www.w3.org/ns/dcat#Catalog")

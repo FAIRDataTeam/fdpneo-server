@@ -77,7 +77,7 @@ host-gateway`) so the OIDC issuer URL is identical for browser and server.
 1. `graphdb-init` POSTs `deploy/graphdb/fdp-repo-config.ttl` to GraphDB if the
    `fdp` repo is missing (no inference, named-graph/context index on).
 2. The server entrypoint runs `fdp db migrate`.
-3. The app lifespan auto-applies `profiles/default` (`FDP_PROFILE_AUTO_APPLY=true`)
+3. The app lifespan auto-applies the bundled default profile (`FDP_PROFILE_AUTO_APPLY=true`)
    and runs the named-graph isolation self-test.
 
 ## Deploying on another host

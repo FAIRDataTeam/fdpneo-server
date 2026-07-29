@@ -9,8 +9,8 @@ import pytest
 import respx
 from pydantic import HttpUrl, SecretStr
 
-from fdp.config import TripleStoreSettings
-from fdp.storage.triplestore.adapter import (
+from fdpneo_server.config import TripleStoreSettings
+from fdpneo_server.storage.triplestore.adapter import (
     SPARQL_JSON,
     SPARQL_QUERY,
     SPARQL_UPDATE,
@@ -251,7 +251,7 @@ async def test_query_timeout_maps_to_gateway_timeout(
     async_client: httpx.AsyncClient,
 ) -> None:
     # A slow store should surface as a clean 504, not a raw 500 (audit R-02).
-    from fdp.shared.errors import GatewayTimeout
+    from fdpneo_server.shared.errors import GatewayTimeout
 
     respx.post(QUERY_URL).mock(side_effect=httpx.ReadTimeout("slow"))
     with pytest.raises(GatewayTimeout):
@@ -263,7 +263,7 @@ async def test_query_timeout_maps_to_gateway_timeout(
 async def test_update_timeout_maps_to_gateway_timeout(
     async_client: httpx.AsyncClient,
 ) -> None:
-    from fdp.shared.errors import GatewayTimeout
+    from fdpneo_server.shared.errors import GatewayTimeout
 
     respx.post(UPDATE_URL).mock(side_effect=httpx.ConnectTimeout("slow"))
     with pytest.raises(GatewayTimeout):

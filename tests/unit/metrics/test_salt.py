@@ -1,10 +1,10 @@
-"""Unit tests for :mod:`fdp.metrics.salt`."""
+"""Unit tests for :mod:`fdpneo_server.metrics.salt`."""
 
 from __future__ import annotations
 
 import pytest
 
-from fdp.metrics.salt import SaltRotator
+from fdpneo_server.metrics.salt import SaltRotator
 
 
 class _FakeMonotonic:

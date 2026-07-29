@@ -16,8 +16,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.identity.deps import current_context
-from fdp.metadata.settings import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.settings import (
     SETTINGS_REGISTRY,
     AutocompleteItem,
     AutocompleteSource,
@@ -28,9 +28,9 @@ from fdp.metadata.settings import (
     SettingsRepository,
     build_settings_router,
 )
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.storage.postgres.models import Base
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.storage.postgres.models import Base
 
 # --- fixtures ------------------------------------------------------------
 
@@ -152,7 +152,7 @@ async def test_delete_removes_override(session_factory: Any) -> None:
 
 @pytest.mark.unit
 async def test_delete_unknown_key_raises_not_found(session_factory: Any) -> None:
-    from fdp.shared.errors import NotFound
+    from fdpneo_server.shared.errors import NotFound
 
     repo = SettingsRepository(session_factory=session_factory)
     with pytest.raises(NotFound):

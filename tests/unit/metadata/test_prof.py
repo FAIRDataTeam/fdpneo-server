@@ -11,15 +11,15 @@ from fastapi.testclient import TestClient
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.prof import (
+from fdpneo_server.metadata.prof import (
     ProfileService,
     build_profile_graph,
     build_profile_router,
     ensure_conformance,
     provision_profile,
 )
-from fdp.shared.errors import NotFound, register_exception_handlers
-from fdp.shared.graphs import (
+from fdpneo_server.shared.errors import NotFound, register_exception_handlers
+from fdpneo_server.shared.graphs import (
     meta_graph_uri,
     profile_graph_uri,
     profile_version_graph_uri,
@@ -27,7 +27,7 @@ from fdp.shared.graphs import (
     schema_graph_uri,
     schema_version_graph_uri,
 )
-from fdp.shared.namespaces import OWL, PROF, ROLE, SH
+from fdpneo_server.shared.namespaces import OWL, PROF, ROLE, SH
 
 BASE = "http://localhost:8000"
 

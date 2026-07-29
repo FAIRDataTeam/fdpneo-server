@@ -1,4 +1,4 @@
-"""Unit tests for :func:`fdp.data.distributions.resolve_distribution`."""
+"""Unit tests for :func:`fdpneo_server.data.distributions.resolve_distribution`."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from dataclasses import dataclass
 import pytest
 from rdflib import Graph, URIRef
 
-from fdp.data.distributions import resolve_distribution
-from fdp.shared.errors import NotFound
-from fdp.shared.namespaces import DCAT, DCT
+from fdpneo_server.data.distributions import resolve_distribution
+from fdpneo_server.shared.errors import NotFound
+from fdpneo_server.shared.namespaces import DCAT, DCT
 
 DIST = "https://fdp.example/data/dist-1"
 RIGHTS = "https://fdp.example/offers/public"

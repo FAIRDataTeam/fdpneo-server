@@ -12,9 +12,9 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fdp.metrics.events import MetricEventType, MetricSample
-from fdp.metrics.reader import MetricsReader
-from fdp.metrics.repository import DailyAggregate, HourlyAggregate, MetricsRepository
+from fdpneo_server.metrics.events import MetricEventType, MetricSample
+from fdpneo_server.metrics.reader import MetricsReader
+from fdpneo_server.metrics.repository import DailyAggregate, HourlyAggregate, MetricsRepository
 
 
 def _agg(

@@ -5,18 +5,51 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [Unreleased]
+## [0.12.0] — 2026-07-29
+
+Packaging and naming release: the wheel is now fully self-contained (an
+installed FDP can migrate its database and bootstrap itself with no source
+checkout), and the import package no longer squats the generic `fdp` name.
+
+### Breaking
+
+- **Import package renamed `fdp` → `fdpneo_server`.** The distribution stays
+  `fdpneo` and the CLI command stays `fdp`; only Python imports change.
+  Migration: `import fdp` → `import fdpneo_server`, `from fdp.X import Y` →
+  `from fdpneo_server.X import Y`. Rationale: `fdp` implied the whole stack
+  (server + client) and collided with downstream distributions that provide a
+  `fdp_server` module; `fdpneo_server` is unambiguous and matches the
+  distribution name. Error codes (`fdp.not_found`, …), the `/fdp-api` prefix,
+  the `fdp` CLI, and all wire formats are unchanged.
+
+### Added
+
+- **The default DCAT profile bundle ships in the wheel** at
+  `fdpneo_server/profiles/default/`. `fdp profile apply` and
+  `fdp profile validate` default to the bundled profile when no path is given,
+  and the lifespan auto-bootstrap (`FDP_PROFILE_AUTO_APPLY=true`) falls back to
+  it when `FDP_PROFILE_PATH` is unset — so an installed FDP can bootstrap
+  itself. New helper: `fdpneo_server.metadata.profiles.bundled_default_profile()`.
 
 ### Fixed
 
+- **`fdpneo_server.__version__` reports the real version** — it queried the
+  pre-rename distribution name (`fdp`) after the PyPI distribution became
+  `fdpneo` (0.11.1), so it always fell back to `0.0.0`.
 - **`fdp db migrate` now works from an installed wheel.** `migrations/` and
-  `alembic.ini` moved into the package (`src/fdp/`) and ship as package data;
+  `alembic.ini` moved into the package (`src/fdpneo_server/`) and ship as package data;
   the CLI and tests resolve them with `importlib.resources` instead of
   `Path(__file__).parents[2]`, and `alembic.ini` points at the packaged scripts
-  via `script_location = fdp:migrations`. Downstream deployers no longer need to
+  via `script_location = fdpneo_server:migrations`. Downstream deployers no longer need to
   vendor the migration tree next to the venv, and the Dockerfile no longer copies
   `alembic.ini`/`migrations/` separately. Dev note: create revisions with
-  `uv run alembic -c src/fdp/alembic.ini revision --autogenerate -m "..."`.
+  `uv run alembic -c src/fdpneo_server/alembic.ini revision --autogenerate -m "..."`.
+
+### Client coordination
+
+- Downstreams that import the server (composition or extension) must update
+  imports to `fdpneo_server` and require `fdpneo>=0.12.0`. Deployment vendoring
+  workarounds for `migrations/`/`alembic.ini`/`profiles/` can be deleted.
 
 ## [0.11.0] — 2026-07-09
 

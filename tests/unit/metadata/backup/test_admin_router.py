@@ -14,11 +14,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.identity.deps import require_auth
-from fdp.metadata.backup import build_backup_admin_router
-from fdp.metadata.backup.jobs import BackupJob, JobState
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
+from fdpneo_server.identity.deps import require_auth
+from fdpneo_server.metadata.backup import build_backup_admin_router
+from fdpneo_server.metadata.backup.jobs import BackupJob, JobState
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
 
 pytestmark = pytest.mark.unit
 

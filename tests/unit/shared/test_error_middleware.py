@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
-from fdp.shared.errors import CatchAllExceptionMiddleware, Conflict
+from fdpneo_server.shared.errors import CatchAllExceptionMiddleware, Conflict
 
 ORIGIN = "http://app.example"
 

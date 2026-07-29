@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from importlib.resources import files
-from pathlib import Path
 
 import pytest
 from alembic import command
@@ -30,11 +29,11 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.context import RequestContext
-from fdp.shared.namespaces import DCAT, DCT, SH
+from fdpneo_server.metadata.profiles import bundled_default_profile
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.namespaces import DCAT, DCT, SH
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PROFILE = REPO_ROOT / "profiles" / "default"
+DEFAULT_PROFILE = bundled_default_profile()
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
 FDP_FAIRDATAPOINT = URIRef("https://w3id.org/fdp/o#FAIRDataPoint")
@@ -72,7 +71,7 @@ def app_env(
     postgres_container: PostgresContainer,
     oxigraph_container: DockerContainer,
 ) -> Iterator[None]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -91,7 +90,7 @@ def app_env(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -127,8 +126,8 @@ class _Client:
 
 
 def _make_client() -> _Client:
-    from fdp.identity.deps import current_context
-    from fdp.main import create_app
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.main import create_app
 
     app = create_app()
     holder: dict[str, RequestContext] = {"ctx": RequestContext.anonymous(trace_id="it")}
@@ -182,7 +181,7 @@ def test_composition_enforced_on_write(app_env: None) -> None:
 
         # The created catalog is itself a Direct Container (task 15.1): the
         # server stamped its membership config from the Catalog RD child links.
-        from fdp.shared.namespaces import DCAT as _DCAT, LDP as _LDP
+        from fdpneo_server.shared.namespaces import DCAT as _DCAT, LDP as _LDP
 
         g = Graph()
         g.parse(
@@ -197,7 +196,7 @@ def test_composition_enforced_on_write(app_env: None) -> None:
 
 
 def test_root_is_a_fairdatapoint_direct_container(app_env: None) -> None:
-    from fdp.shared.namespaces import LDP
+    from fdpneo_server.shared.namespaces import LDP
 
     c = _make_client()
     root = URIRef(BASE_URL)

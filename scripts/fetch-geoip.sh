@@ -5,7 +5,7 @@
 # DB-IP publishes a fresh "lite" database every month under CC BY 4.0, which
 # (unlike MaxMind's GeoLite2 EULA) permits redistribution. It is binary-
 # compatible with the MaxMind DB format, so `geoip2.database.Reader` — and thus
-# `fdp.metrics.geo.MaxMindGeoLookup` — reads it unchanged.
+# `fdpneo_server.metrics.geo.MaxMindGeoLookup` — reads it unchanged.
 #
 #   Attribution (CC BY 4.0): IP geolocation by DB-IP — https://db-ip.com
 #   See the project NOTICE file. This obligation travels with the data.

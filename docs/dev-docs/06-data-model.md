@@ -65,7 +65,7 @@ flowchart TB
     DS --> DIST["Distribution"]
 ```
 
-Membership is maintained by the LDP layer ([metadata/containment.py](../../src/fdp/metadata/containment.py)) on create/delete, using `ldp:DirectContainer` semantics. You don't edit membership triples directly — the write path keeps them consistent.
+Membership is maintained by the LDP layer ([metadata/containment.py](../../src/fdpneo_server/metadata/containment.py)) on create/delete, using `ldp:DirectContainer` semantics. You don't edit membership triples directly — the write path keeps them consistent.
 
 ## 6.4 Reserved / internal namespaces
 
@@ -82,7 +82,7 @@ There is **one shared exclusion set** for these patterns ([ADR-0009](../adr/0009
 
 ## 6.5 Where the schema files come from
 
-The bundled DCAT profile's shapes live as Turtle in [profiles/default/schemas/](../../profiles/default/schemas/) (`resource.ttl`, `dataset.ttl`, `catalog.ttl`, …). On bootstrap they are written into the triple store as schema records and become the live, runtime-editable shapes (§[5.6](05-key-processes.md#6-profile-bootstrap)). The on-disk files are the *seed*; the triple store is the source of truth after bootstrap. If you change a `.ttl` and want it live in an already-bootstrapped deployment, re-apply the profile or `PUT` the shape — editing the file alone does nothing to a running store.
+The bundled DCAT profile's shapes live as Turtle in [profiles/default/schemas/](../../src/fdpneo_server/profiles/default/schemas/) (`resource.ttl`, `dataset.ttl`, `catalog.ttl`, …). On bootstrap they are written into the triple store as schema records and become the live, runtime-editable shapes (§[5.6](05-key-processes.md#6-profile-bootstrap)). The on-disk files are the *seed*; the triple store is the source of truth after bootstrap. If you change a `.ttl` and want it live in an already-bootstrapped deployment, re-apply the profile or `PUT` the shape — editing the file alone does nothing to a running store.
 
 ---
 

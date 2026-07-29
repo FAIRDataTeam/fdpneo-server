@@ -23,10 +23,10 @@ from pydantic import HttpUrl, SecretStr
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from fdp.config import IdpAdminSettings, OIDCSettings
-from fdp.identity.keycloak_admin import KeycloakUserDirectory
-from fdp.identity.users import CreateUserRequest, UpdateUserRequest
-from fdp.shared.errors import NotFound
+from fdpneo_server.config import IdpAdminSettings, OIDCSettings
+from fdpneo_server.identity.keycloak_admin import KeycloakUserDirectory
+from fdpneo_server.identity.users import CreateUserRequest, UpdateUserRequest
+from fdpneo_server.shared.errors import NotFound
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REALM_FILE = REPO_ROOT / "deploy" / "keycloak" / "realm-fdp-dev.json"

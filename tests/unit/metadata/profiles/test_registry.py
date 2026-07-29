@@ -1,17 +1,17 @@
-"""Unit tests for :mod:`fdp.metadata.profiles.registry` (sub-task 15b)."""
+"""Unit tests for :mod:`fdpneo_server.metadata.profiles.registry` (sub-task 15b)."""
 
 from __future__ import annotations
 
 import pytest
 from pydantic import HttpUrl, PostgresDsn
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles.iri import IRIExpander
-from fdp.metadata.profiles.manifest import (
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.metadata.profiles.iri import IRIExpander
+from fdpneo_server.metadata.profiles.manifest import (
     ChildLink,
     ResourceDefinitionEntry,
 )
-from fdp.metadata.profiles.registry import (
+from fdpneo_server.metadata.profiles.registry import (
     ChildLinkInfo,
     ResourceDefinition,
     ResourceDefinitionCache,

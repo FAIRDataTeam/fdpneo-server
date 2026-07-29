@@ -11,7 +11,7 @@ this up) what's already in place and what to do first.
   what to do and what not to do.
 - **`pyproject.toml`** with the agreed dependency stack, ruff and pyright
   configured.
-- **Module skeleton** under `src/fdp/` — eight packages (`identity`,
+- **Module skeleton** under `src/fdpneo_server/` — eight packages (`identity`,
   `metadata`, `policy`, `access`, `data`, `metrics`, `storage`, `shared`)
   with `__init__.py` docstrings explaining each module's responsibilities,
   interface, and constraints.
@@ -34,7 +34,7 @@ In order:
    - `uv run pytest tests/unit -v` — smoke test passes.
    - `uv run ruff check .` — clean.
    - `uv run pyright src/fdp` — clean.
-   - `uv run fastapi dev src/fdp/main.py` — server starts; `curl localhost:8000/healthz` returns OK.
+   - `uv run fastapi dev src/fdpneo_server/main.py` — server starts; `curl localhost:8000/healthz` returns OK.
 5. **Read** `CLAUDE.md`, then skim `docs/architecture/README.md` headings
    so you know where to look up details.
 6. **Pick up Phase 0.1 from `TASKS.md`** — the shared kernel.

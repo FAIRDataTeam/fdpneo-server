@@ -6,9 +6,9 @@ import httpx
 import pytest
 import respx
 
-from fdp.identity.keycloak_admin import KeycloakAdminTokenClient, KeycloakUserDirectory
-from fdp.identity.users import CreateUserRequest, UpdateUserRequest
-from fdp.shared.errors import Conflict, NotFound, UpstreamError
+from fdpneo_server.identity.keycloak_admin import KeycloakAdminTokenClient, KeycloakUserDirectory
+from fdpneo_server.identity.users import CreateUserRequest, UpdateUserRequest
+from fdpneo_server.shared.errors import Conflict, NotFound, UpstreamError
 
 KC = "http://kc"
 TOKEN_URL = f"{KC}/realms/fdp/protocol/openid-connect/token"
@@ -187,7 +187,7 @@ async def test_error_mapping() -> None:
 
 @pytest.mark.unit
 async def test_from_settings_gating_and_derivation() -> None:
-    from fdp.config import IdpAdminSettings, OIDCSettings
+    from fdpneo_server.config import IdpAdminSettings, OIDCSettings
 
     oidc = OIDCSettings(issuer="http://localhost:8080/realms/fdp-dev", audience="fdp")  # type: ignore[arg-type]
     async with httpx.AsyncClient() as http:

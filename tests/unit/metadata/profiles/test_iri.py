@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metadata.profiles.iri` slug/IRI derivation (task 10.5)."""
+"""Unit tests for :mod:`fdpneo_server.metadata.profiles.iri` slug/IRI derivation (task 10.5)."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from pydantic import HttpUrl, PostgresDsn
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles.iri import IRIExpander, expand_schema_refs, schema_slug
-from fdp.shared.namespaces import DCAT, SH
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.metadata.profiles.iri import IRIExpander, expand_schema_refs, schema_slug
+from fdpneo_server.shared.namespaces import DCAT, SH
 
 BASE = "http://localhost:8000"
 

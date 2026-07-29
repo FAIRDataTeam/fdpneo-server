@@ -30,16 +30,16 @@ from fastapi.testclient import TestClient
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import DCTERMS, RDF
 
-from fdp.identity.deps import current_context
-from fdp.metadata.extensions import build_extensions_router
-from fdp.metadata.profiles.registry import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.extensions import build_extensions_router
+from fdpneo_server.metadata.profiles.registry import (
     ChildLinkInfo,
     ResourceDefinition,
     ResourceDefinitionCache,
 )
-from fdp.policy.model import Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
+from fdpneo_server.policy.model import Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
 
 # --- shared fixtures ------------------------------------------------------
 

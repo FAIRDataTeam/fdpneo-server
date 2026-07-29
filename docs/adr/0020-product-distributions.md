@@ -50,7 +50,7 @@ The manifest is the module's *only* composition surface. `create_app()` stops im
 A distribution is an explicit Python definition — a named list of `ModuleDef`s plus settings defaults:
 
 ```
-src/fdp/distributions/
+src/fdpneo_server/distributions/
     fdpneo.py   # identity, metadata, policy, access, data, search, metrics
     index.py    # identity, metadata, registry, search, metrics
     fds.py      # fdpneo modules + train (future)

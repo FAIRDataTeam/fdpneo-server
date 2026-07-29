@@ -12,7 +12,7 @@
 The FDP composes a resource type's metadata schema from reusable base shapes. Composition is
 purely *structural*: a type's `sh:NodeShape` pulls in base shapes via `sh:node` (and
 `sh:and`/`sh:or`/`sh:xone`), and the validator assembles the **transitive closure** of those
-shapes into a single merged graph (`src/fdp/metadata/shacl.py:182-213`). The bundled DCAT
+shapes into a single merged graph (`src/fdpneo_server/metadata/shacl.py:182-213`). The bundled DCAT
 profile uses this to model `dcat:Catalog ⊑ dcat:Dataset ⊑ dcat:Resource`:
 
 - `profiles/default/schemas/resource.ttl` — `fs:resource`, the reusable base (no `sh:targetClass`, only `sh:property`).
@@ -24,7 +24,7 @@ The dev docs state the governing rule: a shape referenced via `sh:node` "contrib
 property shape on a path, from every level, applies; there is no override, only tightening.
 
 The type-level read extension `GET /{prefix}/spec` returns this **flat merged closure** to the
-client verbatim (`src/fdp/metadata/extensions.py:105-121`), and the `fdp-client` form renderer
+client verbatim (`src/fdpneo_server/metadata/extensions.py:105-121`), and the `fdp-client` form renderer
 turns it into an entry form.
 
 ### The problem
@@ -92,7 +92,7 @@ whatever sections we want — which is exactly the cross-base grouping that `sh:
 cannot express cleanly.
 
 **3. Resolve the overlay server-side in the closure builder.** After
-`shape_closure` flattens the shapes (`src/fdp/metadata/shacl.py:182-213`), it looks up the
+`shape_closure` flattens the shapes (`src/fdpneo_server/metadata/shacl.py:182-213`), it looks up the
 layout for the root shape and stamps `sh:group`/`sh:order` onto the merged property shapes
 (matching by `sh:path`), and emits the `PropertyGroup` definitions plus the group order.
 

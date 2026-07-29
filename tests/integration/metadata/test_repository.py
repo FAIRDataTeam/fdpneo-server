@@ -15,11 +15,11 @@ from rdflib.namespace import RDF
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from fdp.config import TripleStoreSettings
-from fdp.metadata.graphs import audit_graph_uri, meta_graph_uri
-from fdp.metadata.repository import MetadataRepository
-from fdp.shared.namespaces import DCT, OWL, PROV
-from fdp.storage.triplestore import TripleStoreAdapter
+from fdpneo_server.config import TripleStoreSettings
+from fdpneo_server.metadata.graphs import audit_graph_uri, meta_graph_uri
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.shared.namespaces import DCT, OWL, PROV
+from fdpneo_server.storage.triplestore import TripleStoreAdapter
 
 OXIGRAPH_PORT = 7878
 RECORD = "https://example.org/records/integration-r1"

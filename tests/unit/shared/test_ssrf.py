@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from fdp.shared.errors import UpstreamError
-from fdp.shared.ssrf import assert_public_url
+from fdpneo_server.shared.errors import UpstreamError
+from fdpneo_server.shared.ssrf import assert_public_url
 
 
 @pytest.mark.unit

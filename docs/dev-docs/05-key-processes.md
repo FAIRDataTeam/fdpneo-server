@@ -18,7 +18,7 @@ Processes:
 
 ## 1. Authentication / identity context
 
-**Who participates:** the client, `AuthenticationMiddleware` ([identity/middleware.py](../../src/fdp/identity/middleware.py)), the JWKS client ([identity/jwks.py](../../src/fdp/identity/jwks.py)) or API-key service, the external OIDC IdP, and `RequestContext` ([shared/context.py](../../src/fdp/shared/context.py)).
+**Who participates:** the client, `AuthenticationMiddleware` ([identity/middleware.py](../../src/fdpneo_server/identity/middleware.py)), the JWKS client ([identity/jwks.py](../../src/fdpneo_server/identity/jwks.py)) or API-key service, the external OIDC IdP, and `RequestContext` ([shared/context.py](../../src/fdpneo_server/shared/context.py)).
 
 Covered as a flow in [doc 4 §4.2](04-request-lifecycle.md#42-authentication-detail). The one thing to re-state: authentication produces a `RequestContext` for *every* request, anonymous included, and binds it to a `ContextVar`. It never decides access. That is the next process.
 
@@ -26,7 +26,7 @@ Covered as a flow in [doc 4 §4.2](04-request-lifecycle.md#42-authentication-det
 
 ## 2. Authorization (PDP/PEP)
 
-**Who participates:** a **PEP** (the LDP router, the data provider, or the SPARQL router), the **PDP** ([policy/pdp.py](../../src/fdp/policy/pdp.py)), the authorization cache ([policy/cache.py](../../src/fdp/policy/cache.py), Postgres), the ODRL evaluator ([policy/evaluator.py](../../src/fdp/policy/evaluator.py)), and the offer resolver.
+**Who participates:** a **PEP** (the LDP router, the data provider, or the SPARQL router), the **PDP** ([policy/pdp.py](../../src/fdpneo_server/policy/pdp.py)), the authorization cache ([policy/cache.py](../../src/fdpneo_server/policy/cache.py), Postgres), the ODRL evaluator ([policy/evaluator.py](../../src/fdpneo_server/policy/evaluator.py)), and the offer resolver.
 
 The PDP has two entry points:
 
@@ -70,7 +70,7 @@ sequenceDiagram
 
 ## 3. Record CRUD via LDP (a write)
 
-**Who participates:** the LDP router ([metadata/ldp/router.py](../../src/fdp/metadata/ldp/router.py)), content negotiation, the PDP (as PEP), the SHACL validator ([metadata/shacl.py](../../src/fdp/metadata/shacl.py)), the metadata repository ([metadata/repository.py](../../src/fdp/metadata/repository.py)), meta-metadata ([metadata/meta.py](../../src/fdp/metadata/meta.py)), the event bus, and the triple store adapter.
+**Who participates:** the LDP router ([metadata/ldp/router.py](../../src/fdpneo_server/metadata/ldp/router.py)), content negotiation, the PDP (as PEP), the SHACL validator ([metadata/shacl.py](../../src/fdpneo_server/metadata/shacl.py)), the metadata repository ([metadata/repository.py](../../src/fdpneo_server/metadata/repository.py)), meta-metadata ([metadata/meta.py](../../src/fdpneo_server/metadata/meta.py)), the event bus, and the triple store adapter.
 
 A `PUT` is the representative case. The order is **authorize → negotiate/parse → validate → persist → meta-refresh → publish**:
 
@@ -123,16 +123,16 @@ flowchart TB
 Things to know before you touch this path:
 
 - **Don't bypass the LDP layer for record CRUD.** Even internal helpers go through `put_graph`/`delete_graph` so SHACL validation, meta-metadata, membership, and events all stay consistent.
-- **PATCH is SPARQL-Update**, simulated first ([metadata/patch.py](../../src/fdp/metadata/patch.py)) so the *result* is validated before it's committed — you never persist an invalid intermediate.
+- **PATCH is SPARQL-Update**, simulated first ([metadata/patch.py](../../src/fdpneo_server/metadata/patch.py)) so the *result* is validated before it's committed — you never persist an invalid intermediate.
 - **POST into a container** validates the new member against the *container's* declared member shape; **PUT** validates against the *resource's own* shape.
-- **Concurrency** is ETag-based (`If-Match`). ETags are computed from the graph ([metadata/etag.py](../../src/fdp/metadata/etag.py)).
-- **Identifier reconciliation** ([metadata/identifiers.py](../../src/fdp/metadata/identifiers.py)) canonicalizes inbound IRIs and handles client-supplied identifiers — see §7.
+- **Concurrency** is ETag-based (`If-Match`). ETags are computed from the graph ([metadata/etag.py](../../src/fdpneo_server/metadata/etag.py)).
+- **Identifier reconciliation** ([metadata/identifiers.py](../../src/fdpneo_server/metadata/identifiers.py)) canonicalizes inbound IRIs and handles client-supplied identifiers — see §7.
 
 ---
 
 ## 4. SPARQL access control
 
-**Who participates:** the SPARQL router ([access/router.py](../../src/fdp/access/router.py)), the parser ([access/parser.py](../../src/fdp/access/parser.py)), the rewriter ([access/rewriter.py](../../src/fdp/access/rewriter.py)), the PDP (`authorized_graphs`), and the triple store adapter.
+**Who participates:** the SPARQL router ([access/router.py](../../src/fdpneo_server/access/router.py)), the parser ([access/parser.py](../../src/fdpneo_server/access/parser.py)), the rewriter ([access/rewriter.py](../../src/fdpneo_server/access/rewriter.py)), the PDP (`authorized_graphs`), and the triple store adapter.
 
 The FDP exposes its **own** SPARQL endpoint rather than proxying the triple store, because that is the only way to enforce access control on queries. The enforcement mechanism is **named-graph projection** ([ADR-0004](../adr/0004-sparql-access-via-named-graph-projection.md)): a query is only ever run against the dataset of named graphs the caller is authorized to read. For reads, **the rewriter itself is the PEP** — there is no single resource to check, so the dataset is constrained instead.
 
@@ -193,7 +193,7 @@ Non-obvious rules, all of which have a security reason:
 
 ## 5. Schema composition and validation
 
-**Who participates:** the SHACL validator ([metadata/shacl.py](../../src/fdp/metadata/shacl.py)), the shape provider ([metadata/shape_provider.py](../../src/fdp/metadata/shape_provider.py)), the schema admin API ([metadata/schemas.py](../../src/fdp/metadata/schemas.py)), and the `/spec` extension ([metadata/extensions.py](../../src/fdp/metadata/extensions.py)).
+**Who participates:** the SHACL validator ([metadata/shacl.py](../../src/fdpneo_server/metadata/shacl.py)), the shape provider ([metadata/shape_provider.py](../../src/fdpneo_server/metadata/shape_provider.py)), the schema admin API ([metadata/schemas.py](../../src/fdpneo_server/metadata/schemas.py)), and the `/spec` extension ([metadata/extensions.py](../../src/fdpneo_server/metadata/extensions.py)).
 
 The FDP supports **schema composition**: a type's shape can compose other shapes via `sh:node` (and `sh:and`/`sh:or`/`sh:xone`). This is how the bundled DCAT profile models the class hierarchy `dcat:Catalog ⊑ dcat:Dataset ⊑ dcat:Resource` — each level pulls its parent in with `sh:node`, and `resource` is a base mixin with no `sh:targetClass`.
 
@@ -225,13 +225,13 @@ Editing a shape at runtime (`PUT /fdp-api/schemas/{id}`) bumps its `owl:versionI
 
 ## 6. Profile bootstrap
 
-**Who participates:** the CLI ([cli.py](../../src/fdp/cli.py)) or the auto-bootstrap hook in `lifespan`, the profile applier ([metadata/profiles/applier.py](../../src/fdp/metadata/profiles/applier.py)), the profile manifest/registry, the metadata repository, and the triple store.
+**Who participates:** the CLI ([cli.py](../../src/fdpneo_server/cli.py)) or the auto-bootstrap hook in `lifespan`, the profile applier ([metadata/profiles/applier.py](../../src/fdpneo_server/metadata/profiles/applier.py)), the profile manifest/registry, the metadata repository, and the triple store.
 
-A **deployment profile** ([profiles/default/](../../profiles/default/)) is a versioned bundle: SHACL schemas, ODRL offers, the container hierarchy, resource definitions, and seed records. Applying it is how a fresh FDP becomes a working DCAT repository.
+A **deployment profile** ([profiles/default/](../../src/fdpneo_server/profiles/default/)) is a versioned bundle: SHACL schemas, ODRL offers, the container hierarchy, resource definitions, and seed records. Applying it is how a fresh FDP becomes a working DCAT repository.
 
 ```mermaid
 flowchart TB
-    A([fdp profile apply ./profiles/default<br/>or first-boot auto-bootstrap]) --> B["parse + validate manifest (profile.yaml)"]
+    A([fdp profile apply — bundled default<br/>or first-boot auto-bootstrap]) --> B["parse + validate manifest (profile.yaml)"]
     B --> C["load SHACL shapes (schemas/*.ttl)"]
     C --> D["expand urn:fdp-schema: placeholders → storage IRIs"]
     D --> E["write each shape as a record<br/>under /fdp-api/schemas/{id}"]
@@ -245,13 +245,13 @@ Key facts:
 
 - **Resource definitions are runtime RDF records, seeded from the profile** — not immutable bootstrap-only config. Admins add/re-parent types at runtime through `rd_api.py` and the LDP + OpenAPI surfaces update without a restart. The manifest is the *seed*, not the permanent definition. See [ADR-0009](../adr/0009-runtime-resource-definitions.md).
 - **Changing the bootstrap *profile* still requires re-bootstrap** (architecture §12.3); changing types at runtime does not.
-- **Auto-bootstrap** runs in `lifespan` on first boot ([main.py](../../src/fdp/main.py) `_maybe_auto_bootstrap`) so a fresh deployment is usable without a manual CLI step.
+- **Auto-bootstrap** runs in `lifespan` on first boot ([main.py](../../src/fdpneo_server/main.py) `_maybe_auto_bootstrap`) so a fresh deployment is usable without a manual CLI step.
 
 ---
 
 ## 7. Persistent identifiers
 
-**Who participates:** identifier reconciliation ([metadata/identifiers.py](../../src/fdp/metadata/identifiers.py)), the PID package ([metadata/pid/](../../src/fdp/metadata/pid/): `w3id.py`, `github.py`, `verify.py`, `rebase.py`), config (`identifier_base` vs `base_url`), and the `fdp pid` CLI.
+**Who participates:** identifier reconciliation ([metadata/identifiers.py](../../src/fdpneo_server/metadata/identifiers.py)), the PID package ([metadata/pid/](../../src/fdpneo_server/metadata/pid/): `w3id.py`, `github.py`, `verify.py`, `rebase.py`), config (`identifier_base` vs `base_url`), and the `fdp pid` CLI.
 
 Persistent identifiers (FAIR F1) decouple a record's **identity** (`identifier_base`, a W3ID/PURL redirector prefix) from the **serving host** (`base_url`). Inbound requests are canonicalized so a record is the same subject regardless of which host served it. See [ADR-0014](../adr/0014-persistent-identifiers.md).
 
@@ -275,7 +275,7 @@ The dual model means clients can supply their own identifiers: within-base ident
 
 ## 8. Metrics anonymization
 
-**Who participates:** `RequestObservationMiddleware` ([metrics/middleware.py](../../src/fdp/metrics/middleware.py)), the anonymizer ([metrics/anonymize.py](../../src/fdp/metrics/anonymize.py)), the salt store ([metrics/salt.py](../../src/fdp/metrics/salt.py)), the geo resolver ([metrics/geo.py](../../src/fdp/metrics/geo.py)), the pipeline ([metrics/pipeline.py](../../src/fdp/metrics/pipeline.py)), aggregation/rollup, and the dashboard API.
+**Who participates:** `RequestObservationMiddleware` ([metrics/middleware.py](../../src/fdpneo_server/metrics/middleware.py)), the anonymizer ([metrics/anonymize.py](../../src/fdpneo_server/metrics/anonymize.py)), the salt store ([metrics/salt.py](../../src/fdpneo_server/metrics/salt.py)), the geo resolver ([metrics/geo.py](../../src/fdpneo_server/metrics/geo.py)), the pipeline ([metrics/pipeline.py](../../src/fdpneo_server/metrics/pipeline.py)), aggregation/rollup, and the dashboard API.
 
 The invariant: **the metrics pipeline never sees identifying data.** Anonymization happens at **ingress**, structurally, before any event reaches a metrics handler — not at report time. See [ADR-0002](../adr/0002-anonymous-metrics.md).
 
@@ -301,7 +301,7 @@ Why each step exists:
 
 ## 9. Label resolution (`GET /labels`)
 
-**Who participates:** the resolver ([metadata/labels.py](../../src/fdp/metadata/labels.py)), the curated inline sources (`forms.autocomplete-sources` setting), and — when enabled — the external source ([metadata/external_labels.py](../../src/fdp/metadata/external_labels.py)) with its Postgres cache (`metadata_external_labels`).
+**Who participates:** the resolver ([metadata/labels.py](../../src/fdpneo_server/metadata/labels.py)), the curated inline sources (`forms.autocomplete-sources` setting), and — when enabled — the external source ([metadata/external_labels.py](../../src/fdpneo_server/metadata/external_labels.py)) with its Postgres cache (`metadata_external_labels`).
 
 `/labels` maps IRIs to human labels for the client (rendering a `dct:license`, a publisher, a `dct:conformsTo`, …). It is **public/unauthenticated** — the labels it serves are vocabulary terms, not access-controlled record content. Resolution walks four sources in order, first hit wins:
 

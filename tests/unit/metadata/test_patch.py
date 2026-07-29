@@ -1,13 +1,13 @@
-"""Unit tests for :mod:`fdp.metadata.patch`."""
+"""Unit tests for :mod:`fdpneo_server.metadata.patch`."""
 
 from __future__ import annotations
 
 import pytest
 from rdflib import Graph, Literal, URIRef
 
-from fdp.metadata.patch import simulate_update
-from fdp.shared.errors import BadRequest
-from fdp.shared.namespaces import DCT
+from fdpneo_server.metadata.patch import simulate_update
+from fdpneo_server.shared.errors import BadRequest
+from fdpneo_server.shared.namespaces import DCT
 
 RECORD_IRI = "https://example.org/records/r1"
 RECORD = URIRef(RECORD_IRI)

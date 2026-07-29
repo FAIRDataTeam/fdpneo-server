@@ -14,8 +14,8 @@ from pydantic import HttpUrl
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from fdp.config import TripleStoreSettings
-from fdp.storage.triplestore.adapter import TURTLE, TripleStoreAdapter
+from fdpneo_server.config import TripleStoreSettings
+from fdpneo_server.storage.triplestore.adapter import TURTLE, TripleStoreAdapter
 
 OXIGRAPH_PORT = 7878
 GRAPH_URI = "http://example.org/g/test"

@@ -1,12 +1,12 @@
-"""Unit tests for ``fdp.identity.deps``."""
+"""Unit tests for ``fdpneo_server.identity.deps``."""
 
 from __future__ import annotations
 
 import pytest
 
-from fdp.identity.deps import current_context, require_auth
-from fdp.shared.context import RequestContext, bound
-from fdp.shared.errors import Unauthenticated
+from fdpneo_server.identity.deps import current_context, require_auth
+from fdpneo_server.shared.context import RequestContext, bound
+from fdpneo_server.shared.errors import Unauthenticated
 
 
 @pytest.mark.unit

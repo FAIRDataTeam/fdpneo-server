@@ -18,8 +18,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 
-from fdp.config import MetricsSettings, OIDCSettings, Settings
-from fdp.identity.bootstrap import ProfileBootstrap, ProfileReader, build_bootstrap_router
+from fdpneo_server.config import MetricsSettings, OIDCSettings, Settings
+from fdpneo_server.identity.bootstrap import ProfileBootstrap, ProfileReader, build_bootstrap_router
 
 # --- fakes -----------------------------------------------------------------
 

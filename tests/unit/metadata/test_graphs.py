@@ -1,11 +1,11 @@
-"""Unit tests for ``fdp.metadata.graphs``."""
+"""Unit tests for ``fdpneo_server.metadata.graphs``."""
 
 from __future__ import annotations
 
 import pytest
 from rdflib import URIRef
 
-from fdp.metadata.graphs import (
+from fdpneo_server.metadata.graphs import (
     audit_graph_uri,
     data_graph_uri,
     is_audit_graph_uri,
@@ -18,7 +18,7 @@ from fdp.metadata.graphs import (
     resource_definition_graph_uri,
     state_record_iri,
 )
-from fdp.shared.graphs import (
+from fdpneo_server.shared.graphs import (
     is_profile_graph_uri,
     profile_graph_uri,
     profile_version_graph_uri,

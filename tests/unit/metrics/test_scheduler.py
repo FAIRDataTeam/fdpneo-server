@@ -8,9 +8,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from fdp.config import MetricsSettings
-from fdp.metrics import scheduler as scheduler_mod
-from fdp.metrics.scheduler import MetricsRollupScheduler
+from fdpneo_server.config import MetricsSettings
+from fdpneo_server.metrics import scheduler as scheduler_mod
+from fdpneo_server.metrics.scheduler import MetricsRollupScheduler
 
 
 def _settings(*, rollup_in_process: bool = True) -> MetricsSettings:

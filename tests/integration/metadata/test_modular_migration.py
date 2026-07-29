@@ -33,10 +33,10 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.namespaces import DCT, LDP
+from fdpneo_server.metadata.profiles import bundled_default_profile
+from fdpneo_server.shared.namespaces import DCT, LDP
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PROFILE = REPO_ROOT / "profiles" / "default"
+DEFAULT_PROFILE = bundled_default_profile()
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
 
@@ -143,7 +143,7 @@ def app_env(
     oxigraph_container: DockerContainer,
     old_bundle: Path,
 ) -> Iterator[None]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -162,7 +162,7 @@ def app_env(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -178,7 +178,7 @@ def app_env(
 async def _apply_old_profile_via_startup() -> None:
     from fastapi.testclient import TestClient
 
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     with TestClient(create_app(), base_url=BASE_URL):
         pass
@@ -191,13 +191,13 @@ def test_modular_migration_end_to_end(app_env: None) -> None:
 
 
 async def _run() -> None:
-    from fdp.config import get_settings
-    from fdp.metadata.profiles import load_profile
-    from fdp.metadata.profiles.iri import IRIExpander
-    from fdp.metadata.profiles.migrate_modular import migrate_to_modular_profile
-    from fdp.metadata.profiles.rd_service import build_cache_from_repository
-    from fdp.metadata.repository import MetadataRepository
-    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+    from fdpneo_server.config import get_settings
+    from fdpneo_server.metadata.profiles import load_profile
+    from fdpneo_server.metadata.profiles.iri import IRIExpander
+    from fdpneo_server.metadata.profiles.migrate_modular import migrate_to_modular_profile
+    from fdpneo_server.metadata.profiles.rd_service import build_cache_from_repository
+    from fdpneo_server.metadata.repository import MetadataRepository
+    from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     await _apply_old_profile_via_startup()
 

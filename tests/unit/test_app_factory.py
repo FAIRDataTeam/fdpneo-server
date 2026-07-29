@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 @pytest.mark.unit
 def test_app_factory_returns_app() -> None:
     """``create_app`` returns a FastAPI instance with the expected metadata."""
-    from fdp import __version__
-    from fdp.main import create_app
+    from fdpneo_server import __version__
+    from fdpneo_server.main import create_app
 
     app = create_app()
     assert app.title == "FAIR Data Point"
@@ -24,7 +24,7 @@ def test_app_factory_returns_app() -> None:
 @pytest.mark.unit
 def test_healthz_returns_ok() -> None:
     """The liveness probe answers without touching downstream dependencies."""
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     client = TestClient(create_app())
     response = client.get("/fdp-api/healthz")
@@ -42,7 +42,7 @@ def test_cors_preflight_allows_configured_origin() -> None:
     cross-origin preflight must succeed *before* auth so the browser permits
     the follow-up PUT.
     """
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     client = TestClient(create_app())
     response = client.options(
@@ -61,7 +61,7 @@ def test_cors_preflight_allows_configured_origin() -> None:
 @pytest.mark.unit
 def test_cors_headers_on_simple_request() -> None:
     """A simple cross-origin GET carries the allow-origin header on the response."""
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     client = TestClient(create_app())
     response = client.get("/fdp-api/healthz", headers={"Origin": "http://localhost:5173"})
@@ -77,7 +77,7 @@ def test_cors_allows_loopback_ip_origin() -> None:
     be opened under either, so both must be permitted or writes fail with a
     CORS rejection that surfaces as "server unreachable".
     """
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     client = TestClient(create_app())
     response = client.options(
@@ -95,7 +95,7 @@ def test_cors_allows_loopback_ip_origin() -> None:
 @pytest.mark.unit
 def test_cors_rejects_unconfigured_origin() -> None:
     """An origin that isn't allow-listed gets no allow-origin header echoed back."""
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     client = TestClient(create_app())
     response = client.get("/fdp-api/healthz", headers={"Origin": "http://evil.example"})

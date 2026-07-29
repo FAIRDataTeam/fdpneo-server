@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metadata.openapi` (sub-task 15d).
+"""Unit tests for :mod:`fdpneo_server.metadata.openapi` (sub-task 15d).
 
 Covers the per-RD path set, root vs non-root differences, the FDP
 extension that lets us find and remove paths on profile change,
@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from fdp.metadata.openapi import inject_resource_definition_paths
-from fdp.metadata.profiles.registry import (
+from fdpneo_server.metadata.openapi import inject_resource_definition_paths
+from fdpneo_server.metadata.profiles.registry import (
     ChildLinkInfo,
     ResourceDefinition,
     ResourceDefinitionCache,

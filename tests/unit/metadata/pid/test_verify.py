@@ -1,4 +1,4 @@
-"""Tests for ``fdp.metadata.pid.verify`` — resolution verification."""
+"""Tests for ``fdpneo_server.metadata.pid.verify`` — resolution verification."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from fdp.metadata.pid.verify import verify_resolution
+from fdpneo_server.metadata.pid.verify import verify_resolution
 
 ID_BASE = "https://w3id.org/myfdp"
 SERVING = "https://fdp.example.org"

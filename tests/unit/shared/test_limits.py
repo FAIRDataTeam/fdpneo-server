@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from starlette.types import Message, Receive, Scope, Send
 
-from fdp.shared.limits import BodySizeLimitMiddleware, RateLimitMiddleware
+from fdpneo_server.shared.limits import BodySizeLimitMiddleware, RateLimitMiddleware
 
 # --- rate limiting ---------------------------------------------------------
 

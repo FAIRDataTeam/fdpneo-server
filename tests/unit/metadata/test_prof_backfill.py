@@ -10,8 +10,8 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.prof_backfill import backfill_conformance
-from fdp.shared.graphs import (
+from fdpneo_server.metadata.prof_backfill import backfill_conformance
+from fdpneo_server.shared.graphs import (
     meta_graph_uri,
     profile_graph_uri,
     profile_version_graph_uri,
@@ -19,7 +19,7 @@ from fdp.shared.graphs import (
     schema_graph_uri,
     schema_version_graph_uri,
 )
-from fdp.shared.namespaces import DCT, FDP_VALIDATED_AGAINST, OWL, PROV, SH
+from fdpneo_server.shared.namespaces import DCT, FDP_VALIDATED_AGAINST, OWL, PROV, SH
 
 BASE = "http://localhost:8000"
 

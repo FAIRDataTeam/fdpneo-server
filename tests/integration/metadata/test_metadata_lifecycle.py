@@ -1,6 +1,6 @@
 """End-to-end metadata publication lifecycle against Oxigraph + Postgres (ADR-0010).
 
-Drives the whole HTTP stack via :func:`fdp.main.create_app` — real triple
+Drives the whole HTTP stack via :func:`fdpneo_server.main.create_app` — real triple
 store, Postgres-backed PDP, the LDP + SPARQL + state-transition routers — with
 the request context injected through a ``current_context`` override.
 
@@ -33,7 +33,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.context import RequestContext
+from fdpneo_server.shared.context import RequestContext
 from tests.integration.conftest import GraphDBStore
 
 BASE_URL = "http://testserver"
@@ -126,7 +126,7 @@ def app_env(
     graphdb_store: GraphDBStore,
     bundle: Path,
 ) -> Iterator[None]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     env = {
         "POSTGRES_DSN": _async_dsn(postgres_container),
@@ -143,7 +143,7 @@ def app_env(
     os.environ.update(env)
     get_settings.cache_clear()
 
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -181,8 +181,8 @@ class _Client:
 
 
 def _make_client() -> _Client:
-    from fdp.identity.deps import current_context
-    from fdp.main import create_app
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.main import create_app
 
     app = create_app()
     holder: dict[str, RequestContext] = {"ctx": RequestContext.anonymous(trace_id="it")}

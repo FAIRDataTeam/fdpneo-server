@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import HttpUrl
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
 
 
 @pytest.fixture

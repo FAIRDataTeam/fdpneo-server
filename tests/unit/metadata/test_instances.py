@@ -10,10 +10,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.metadata.instances import InstanceLookupService, build_instances_router
-from fdp.policy.model import Action, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest
+from fdpneo_server.metadata.instances import InstanceLookupService, build_instances_router
+from fdpneo_server.policy.model import Action, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest
 
 BASE = "http://localhost:8000"
 FOAF_AGENT = "http://xmlns.com/foaf/0.1/Agent"
@@ -209,7 +209,7 @@ class _FakeService:
 
 
 def _client(service: Any) -> TestClient:
-    from fdp.identity.deps import current_context
+    from fdpneo_server.identity.deps import current_context
 
     app = FastAPI()
     app.include_router(build_instances_router(service=service))
@@ -219,7 +219,7 @@ def _client(service: Any) -> TestClient:
 
 @pytest.mark.unit
 def test_router_sets_page_headers_and_accepts_class_alias() -> None:
-    from fdp.metadata.instances import InstanceItem
+    from fdpneo_server.metadata.instances import InstanceItem
 
     svc = _FakeService(items=[InstanceItem(iri=f"{BASE}/x", label="X", type=FOAF_AGENT)], total=7)
     resp = _client(svc).get("/instances", params={"class": FOAF_AGENT, "limit": 5, "offset": 0})

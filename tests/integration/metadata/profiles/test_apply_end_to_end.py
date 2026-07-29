@@ -23,16 +23,16 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles import (
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.metadata.profiles import (
     ProfileStateRepository,
     apply_profile,
     load_profile,
 )
-from fdp.metadata.profiles.licenses import default_license_graphs
-from fdp.metadata.repository import MetadataRepository
-from fdp.shared.errors import Conflict
-from fdp.storage.triplestore.adapter import TripleStoreAdapter
+from fdpneo_server.metadata.profiles.licenses import default_license_graphs
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.shared.errors import Conflict
+from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
 OXIGRAPH_PORT = 7878
 
@@ -107,12 +107,12 @@ def oxigraph_container() -> Iterator[DockerContainer]:
 
 @pytest.fixture
 def migrated_postgres(postgres_container: PostgresContainer) -> Iterator[PostgresContainer]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     original = os.environ.get("POSTGRES_DSN")
     os.environ["POSTGRES_DSN"] = _async_dsn(postgres_container)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     try:
         command.upgrade(config, "head")
         yield postgres_container

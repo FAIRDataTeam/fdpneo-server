@@ -119,7 +119,7 @@ def app_env(
     bundle: Path,
 ) -> Iterator[str]:
     """Configure env, migrate, and yield the async DSN for out-of-band seeding."""
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -139,7 +139,7 @@ def app_env(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield dsn
@@ -169,7 +169,7 @@ def _run(dsn: str, fn: Callable[[Any], Coroutine[Any, Any, None]]) -> None:
 def _seed_key(dsn: str, token: str) -> None:
     from datetime import UTC, datetime
 
-    from fdp.identity.api_keys import ApiKeyRepository, ApiKeyRow, hash_token
+    from fdpneo_server.identity.api_keys import ApiKeyRepository, ApiKeyRow, hash_token
 
     async def _fn(factory: Any) -> None:
         await ApiKeyRepository(session_factory=factory).add(
@@ -192,7 +192,7 @@ def _seed_key(dsn: str, token: str) -> None:
 
 
 def _record_admin_principal(dsn: str) -> None:
-    from fdp.identity.principal import SubjectPrincipalRepository
+    from fdpneo_server.identity.principal import SubjectPrincipalRepository
 
     async def _fn(factory: Any) -> None:
         await SubjectPrincipalRepository(session_factory=factory).record(
@@ -203,13 +203,13 @@ def _record_admin_principal(dsn: str) -> None:
 
 
 def _make_client() -> TestClient:
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     return TestClient(create_app(), base_url=BASE_URL)
 
 
 def test_api_key_auth_live_roles_and_revoke(app_env: str) -> None:
-    from fdp.identity.api_keys import generate_token
+    from fdpneo_server.identity.api_keys import generate_token
 
     dsn = app_env
     token = generate_token()

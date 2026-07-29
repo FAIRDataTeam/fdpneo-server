@@ -8,7 +8,7 @@ Every HTTP request flows through the same middleware pipeline before it reaches 
 
 ## 4.1 The middleware stack
 
-Middleware is registered in [main.py](../../src/fdp/main.py) `create_app()`. The ordering rule is a known FastAPI/Starlette gotcha: **`add_middleware` inserts at the head of the stack, so the *last* call is the *outermost* layer.** The code adds them in a deliberate order to get this outer→inner arrangement:
+Middleware is registered in [main.py](../../src/fdpneo_server/main.py) `create_app()`. The ordering rule is a known FastAPI/Starlette gotcha: **`add_middleware` inserts at the head of the stack, so the *last* call is the *outermost* layer.** The code adds them in a deliberate order to get this outer→inner arrangement:
 
 ```mermaid
 flowchart TB
@@ -34,7 +34,7 @@ Why this order (each is a deliberate decision, not an accident):
 
 ## 4.2 Authentication detail
 
-`AuthenticationMiddleware` ([identity/middleware.py](../../src/fdp/identity/middleware.py)) accepts two credential types and always produces a `RequestContext` — anonymous if no valid credential is present (anonymous is a first-class principal, not an error):
+`AuthenticationMiddleware` ([identity/middleware.py](../../src/fdpneo_server/identity/middleware.py)) accepts two credential types and always produces a `RequestContext` — anonymous if no valid credential is present (anonymous is a first-class principal, not an error):
 
 ```mermaid
 flowchart TB
@@ -79,7 +79,7 @@ The consequence, restated because it trips up everyone once:
 - `GET /fdp-api/catalog/spec` → the **SHACL shape** (composed closure) for the `catalog` type (extensions router).
 - `POST /fdp-api/sparql` → the access-controlled SPARQL endpoint.
 
-The reserved prefix is `RESERVED_API_PATH` in [shared/reserved.py](../../src/fdp/shared/reserved.py) (value `/fdp-api`). OpenAPI/docs are themselves mounted under it: `/fdp-api/openapi.json`, `/fdp-api/docs`. The LDP router is registered last precisely so its `/{path:path}` doesn't shadow the API routes.
+The reserved prefix is `RESERVED_API_PATH` in [shared/reserved.py](../../src/fdpneo_server/shared/reserved.py) (value `/fdp-api`). OpenAPI/docs are themselves mounted under it: `/fdp-api/openapi.json`, `/fdp-api/docs`. The LDP router is registered last precisely so its `/{path:path}` doesn't shadow the API routes.
 
 ### 4.3.1 Write-path invariants (v0.4.0, ADR-0016 §1)
 
@@ -90,11 +90,11 @@ A record write (`PUT`/`POST`) must resolve to an unambiguous canonical subject, 
 
 ### 4.3.2 Publication state for reserved-namespace resources
 
-Server-managed resources — policies, licenses, schemas, resource definitions — have canonical IRIs under `<base>/fdp-api/<segment>/<id>`, but the publication-state router is itself mounted under `/fdp-api`. `state_record_iri` ([shared/graphs.py](../../src/fdp/shared/graphs.py)) re-adds the reserved prefix when the state path's leading segment is a managed one, and passes root-level LDP records (`/catalog/x`) straight through — so `POST /fdp-api/policies/{id}/state` targets the graph the policy is actually stored under rather than a non-existent root IRI.
+Server-managed resources — policies, licenses, schemas, resource definitions — have canonical IRIs under `<base>/fdp-api/<segment>/<id>`, but the publication-state router is itself mounted under `/fdp-api`. `state_record_iri` ([shared/graphs.py](../../src/fdpneo_server/shared/graphs.py)) re-adds the reserved prefix when the state path's leading segment is a managed one, and passes root-level LDP records (`/catalog/x`) straight through — so `POST /fdp-api/policies/{id}/state` targets the graph the policy is actually stored under rather than a non-existent root IRI.
 
 ### 4.3.3 Signposting on read (v0.4.0, ADR-0017 §2)
 
-On a successful `GET`/`HEAD` of an existing record, the handlers append **FAIR Signposting** (Level 1) relations to the response `Link` header — the same header carrying the LDP `rel="type"` and `ldp:constrainedBy` links, which stay first. The relations ([metadata/signposting.py](../../src/fdp/metadata/signposting.py)) are built from the graph already in hand (no extra store round-trip) and *before* any `Prefer` minimisation, so they reflect the full record:
+On a successful `GET`/`HEAD` of an existing record, the handlers append **FAIR Signposting** (Level 1) relations to the response `Link` header — the same header carrying the LDP `rel="type"` and `ldp:constrainedBy` links, which stay first. The relations ([metadata/signposting.py](../../src/fdpneo_server/metadata/signposting.py)) are built from the graph already in hand (no extra store round-trip) and *before* any `Prefer` minimisation, so they reflect the full record:
 
 - `cite-as` — the IRI a consumer should cite: a client-asserted `owl:sameAs` under a recognised PID resolver, else an `adms:identifier`/`dct:identifier` PID, else the **canonical** IRI (used even when the request arrived on a serving origin).
 - `describedby` (canonical IRI, once per supported RDF media type, with `type`), `type` (`rdf:type`), `license`, `author` (`dct:creator`/`dct:publisher`), `item` (`ldp:contains` + typed member relations), `collection` (`dct:isPartOf`).
@@ -103,7 +103,7 @@ The total is capped (`signposting.MAX_LINKS`) so a large container cannot bloat 
 
 ### 4.3.3a In-band affordances on read (v0.11.0, ADR-0022)
 
-Alongside the signposting relations, `GET`/`HEAD` appends the record's **management affordances** so a client reaches them by link-following, not URL-template convention or OpenAPI ([metadata/signposting.py](../../src/fdp/metadata/signposting.py) `affordance_links`, wired through the router's `_navigation_links`). All use extension relation IRIs under `https://w3id.org/fdp/o#` (provisional; opaque to conforming clients, so a later IRI swap is compatible):
+Alongside the signposting relations, `GET`/`HEAD` appends the record's **management affordances** so a client reaches them by link-following, not URL-template convention or OpenAPI ([metadata/signposting.py](../../src/fdpneo_server/metadata/signposting.py) `affordance_links`, wired through the router's `_navigation_links`). All use extension relation IRIs under `https://w3id.org/fdp/o#` (provisional; opaque to conforming clients, so a later IRI swap is compatible):
 
 - `hasMetaMetadata` → `<record>/meta`; `hasSpec` → `<record>/spec` (instance) and `<base>/<urlPrefix>/spec` (type-level, what create forms need); `hasExpandedView` → `<record>/expanded`; `hasStateTransition` → `<record>/state`; `hasMemberPage` → `<record>/page/{childPrefix}` per child type (containers).
 - The **root** FDP record additionally advertises the API description: `service-desc` (`/fdp-api/openapi.json`), `service-doc` (`/fdp-api/docs`, only when docs UIs are enabled), and `hasResourceDefinitions` (`/fdp-api/resource-definitions`). Root is detected via the RD cache (`url_prefix == ""`), and the links are relative-path references so they resolve on whichever serving host answered.
@@ -112,16 +112,16 @@ Affordance links are advertised **unconditionally** — the link names the affor
 
 ### 4.3.4 Self-describing conformance binding (v0.5.0, ADR-0019)
 
-A record write (`PUT`/`POST`/`PATCH`) makes the stored record **self-describing at rest**. After SHACL validation and *before* the record graph is persisted, the LDP router ([ldp/router.py](../../src/fdp/metadata/ldp/router.py) `_stamp_conformance`) does two things:
+A record write (`PUT`/`POST`/`PATCH`) makes the stored record **self-describing at rest**. After SHACL validation and *before* the record graph is persisted, the LDP router ([ldp/router.py](../../src/fdpneo_server/metadata/ldp/router.py) `_stamp_conformance`) does two things:
 
 - **Stamps `dct:conformsTo` → the type's stable profile** into the record graph. The binding is server-owned: any client-supplied `dct:conformsTo` pointing into the managed profile namespace (`<base>/fdp-api/profiles/…`) is dropped first (enforcing "a record's profile equals its type default", ADR-0019 §2); a `conformsTo` to any *other* vocabulary/profile is left untouched. The stable profile IRI always resolves to the current version, so the public binding never goes stale.
 - **Records `fdp-o:validatedAgainst` → the exact profile *version*** in the sibling `<record>/meta` graph (threaded through `repo.put_graph(..., validated_against=…)` into the meta writer). This is the provenance that lets a restore/import reproduce the original validation; a write that doesn't re-validate preserves whatever the last content write recorded.
 
-The profile (a `prof:Profile` with a `role:validation` resource pointing at an immutable schema-version snapshot) is the **1:1 wrapper of the type's schema**, auto-provisioned on schema publish and, as a safety net, **lazily provisioned on first write** of a bootstrap-seeded type ([metadata/prof.py](../../src/fdp/metadata/prof.py) `ensure_conformance`). Validation still resolves the shape through the resource definition's `ldp:constrainedBy` (the stable schema == the pinned version's shape at write time, so the result is identical); ADR-0019 §2 records why `constrainedBy` stays on the schema rather than flipping to the profile.
+The profile (a `prof:Profile` with a `role:validation` resource pointing at an immutable schema-version snapshot) is the **1:1 wrapper of the type's schema**, auto-provisioned on schema publish and, as a safety net, **lazily provisioned on first write** of a bootstrap-seeded type ([metadata/prof.py](../../src/fdpneo_server/metadata/prof.py) `ensure_conformance`). Validation still resolves the shape through the resource definition's `ldp:constrainedBy` (the stable schema == the pinned version's shape at write time, so the result is identical); ADR-0019 §2 records why `constrainedBy` stays on the schema rather than flipping to the profile.
 
 ## 4.4 Startup and shutdown (lifespan)
 
-The FastAPI `lifespan` handler ([main.py](../../src/fdp/main.py) `lifespan`) runs once at boot and once at teardown. Startup binds the event-bus subscribers and runs first-boot setup:
+The FastAPI `lifespan` handler ([main.py](../../src/fdpneo_server/main.py) `lifespan`) runs once at boot and once at teardown. Startup binds the event-bus subscribers and runs first-boot setup:
 
 ```mermaid
 sequenceDiagram

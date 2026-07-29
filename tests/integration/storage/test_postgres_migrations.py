@@ -59,17 +59,17 @@ def postgres_container() -> Iterator[PostgresContainer]:
 def alembic_config(postgres_container: PostgresContainer) -> Iterator[Config]:
     """Build an Alembic Config pointed at the live Postgres container.
 
-    ``env.py`` reads the DSN from :func:`fdp.config.get_settings`, so we
+    ``env.py`` reads the DSN from :func:`fdpneo_server.config.get_settings`, so we
     override the env var and clear the LRU cache around the test.
     """
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     async_dsn = _async_dsn(postgres_container)
     original = os.environ.get("POSTGRES_DSN")
     os.environ["POSTGRES_DSN"] = async_dsn
     get_settings.cache_clear()
 
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
 
     try:
         yield config

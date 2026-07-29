@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fdp.metrics.aggregation import roll_up_hourly_to_daily, roll_up_raw_to_hourly
-from fdp.metrics.events import MetricEventType, MetricSample
-from fdp.metrics.repository import HourlyAggregate, MetricsRepository
+from fdpneo_server.metrics.aggregation import roll_up_hourly_to_daily, roll_up_raw_to_hourly
+from fdpneo_server.metrics.events import MetricEventType, MetricSample
+from fdpneo_server.metrics.repository import HourlyAggregate, MetricsRepository
 
 H = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 

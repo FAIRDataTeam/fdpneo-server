@@ -416,7 +416,7 @@ The reference impl has `SearchController` with text+filter search and
 discovery page uses this; without it, users can only navigate by typed
 container.
 
-All three sub-tasks delivered in `src/fdp/metadata/search/`. No new ADR — the
+All three sub-tasks delivered in `src/fdpneo_server/metadata/search/`. No new ADR — the
 result-visibility gate reuses ADR-0010 (publication state) rather than
 inventing one. Migration `0008` adds both tables.
 
@@ -581,7 +581,7 @@ runtime changes layer on top without a re-apply.
 
 ### 10.1 [x] Schema admin API
 
-Runtime SHACL-shape management in `src/fdp/metadata/schemas.py`
+Runtime SHACL-shape management in `src/fdpneo_server/metadata/schemas.py`
 (`SchemaService` + `build_schema_router`), mounted at `/schemas` before the
 LDP catch-all. Surfaces:
 
@@ -613,7 +613,7 @@ A schema can declare `dct:source <remote URL>` and the server
 periodically refetches and bumps the version. Disabled by default;
 opt-in per-schema.
 
-Delivered in `src/fdp/metadata/schema_sync.py` (`SchemaSyncService`):
+Delivered in `src/fdpneo_server/metadata/schema_sync.py` (`SchemaSyncService`):
 
 - **Discovery** — a SPARQL scan of `{base}/schemas/*` for a `dct:source` IRI;
   schemas without one are never touched (per-schema opt-in).
@@ -722,7 +722,7 @@ ADR-0004/0005 decision, not part of the RD feature.
 Postgres `runtime_settings` table and re-applies the bundled profile
 with force. Confirmation token required in body. Audit-logged.
 
-Delivered in `src/fdp/metadata/admin.py` (`ResetService` +
+Delivered in `src/fdpneo_server/metadata/admin.py` (`ResetService` +
 `build_admin_router`), mounted at `/admin` before the LDP catch-all (added
 to the reserved-prefix list in `rd_api.py` and the `main.py` comment):
 
@@ -770,10 +770,10 @@ cannot edit them.
 **Root cause.** Profile schemas and runtime schemas live in two different
 namespaces. The applier stores each profile schema at its **vocabulary IRI**
 (`expander.schema_iri("dcat:Catalog")` → `http://www.w3.org/ns/dcat#Catalog`,
-[`applier.py`](src/fdp/metadata/profiles/applier.py) step 1), and the root RD
+[`applier.py`](src/fdpneo_server/metadata/profiles/applier.py) step 1), and the root RD
 references it via `ldp:constrainedBy`
-([`rd_records.py`](src/fdp/metadata/profiles/rd_records.py)). The schema-admin
-API ([`schemas.py`](src/fdp/metadata/schemas.py)) only ever manages the
+([`rd_records.py`](src/fdpneo_server/metadata/profiles/rd_records.py)). The schema-admin
+API ([`schemas.py`](src/fdpneo_server/metadata/schemas.py)) only ever manages the
 reserved `{base}/fdp-api/schemas/{slug}` namespace — `list_schemas` filters
 `STRSTARTS(?g, "{schema_namespace}/")` and `GET/PUT/DELETE /schemas/{id}`
 resolve through `schema_graph_uri(base, id)` — so profile schemas are invisible
@@ -908,7 +908,7 @@ grant works but requires per-client Keycloak config).
 
 Delivered per [ADR-0011](docs/adr/0011-api-keys.md) — a key is an *alternate
 credential for an IdP-owned identity*, not a new identity (keeps ADR-0001
-intact). `src/fdp/identity/api_keys.py` (model + repository + `ApiKeyService` +
+intact). `src/fdpneo_server/identity/api_keys.py` (model + repository + `ApiKeyService` +
 `/me/api-keys` router) and migration `0007`:
 
 - **Token + storage**: `fdpk_` + ~190-bit random, shown **once**; only
@@ -1614,7 +1614,7 @@ are minted under) vs `BASE_URL` (the serving origin a redirector points to);
 Top-level `identifier_base: HttpUrl | None` with `resolved_identifier_base` /
 `serving_base` accessors; `pid: PIDSettings` subgroup (`FDP_PID_*`: w3id prefix,
 GitHub token, fork owner, host allow-list). `.env.example` +
-`docs/security/deployment-hardening.md` updated. (`src/fdp/config.py`)
+`docs/security/deployment-hardening.md` updated. (`src/fdpneo_server/config.py`)
 
 ### 16.2 [x] Canonicalization helper (`shared/identifiers.py`)
 
@@ -2112,7 +2112,7 @@ fetch/parse, and the search ORM/upsert patterns. Target release **v0.10.0**.
 
 ### 21.1 [x] Config: `RemoteLabelSettings`
 
-- `src/fdp/config.py`: `RemoteLabelSettings` mirroring `SchemaSyncSettings`,
+- `src/fdpneo_server/config.py`: `RemoteLabelSettings` mirroring `SchemaSyncSettings`,
   `env_prefix="FDP_REMOTE_LABELS_"`: `enabled: bool = False`;
   `allowed_hosts: Annotated[list[str], NoDecode]` with the shared CSV/JSON
   `_split_hosts` validator (**empty denies all**); `timeout_seconds=5.0`,
@@ -2130,7 +2130,7 @@ References: ADR-0012 §8; architecture §8.6.
   table `metadata_external_labels` — composite PK `(iri String(2048),
   language String(32))`, `label Text NULL` (NULL = cached miss), `resolved_at`
   + `expires_at AwareDateTime` (index `expires_at`), `source_host String(255) NULL`.
-- `src/fdp/metadata/external_labels.py`: `ExternalLabelRow(Base)` ORM (mirror
+- `src/fdpneo_server/metadata/external_labels.py`: `ExternalLabelRow(Base)` ORM (mirror
   `search/model.py`, `.with_variant(..., "sqlite")`); `ExternalLabelCache(session_factory)`
   with `get_many(iris, language)` (only `expires_at > now`) and
   `upsert(iri, language, label, *, ttl)` via `pg_insert(...).on_conflict_do_update`.
@@ -2140,7 +2140,7 @@ References: CLAUDE.md (Postgres holds operational state; parameterized SQL).
 
 ### 21.3 [x] External fetcher (allow-list + SSRF + RDF extraction)
 
-- `src/fdp/metadata/external_labels.py`: `ExternalLabelFetcher(http_client, settings)`
+- `src/fdpneo_server/metadata/external_labels.py`: `ExternalLabelFetcher(http_client, settings)`
   `async fetch(iri) -> str | None`: `is_safe_iri` → initial host on allow-list →
   manual redirect loop (≤ `max_redirects`) calling `assert_public_url(url,
   allowed_hosts=...)` **on every hop** → streamed size-capped GET
@@ -2175,7 +2175,7 @@ References: labels.py §6.1 lookup strategy.
 
 - `labels.py` router: add `wait: Query(ge=0, le=max_wait_ms) = 0` (ms), pass to
   `lookup(..., wait_ms=wait)`.
-- `src/fdp/main.py` `_build_shared_state`: build `ExternalLabelCache` +
+- `src/fdpneo_server/main.py` `_build_shared_state`: build `ExternalLabelCache` +
   `ExternalLabelFetcher` (shared `http_client`, `session_factory`,
   `settings.remote_labels`), inject into `LabelResolver`; cancel/await outstanding
   background fetches in the lifespan `finally` (mirror IndexPinger / job-registry).

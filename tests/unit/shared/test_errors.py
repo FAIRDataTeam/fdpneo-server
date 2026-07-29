@@ -1,4 +1,4 @@
-"""Tests for ``fdp.shared.errors``."""
+"""Tests for ``fdpneo_server.shared.errors``."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.shared.errors import (
+from fdpneo_server.shared.errors import (
     Conflict,
     FDPError,
     Forbidden,

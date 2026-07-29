@@ -10,8 +10,8 @@ from pathlib import Path
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import DCTERMS, PROV, RDF
 
-from fdp.metadata.backup import dump_store
-from fdp.metadata.backup.dump import (
+from fdpneo_server.metadata.backup import dump_store
+from fdpneo_server.metadata.backup.dump import (
     DATA_MODEL_ADR0019,
     DATA_MODEL_LEGACY,
     MANIFEST_FILE,

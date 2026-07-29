@@ -1,4 +1,4 @@
-"""Tests for ``fdp.metadata.pid.github`` — the w3id.org PR automation."""
+"""Tests for ``fdpneo_server.metadata.pid.github`` — the w3id.org PR automation."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import httpx
 import pytest
 import respx
 
-from fdp.metadata.pid.github import W3IDPublisher
-from fdp.metadata.pid.w3id import build_w3id_config
-from fdp.shared.errors import BadRequest
+from fdpneo_server.metadata.pid.github import W3IDPublisher
+from fdpneo_server.metadata.pid.w3id import build_w3id_config
+from fdpneo_server.shared.errors import BadRequest
 
 API = "https://api.github.com"
 CONFIG = build_w3id_config(

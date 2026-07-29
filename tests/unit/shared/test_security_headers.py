@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.shared.security_headers import SecurityHeadersMiddleware
+from fdpneo_server.shared.security_headers import SecurityHeadersMiddleware
 
 
 def _app() -> TestClient:

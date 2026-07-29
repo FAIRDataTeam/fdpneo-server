@@ -15,11 +15,11 @@ from typing import Any
 
 import pytest
 
-from fdp.metrics.events import MetricEventType, MetricSample, RequestObserved
-from fdp.metrics.geo import GeoResult
-from fdp.metrics.pipeline import MetricsPipeline
-from fdp.metrics.salt import SaltRotator
-from fdp.shared.events import EventBus
+from fdpneo_server.metrics.events import MetricEventType, MetricSample, RequestObserved
+from fdpneo_server.metrics.geo import GeoResult
+from fdpneo_server.metrics.pipeline import MetricsPipeline
+from fdpneo_server.metrics.salt import SaltRotator
+from fdpneo_server.shared.events import EventBus
 
 NOW = datetime(2026, 6, 1, 12, 34, 56, tzinfo=UTC)
 

@@ -12,13 +12,13 @@ from pydantic import HttpUrl, PostgresDsn
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles import load_profile
-from fdp.metadata.profiles.manifest import DeploymentProfile
-from fdp.metadata.profiles.migrate_modular import migrate_to_modular_profile
-from fdp.metadata.states import MetadataState
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import DCT, FDP_RESOURCE_DEFINITION, LDP
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.metadata.profiles import load_profile
+from fdpneo_server.metadata.profiles.manifest import DeploymentProfile
+from fdpneo_server.metadata.profiles.migrate_modular import migrate_to_modular_profile
+from fdpneo_server.metadata.states import MetadataState
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import DCT, FDP_RESOURCE_DEFINITION, LDP
 
 BASE = "http://localhost:8000"
 DCAT = "http://www.w3.org/ns/dcat#"

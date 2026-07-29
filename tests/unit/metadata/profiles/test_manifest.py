@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from fdp.metadata.profiles import load_profile
-from fdp.shared.errors import BadRequest
+from fdpneo_server.metadata.profiles import load_profile
+from fdpneo_server.shared.errors import BadRequest
 
 
 @pytest.mark.unit

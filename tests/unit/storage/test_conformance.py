@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from fdp.storage.triplestore.conformance import verify_named_graph_isolation
+from fdpneo_server.storage.triplestore.conformance import verify_named_graph_isolation
 
 
 @dataclass

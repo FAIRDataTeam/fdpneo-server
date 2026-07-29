@@ -26,17 +26,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.identity.deps import current_context
-from fdp.metadata.audit import AuditOperation, RecordAuditRow
-from fdp.metadata.dashboard import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.audit import AuditOperation, RecordAuditRow
+from fdpneo_server.metadata.dashboard import (
     DashboardItem,
     DashboardService,
     _select_to_items,
     build_dashboard_router,
 )
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.storage.postgres.models import Base
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.storage.postgres.models import Base
 
 # --- _select_to_items ----------------------------------------------------
 
@@ -341,7 +341,7 @@ class _StubService:
         self.calls: list[dict[str, Any]] = []
 
     async def for_subject(self, ctx: Any, **kwargs: Any) -> Any:
-        from fdp.metadata.dashboard import DashboardResponse
+        from fdpneo_server.metadata.dashboard import DashboardResponse
 
         self.calls.append({"ctx": ctx, **kwargs})
         return DashboardResponse(owned=[], editable=[], recent=[])

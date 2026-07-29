@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.access.rewriter`."""
+"""Unit tests for :mod:`fdpneo_server.access.rewriter`."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from typing import cast
 
 import pytest
 
-from fdp.access.parser import ParsedRead, ParsedUpdate, QueryForm
-from fdp.access.rewriter import RewrittenRead, authorize_update, rewrite_read
-from fdp.shared.errors import PolicyViolation
+from fdpneo_server.access.parser import ParsedRead, ParsedUpdate, QueryForm
+from fdpneo_server.access.rewriter import RewrittenRead, authorize_update, rewrite_read
+from fdpneo_server.shared.errors import PolicyViolation
 
 G1 = "https://example.org/g1"
 G2 = "https://example.org/g2"

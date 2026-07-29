@@ -18,16 +18,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.identity.deps import current_context
-from fdp.metrics.api import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metrics.api import (
     _DEFAULT_LOOKBACK_DAYS,
     _MAX_LOOKBACK_DAYS,
     _resolve_period,
     build_metrics_router,
 )
-from fdp.metrics.reader import CountryCount, DailyPoint, ResourceCount, SummaryTotals
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, register_exception_handlers
+from fdpneo_server.metrics.reader import CountryCount, DailyPoint, ResourceCount, SummaryTotals
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest, register_exception_handlers
 
 # --- _resolve_period -------------------------------------------------------
 

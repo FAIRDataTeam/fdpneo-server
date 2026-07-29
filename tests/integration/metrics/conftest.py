@@ -17,7 +17,7 @@ from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from fdp.metrics.repository import MetricsRepository
+from fdpneo_server.metrics.repository import MetricsRepository
 
 
 def _async_dsn(container: PostgresContainer) -> str:
@@ -36,14 +36,14 @@ def postgres_container() -> Iterator[PostgresContainer]:
 @pytest.fixture
 def migrated(postgres_container: PostgresContainer) -> Iterator[PostgresContainer]:
     """Apply ``alembic upgrade head`` against the live container."""
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     async_dsn = _async_dsn(postgres_container)
     original = os.environ.get("POSTGRES_DSN")
     os.environ["POSTGRES_DSN"] = async_dsn
     get_settings.cache_clear()
 
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     try:
         command.upgrade(config, "head")
         yield postgres_container

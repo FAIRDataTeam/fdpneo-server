@@ -1,16 +1,16 @@
-"""Unit tests for :mod:`fdp.metadata.meta`."""
+"""Unit tests for :mod:`fdpneo_server.metadata.meta`."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from importlib.resources import files
 
 import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.meta import (
+from fdpneo_server.metadata.meta import (
     FDP_CREATE_OPERATION,
     FDP_MODIFY_OPERATION,
     META_SHAPE_IRI,
@@ -19,9 +19,9 @@ from fdp.metadata.meta import (
     add_allowed_state_transitions,
     build_meta_graph,
 )
-from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
-from fdp.shared.errors import SchemaViolation
-from fdp.shared.namespaces import (
+from fdpneo_server.metadata.shacl import InMemoryShapeProvider, ShaclValidator
+from fdpneo_server.shared.errors import SchemaViolation
+from fdpneo_server.shared.namespaces import (
     DCT,
     FDP_ALLOWED_STATE_TRANSITION,
     FDP_METADATA_STATE,
@@ -37,7 +37,7 @@ NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
 LATER = datetime(2026, 6, 1, 13, 0, tzinfo=UTC)
 
 META_SHAPE_TTL = (
-    Path(__file__).resolve().parents[3] / "profiles" / "default" / "schemas" / "meta-metadata.ttl"
+    files("fdpneo_server") / "profiles" / "default" / "schemas" / "meta-metadata.ttl"
 ).read_text(encoding="utf-8")
 
 
@@ -54,7 +54,7 @@ _PROFILE_V2 = "https://example.org/fdp-api/profiles/dataset/2"
 
 @pytest.mark.unit
 def test_validated_against_is_stamped_when_supplied() -> None:
-    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+    from fdpneo_server.shared.namespaces import FDP_VALIDATED_AGAINST
 
     result = build_meta_graph(
         record_iri=RECORD, prior=_empty(), subject=ALICE, now=NOW, validated_against=_PROFILE_V1
@@ -64,7 +64,7 @@ def test_validated_against_is_stamped_when_supplied() -> None:
 
 @pytest.mark.unit
 def test_validated_against_preserved_from_prior_when_omitted() -> None:
-    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+    from fdpneo_server.shared.namespaces import FDP_VALIDATED_AGAINST
 
     # A content write recorded v1; a later write that doesn't re-validate (e.g. a
     # state rebuild) must keep the provenance rather than drop it.
@@ -77,7 +77,7 @@ def test_validated_against_preserved_from_prior_when_omitted() -> None:
 
 @pytest.mark.unit
 def test_validated_against_supplied_overrides_prior() -> None:
-    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+    from fdpneo_server.shared.namespaces import FDP_VALIDATED_AGAINST
 
     prior = build_meta_graph(
         record_iri=RECORD, prior=_empty(), subject=ALICE, now=NOW, validated_against=_PROFILE_V1

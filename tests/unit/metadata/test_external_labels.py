@@ -16,15 +16,15 @@ import pytest
 from rdflib import Graph
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.config import RemoteLabelSettings
-from fdp.metadata.external_labels import (
+from fdpneo_server.config import RemoteLabelSettings
+from fdpneo_server.metadata.external_labels import (
     ExternalLabelCache,
     ExternalLabelFetcher,
     ExternalLabelRow,
     best_label_from_graph,
 )
-from fdp.metadata.labels import LabelResolver
-from fdp.storage.postgres.models import Base, register_all_models
+from fdpneo_server.metadata.labels import LabelResolver
+from fdpneo_server.storage.postgres.models import Base, register_all_models
 
 pytestmark = pytest.mark.unit
 
@@ -246,7 +246,7 @@ def patch_ssrf(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _ok(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr("fdp.metadata.external_labels.assert_public_url", _ok)
+    monkeypatch.setattr("fdpneo_server.metadata.external_labels.assert_public_url", _ok)
 
 
 async def test_fetch_resolves_turtle_label(patch_ssrf: None) -> None:

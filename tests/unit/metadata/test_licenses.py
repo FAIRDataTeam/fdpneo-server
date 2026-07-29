@@ -16,18 +16,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from rdflib import Graph
 
-from fdp.metadata.licenses import (
+from fdpneo_server.metadata.licenses import (
     LICENSE_SHAPE_IRI,
     LicenseService,
     ValidationResultView,
     build_license_router,
     predefined_license_shape_graph,
 )
-from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Conflict, NotFound, SchemaViolation
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import DCT
+from fdpneo_server.metadata.shacl import InMemoryShapeProvider, ShaclValidator
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest, Conflict, NotFound, SchemaViolation
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import DCT
 
 BASE = "http://localhost:8000"
 
@@ -226,7 +226,7 @@ class _FakeService:
     async def put(self, license_id: str, turtle: str, *, subject: str | None):
         del subject
         self.puts.append((license_id, turtle))
-        from fdp.metadata.licenses import LicenseInfo
+        from fdpneo_server.metadata.licenses import LicenseInfo
 
         return LicenseInfo(id=license_id, iri=self.iri(license_id), version=1)
 
@@ -241,15 +241,15 @@ class _FakeService:
         return ValidationResultView(conforms=True, violations=[])
 
     async def list_licenses(self, *, published_only: bool = False):
-        from fdp.metadata.licenses import LicenseInfo
+        from fdpneo_server.metadata.licenses import LicenseInfo
 
         self.list_published_only = published_only
         return [LicenseInfo(id="cc-by-4.0", iri=self.iri("cc-by-4.0"))]
 
 
 def _client(service: _FakeService, *, ctx: RequestContext) -> TestClient:
-    from fdp.identity.deps import current_context
-    from fdp.shared.errors import register_exception_handlers
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.shared.errors import register_exception_handlers
 
     app = FastAPI()
     register_exception_handlers(app)

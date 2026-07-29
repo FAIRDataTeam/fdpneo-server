@@ -10,7 +10,7 @@ The FDP server implements **FAIR Signposting Level 1**: typed RFC 8288 `Link`
 relations on every successful `GET`/`HEAD` of an existing record, so a machine
 agent can navigate and cite a record from its HTTP response headers alone,
 without parsing the body. The link set is built by the pure
-[`metadata/signposting.py`](../../src/fdp/metadata/signposting.py) and appended to
+[`metadata/signposting.py`](../../src/fdpneo_server/metadata/signposting.py) and appended to
 the response `Link` header by the LDP handlers (after the LDP `rel="type"` /
 `ldp:constrainedBy` links). Unit + contract coverage:
 [`tests/unit/metadata/test_signposting.py`](../../tests/unit/metadata/test_signposting.py),

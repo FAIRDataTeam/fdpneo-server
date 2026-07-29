@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 import pytest
 from rdflib import Graph
 
-from fdp.policy.model import Action
-from fdp.policy.resolver import GraphBackedOfferResolver
+from fdpneo_server.policy.model import Action
+from fdpneo_server.policy.resolver import GraphBackedOfferResolver
 
 OFFER_TTL = """\
 @prefix odrl: <http://www.w3.org/ns/odrl/2/> .

@@ -1,10 +1,10 @@
-"""Tests for ``fdp.metadata.pid.w3id`` — redirect config generation."""
+"""Tests for ``fdpneo_server.metadata.pid.w3id`` — redirect config generation."""
 
 from __future__ import annotations
 
 import pytest
 
-from fdp.metadata.pid.w3id import build_w3id_config, w3id_prefix_from
+from fdpneo_server.metadata.pid.w3id import build_w3id_config, w3id_prefix_from
 
 
 class TestPrefixDerivation:

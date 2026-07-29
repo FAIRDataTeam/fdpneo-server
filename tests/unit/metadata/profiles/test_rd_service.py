@@ -19,19 +19,19 @@ import pytest
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.profiles.rd_records import (
+from fdpneo_server.metadata.profiles.rd_records import (
     ChildLinkRecord,
     ResourceDefinitionRecord,
     record_to_graph,
 )
-from fdp.metadata.profiles.rd_service import (
+from fdpneo_server.metadata.profiles.rd_service import (
     ResourceDefinitionService,
     build_cache_from_repository,
     list_definition_iris,
 )
-from fdp.metadata.profiles.registry import resolve_cache
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, SH
+from fdpneo_server.metadata.profiles.registry import resolve_cache
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import FDP_RESOURCE_DEFINITION, SH
 
 BASE = "http://localhost:8000"
 DCAT = "http://www.w3.org/ns/dcat#"

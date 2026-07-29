@@ -20,15 +20,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.metadata.labels import (
+from fdpneo_server.metadata.labels import (
     LabelResolver,
     _LabelCache,
     _pick_best_labels,
     build_labels_router,
     is_safe_iri,
 )
-from fdp.metadata.settings import AutocompleteItem, AutocompleteSource, AutocompleteSources
-from fdp.shared.errors import register_exception_handlers
+from fdpneo_server.metadata.settings import (
+    AutocompleteItem,
+    AutocompleteSource,
+    AutocompleteSources,
+)
+from fdpneo_server.shared.errors import register_exception_handlers
 
 # --- is_safe_iri ----------------------------------------------------------
 
@@ -167,7 +171,7 @@ def test_pick_best_handles_empty_results() -> None:
 @pytest.mark.unit
 def test_cache_returns_miss_for_unseen_key() -> None:
     cache = _LabelCache(ttl_seconds=60)
-    from fdp.metadata.labels import _MISS, _Sentinel
+    from fdpneo_server.metadata.labels import _MISS, _Sentinel
 
     result = cache.get("urn:test", "en")
     assert isinstance(result, _Sentinel)
@@ -184,7 +188,7 @@ def test_cache_stores_positive_hit() -> None:
 @pytest.mark.unit
 def test_cache_stores_negative_hit_distinct_from_miss() -> None:
     cache = _LabelCache(ttl_seconds=60)
-    from fdp.metadata.labels import _Sentinel
+    from fdpneo_server.metadata.labels import _Sentinel
 
     cache.set("urn:test", "en", None)
     result = cache.get("urn:test", "en")
@@ -198,11 +202,11 @@ def test_cache_expires_after_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
     base = time.monotonic()
     # Freeze the clock at base + 0, write, then advance past TTL.
     clock = [base]
-    monkeypatch.setattr("fdp.metadata.labels.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("fdpneo_server.metadata.labels.time.monotonic", lambda: clock[0])
     cache.set("urn:test", "en", "Hello")
     assert cache.get("urn:test", "en") == "Hello"
     clock[0] = base + 20  # past TTL
-    from fdp.metadata.labels import _Sentinel
+    from fdpneo_server.metadata.labels import _Sentinel
 
     result = cache.get("urn:test", "en")
     assert isinstance(result, _Sentinel)

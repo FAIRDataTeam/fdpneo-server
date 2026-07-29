@@ -14,11 +14,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from rdflib import Graph, Literal, URIRef
 
-from fdp.identity.deps import current_context
-from fdp.metadata.ldp import build_ldp_router
-from fdp.metadata.repository import MetadataRepository
-from fdp.shared.errors import register_exception_handlers
-from fdp.shared.namespaces import DCT, OWL
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.ldp import build_ldp_router
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.shared.namespaces import DCT, OWL
 from tests.unit.metadata.ldp.test_router import FakeAdapter, FakePDP, _authenticated_ctx
 
 RECORD_IRI = "http://testserver/ldp/catalogs/c1"

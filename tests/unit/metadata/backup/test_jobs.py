@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from fdp.metadata.backup.jobs import BackupJob, BackupJobRegistry, JobState
+from fdpneo_server.metadata.backup.jobs import BackupJob, BackupJobRegistry, JobState
 
 pytestmark = pytest.mark.unit
 

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 from rdflib import Graph, URIRef
 
-from fdp.policy.model import (
+from fdpneo_server.policy.model import (
     Action,
     ConflictStrategy,
     ConstraintOperator,
@@ -16,8 +16,8 @@ from fdp.policy.model import (
     RoleConstraint,
     TimeConstraint,
 )
-from fdp.policy.parser import parse_offer
-from fdp.shared.errors import SchemaViolation
+from fdpneo_server.policy.parser import parse_offer
+from fdpneo_server.shared.errors import SchemaViolation
 
 OFFER_IRI = URIRef("https://example.org/offer/1")
 PREFIXES = """\
