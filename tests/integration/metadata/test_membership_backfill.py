@@ -26,7 +26,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.namespaces import DCT, LDP
+from fdpneo_server.shared.namespaces import DCT, LDP
 
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
@@ -135,7 +135,7 @@ def app_env(
     oxigraph_container: DockerContainer,
     bundle: Path,
 ) -> Iterator[None]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -154,7 +154,7 @@ def app_env(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -171,7 +171,7 @@ async def _apply_profile_via_startup() -> None:
     """Trigger the app lifespan once so the profile is auto-applied to the store."""
     from fastapi.testclient import TestClient
 
-    from fdp.main import create_app
+    from fdpneo_server.main import create_app
 
     with TestClient(create_app(), base_url=BASE_URL):
         pass
@@ -184,11 +184,11 @@ def test_backfill_restores_direct_container(app_env: None) -> None:
 
 
 async def _run() -> None:
-    from fdp.config import get_settings
-    from fdp.metadata.profiles.backfill import backfill_direct_container_membership
-    from fdp.metadata.profiles.rd_service import build_cache_from_repository
-    from fdp.metadata.repository import MetadataRepository
-    from fdp.storage.triplestore.adapter import TripleStoreAdapter
+    from fdpneo_server.config import get_settings
+    from fdpneo_server.metadata.profiles.backfill import backfill_direct_container_membership
+    from fdpneo_server.metadata.profiles.rd_service import build_cache_from_repository
+    from fdpneo_server.metadata.repository import MetadataRepository
+    from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     await _apply_profile_via_startup()
 

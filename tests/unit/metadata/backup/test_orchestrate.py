@@ -12,8 +12,8 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import DCTERMS, RDF
 
-from fdp.metadata.backup.dump import MANIFEST_FILE, RECORDS_FILE
-from fdp.metadata.backup.orchestrate import dump_to_archive, extract_archive
+from fdpneo_server.metadata.backup.dump import MANIFEST_FILE, RECORDS_FILE
+from fdpneo_server.metadata.backup.orchestrate import dump_to_archive, extract_archive
 
 pytestmark = pytest.mark.unit
 

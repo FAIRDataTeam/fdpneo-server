@@ -1,6 +1,6 @@
 """End-to-end runtime resource-definition admin against Oxigraph + Postgres (ADR-0009).
 
-Drives the *whole* HTTP stack via :func:`fdp.main.create_app` — real triple
+Drives the *whole* HTTP stack via :func:`fdpneo_server.main.create_app` — real triple
 store, Postgres-backed PDP/authz cache, SHACL validator, LDP + SPARQL + the
 resource-definition admin routers — with the request context injected through
 a ``current_context`` dependency override (so no OIDC/JWT is needed). The
@@ -36,7 +36,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.context import RequestContext
+from fdpneo_server.shared.context import RequestContext
 
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
@@ -157,7 +157,7 @@ def app_env(
     bundle: Path,
 ) -> Iterator[None]:
     """Configure the environment ``create_app`` reads, run migrations, and clean up."""
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -178,7 +178,7 @@ def app_env(
     os.environ.update(env)
     get_settings.cache_clear()
 
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -225,8 +225,8 @@ def _make_client() -> _Client:
     auto-bootstrap), so calling it twice simulates a server restart against
     the same stores.
     """
-    from fdp.identity.deps import current_context
-    from fdp.main import create_app
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.main import create_app
 
     app = create_app()
     holder: dict[str, RequestContext] = {"ctx": RequestContext.anonymous(trace_id="it")}

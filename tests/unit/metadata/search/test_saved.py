@@ -9,17 +9,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.identity.deps import current_context
-from fdp.metadata.search.saved import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.search.saved import (
     SavedQueryCreate,
     SavedQueryRepository,
     SavedQueryService,
     SavedQueryUpdate,
     build_saved_queries_router,
 )
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Forbidden, NotFound, register_exception_handlers
-from fdp.storage.postgres.models import Base, register_all_models
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest, Forbidden, NotFound, register_exception_handlers
+from fdpneo_server.storage.postgres.models import Base, register_all_models
 
 ALICE = "https://idp/alice"
 BOB = "https://idp/bob"

@@ -115,8 +115,8 @@ flowchart TB
 
 Every place that protects a resource is a **Policy Enforcement Point (PEP)** and calls the same **Policy Decision Point (PDP)**. There is exactly one decision function and one bulk-lookup function:
 
-- `authorize(ctx, action, resource_iri) -> Decision` — single resource. Used by the LDP layer ([metadata/ldp/router.py](../../src/fdp/metadata/ldp/router.py)) and the data provider.
-- `authorized_graphs(ctx, action) -> set[URIRef]` — bulk. Used by the SPARQL endpoint to build the dataset a query may see ([access/router.py](../../src/fdp/access/router.py)).
+- `authorize(ctx, action, resource_iri) -> Decision` — single resource. Used by the LDP layer ([metadata/ldp/router.py](../../src/fdpneo_server/metadata/ldp/router.py)) and the data provider.
+- `authorized_graphs(ctx, action) -> set[URIRef]` — bulk. Used by the SPARQL endpoint to build the dataset a query may see ([access/router.py](../../src/fdpneo_server/access/router.py)).
 
 ```mermaid
 flowchart LR
@@ -142,13 +142,13 @@ flowchart LR
     BUS --> SRCH["search indexer"]
 ```
 
-Subscribers are bound at startup in the FastAPI `lifespan` ([main.py](../../src/fdp/main.py) `lifespan`): `metrics_pipeline.start(bus)`, `audit_log.start(bus)`, `search_indexer.start(bus)`. Event types live next to their producers, e.g. [metadata/events.py](../../src/fdp/metadata/events.py).
+Subscribers are bound at startup in the FastAPI `lifespan` ([main.py](../../src/fdpneo_server/main.py) `lifespan`): `metrics_pipeline.start(bus)`, `audit_log.start(bus)`, `search_indexer.start(bus)`. Event types live next to their producers, e.g. [metadata/events.py](../../src/fdpneo_server/metadata/events.py).
 
 **Why an event bus and not direct calls?** A record write should not import metrics, audit, or search — that would invert the dependency rules and make the write path care about concerns it shouldn't. Publishing an event keeps the write path ignorant of who listens. It also means the **metrics anonymization boundary** is structural: the request observer snapshots an *already-anonymized* context, so identifying data never reaches a subscriber. See [ADR-0002](../adr/0002-anonymous-metrics.md).
 
 ## 2.6 Composition root
 
-Everything is wired in one place: `create_app()` in [main.py](../../src/fdp/main.py). It builds the shared singletons (`_build_shared_state`), constructs each router with its collaborators, registers middleware and routers in a deliberate order, and installs the `lifespan` handler that binds event subscribers and runs bootstrap. There is no global app instance — `create_app()` is a function so tests can build isolated apps. The exact order is [doc 4](04-request-lifecycle.md).
+Everything is wired in one place: `create_app()` in [main.py](../../src/fdpneo_server/main.py). It builds the shared singletons (`_build_shared_state`), constructs each router with its collaborators, registers middleware and routers in a deliberate order, and installs the `lifespan` handler that binds event subscribers and runs bootstrap. There is no global app instance — `create_app()` is a function so tests can build isolated apps. The exact order is [doc 4](04-request-lifecycle.md).
 
 ---
 

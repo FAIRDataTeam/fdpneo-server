@@ -53,7 +53,7 @@ fdp-server/
 │   │   ├── README.md
 │   │   └── diagrams/
 │   └── adr/                        ← architecture decision records
-├── src/fdp/
+├── src/fdpneo_server/
 │   ├── identity/                   ← OIDC integration, request context
 │   ├── metadata/                   ← records, schemas, LDP server
 │   ├── policy/                     ← ODRL evaluator, PDP, authorization cache
@@ -125,8 +125,8 @@ For working on the server itself, run only the backing services in Docker and ru
 docker compose -f deploy/compose.yaml up -d       # GraphDB + PostgreSQL + Keycloak
 uv sync
 uv run fdp db migrate
-uv run fdp profile apply ./profiles/default
-uv run fastapi dev src/fdp/main.py
+uv run fdp profile apply   # bundled default profile
+uv run fastapi dev src/fdpneo_server/main.py
 ```
 
 This compose starts GraphDB, PostgreSQL, and a Keycloak instance pre-configured for local development, but not the server or client. The default profile bootstraps a minimal FDP/DCAT setup; replace it with a community profile to bootstrap a custom deployment.

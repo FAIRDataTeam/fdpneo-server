@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metadata.shacl`."""
+"""Unit tests for :mod:`fdpneo_server.metadata.shacl`."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.shacl import (
+from fdpneo_server.metadata.shacl import (
     InMemoryShapeProvider,
     ShaclValidator,
     UnknownShapeError,
 )
-from fdp.shared.errors import SchemaViolation
+from fdpneo_server.shared.errors import SchemaViolation
 
 EX = "https://example.org/"
 SHAPE_IRI = "https://example.org/shapes/dataset"

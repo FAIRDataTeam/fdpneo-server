@@ -18,7 +18,6 @@ import os
 import re
 from collections.abc import Iterator
 from importlib.resources import files
-from pathlib import Path
 
 import pytest
 from alembic import command
@@ -29,11 +28,11 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.context import RequestContext
-from fdp.shared.namespaces import LDP
+from fdpneo_server.metadata.profiles import bundled_default_profile
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.namespaces import LDP
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROFILE = REPO_ROOT / "profiles" / "default"
+DEFAULT_PROFILE = bundled_default_profile()
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
 
@@ -69,9 +68,9 @@ def oxigraph_container() -> Iterator[DockerContainer]:
 def client(
     postgres_container: PostgresContainer, oxigraph_container: DockerContainer
 ) -> Iterator[TestClient]:
-    from fdp.config import get_settings
-    from fdp.identity.deps import current_context
-    from fdp.main import create_app
+    from fdpneo_server.config import get_settings
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.main import create_app
 
     host = oxigraph_container.get_container_host_ip()
     oxi = f"http://{host}:{oxigraph_container.get_exposed_port(OXIGRAPH_PORT)}"
@@ -89,7 +88,7 @@ def client(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
 
     app = create_app()

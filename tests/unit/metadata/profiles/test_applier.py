@@ -11,11 +11,11 @@ import pytest
 from pydantic import HttpUrl, PostgresDsn
 from rdflib import Graph
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles import apply_profile, load_profile, resolve_runtime_state
-from fdp.metadata.profiles.applier import _repository_graph, _service_advertisement
-from fdp.shared.errors import BadRequest, Conflict
-from fdp.shared.namespaces import DCAT, VOID
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.metadata.profiles import apply_profile, load_profile, resolve_runtime_state
+from fdpneo_server.metadata.profiles.applier import _repository_graph, _service_advertisement
+from fdpneo_server.shared.errors import BadRequest, Conflict
+from fdpneo_server.shared.namespaces import DCAT, VOID
 
 # --- in-memory fakes -------------------------------------------------------
 
@@ -353,8 +353,8 @@ async def test_apply_refuses_invalid_profile_without_writing(
 def test_direct_container_config_emits_membership_triad() -> None:
     from rdflib import RDF, URIRef
 
-    from fdp.metadata.profiles.applier import direct_container_config
-    from fdp.shared.namespaces import LDP
+    from fdpneo_server.metadata.profiles.applier import direct_container_config
+    from fdpneo_server.shared.namespaces import LDP
 
     subject = URIRef("http://localhost:8000")
     catalog = "http://www.w3.org/ns/dcat#catalog"
@@ -413,7 +413,7 @@ def test_repository_graph_includes_service_advertisement() -> None:
 async def test_ensure_root_service_advertisement_adds_then_idempotent() -> None:
     from rdflib import RDF, URIRef
 
-    from fdp.metadata.profiles.applier import ensure_root_service_advertisement
+    from fdpneo_server.metadata.profiles.applier import ensure_root_service_advertisement
 
     class _Store:
         def __init__(self) -> None:
@@ -444,7 +444,7 @@ async def test_ensure_root_service_advertisement_adds_then_idempotent() -> None:
 
 
 async def test_ensure_root_service_advertisement_noop_when_no_root() -> None:
-    from fdp.metadata.profiles.applier import ensure_root_service_advertisement
+    from fdpneo_server.metadata.profiles.applier import ensure_root_service_advertisement
 
     class _Empty:
         async def get_graph(self, record_uri: str) -> Graph:

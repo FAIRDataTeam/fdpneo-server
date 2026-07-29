@@ -23,7 +23,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.context import RequestContext
+from fdpneo_server.shared.context import RequestContext
 
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
@@ -114,7 +114,7 @@ def app_env(
     oxigraph_container: DockerContainer,
     bundle: Path,
 ) -> Iterator[None]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -133,7 +133,7 @@ def app_env(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -167,8 +167,8 @@ class _Client:
 
 
 def _make_client() -> _Client:
-    from fdp.identity.deps import current_context
-    from fdp.main import create_app
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.main import create_app
 
     app = create_app()
     holder: dict[str, RequestContext] = {"ctx": RequestContext.anonymous(trace_id="it")}

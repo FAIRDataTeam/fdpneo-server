@@ -1,11 +1,11 @@
-"""Unit tests for :mod:`fdp.shared.negotiation`."""
+"""Unit tests for :mod:`fdpneo_server.shared.negotiation`."""
 
 from __future__ import annotations
 
 import pytest
 from rdflib import Graph, Literal, URIRef
 
-from fdp.shared.negotiation import (
+from fdpneo_server.shared.negotiation import (
     JSON_LD,
     N_TRIPLES,
     RDF_XML,

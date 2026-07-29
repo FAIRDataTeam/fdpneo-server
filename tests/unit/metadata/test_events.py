@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metadata.events`."""
+"""Unit tests for :mod:`fdpneo_server.metadata.events`."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
-from fdp.shared.events import EventBus
+from fdpneo_server.metadata.events import RecordCreated, RecordDeleted, RecordModified
+from fdpneo_server.shared.events import EventBus
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
 

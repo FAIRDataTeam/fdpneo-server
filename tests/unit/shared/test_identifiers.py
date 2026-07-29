@@ -1,10 +1,10 @@
-"""Tests for ``fdp.shared.identifiers`` — PID canonicalization (ADR-0014)."""
+"""Tests for ``fdpneo_server.shared.identifiers`` — PID canonicalization (ADR-0014)."""
 
 from __future__ import annotations
 
 import pytest
 
-from fdp.shared.identifiers import canonicalize, is_under, relative_path
+from fdpneo_server.shared.identifiers import canonicalize, is_under, relative_path
 
 W3ID = "https://w3id.org/myfdp"
 SERVING = "http://localhost:8000"

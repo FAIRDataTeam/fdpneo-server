@@ -14,18 +14,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 
-from fdp.access.results import (
+from fdpneo_server.access.results import (
     SPARQL_RESULTS_CSV,
     SPARQL_RESULTS_JSON,
 )
-from fdp.access.router import build_sparql_router
-from fdp.config import TripleStoreSettings
-from fdp.identity.deps import current_context
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.shared.negotiation import TURTLE
-from fdp.storage.triplestore import TripleStoreAdapter
+from fdpneo_server.access.router import build_sparql_router
+from fdpneo_server.config import TripleStoreSettings
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.shared.negotiation import TURTLE
+from fdpneo_server.storage.triplestore import TripleStoreAdapter
 
 QUERY_URL = "http://triplestore.local/query"
 UPDATE_URL = "http://triplestore.local/update"

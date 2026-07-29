@@ -18,10 +18,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 
-from fdp.config import OIDCSettings
-from fdp.identity.jwks import JWKSClient
-from fdp.identity.middleware import AuthenticationMiddleware
-from fdp.shared.context import RequestContext, get_current
+from fdpneo_server.config import OIDCSettings
+from fdpneo_server.identity.jwks import JWKSClient
+from fdpneo_server.identity.middleware import AuthenticationMiddleware
+from fdpneo_server.shared.context import RequestContext, get_current
 from tests.unit.identity.conftest import AUDIENCE, ISSUER, IdPFixture
 
 TTL = timedelta(seconds=300)

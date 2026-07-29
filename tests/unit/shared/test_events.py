@@ -1,4 +1,4 @@
-"""Tests for ``fdp.shared.events``."""
+"""Tests for ``fdpneo_server.shared.events``."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from fdp.shared.events import Event, EventBus
+from fdpneo_server.shared.events import Event, EventBus
 
 
 @dataclass(frozen=True)

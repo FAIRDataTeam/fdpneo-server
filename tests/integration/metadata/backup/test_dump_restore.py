@@ -17,10 +17,14 @@ from rdflib.namespace import DCTERMS, PROV, RDF
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from fdp.config import TripleStoreSettings
-from fdp.metadata.backup import dump_store, restore_store
-from fdp.metadata.backup.dump import DATA_MODEL_ADR0019
-from fdp.storage.triplestore.adapter import TURTLE, TripleStoreAdapter, construct_named_graph
+from fdpneo_server.config import TripleStoreSettings
+from fdpneo_server.metadata.backup import dump_store, restore_store
+from fdpneo_server.metadata.backup.dump import DATA_MODEL_ADR0019
+from fdpneo_server.storage.triplestore.adapter import (
+    TURTLE,
+    TripleStoreAdapter,
+    construct_named_graph,
+)
 
 OXIGRAPH_PORT = 7878
 BASE = "http://localhost:8000"

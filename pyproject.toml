@@ -1,6 +1,6 @@
 [project]
 name = "fdpneo"
-version = "0.11.1"
+version = "0.12.0"
 description = "FAIR Data Point v2 server — a FAIR-aligned metadata repository implementing the FDP specifications."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -95,7 +95,7 @@ dev = [
 ]
 
 [project.scripts]
-fdp = "fdp.cli:app"
+fdp = "fdpneo_server.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/FAIRDataTeam/fdp-server"  # placeholder
@@ -108,7 +108,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/fdp"]
+packages = ["src/fdpneo_server"]
 
 # ----------------------------------------------------------------------------
 # Ruff — lint and format
@@ -143,13 +143,13 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "ARG"]
-"src/fdp/cli.py" = ["B008"]  # typer uses function defaults heavily
-"src/fdp/identity/deps.py" = ["B008"]  # FastAPI Depends() in argument defaults is the idiomatic pattern
-"src/fdp/identity/jwks.py" = ["N818"]  # UnknownSigningKey reads cleanly; JWKSError is the base
-"src/fdp/shared/errors.py" = ["N818"]  # HTTP-style names (NotFound, Forbidden, …) are intentional
+"src/fdpneo_server/cli.py" = ["B008"]  # typer uses function defaults heavily
+"src/fdpneo_server/identity/deps.py" = ["B008"]  # FastAPI Depends() in argument defaults is the idiomatic pattern
+"src/fdpneo_server/identity/jwks.py" = ["N818"]  # UnknownSigningKey reads cleanly; JWKSError is the base
+"src/fdpneo_server/shared/errors.py" = ["N818"]  # HTTP-style names (NotFound, Forbidden, …) are intentional
 
 [tool.ruff.lint.isort]
-known-first-party = ["fdp"]
+known-first-party = ["fdpneo_server"]
 combine-as-imports = true
 
 [tool.ruff.format]
@@ -162,7 +162,7 @@ docstring-code-format = true
 # ----------------------------------------------------------------------------
 [tool.pyright]
 include = ["src", "tests"]
-exclude = ["**/__pycache__", ".venv", "src/fdp/migrations/versions"]
+exclude = ["**/__pycache__", ".venv", "src/fdpneo_server/migrations/versions"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"
@@ -204,9 +204,9 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["src/fdp"]
+source = ["src/fdpneo_server"]
 branch = true
-omit = ["src/fdp/cli.py", "src/fdp/migrations/*"]
+omit = ["src/fdpneo_server/cli.py", "src/fdpneo_server/migrations/*"]
 
 [tool.coverage.report]
 exclude_lines = [

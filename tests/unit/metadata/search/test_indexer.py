@@ -9,13 +9,13 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.events import RecordCreated, RecordDeleted, RecordStateChanged
-from fdp.metadata.search.extract import ExtractedRecord
-from fdp.metadata.search.indexer import SearchIndexer
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.events import EventBus
-from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, SH
+from fdpneo_server.metadata.events import RecordCreated, RecordDeleted, RecordStateChanged
+from fdpneo_server.metadata.search.extract import ExtractedRecord
+from fdpneo_server.metadata.search.indexer import SearchIndexer
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.events import EventBus
+from fdpneo_server.shared.namespaces import DCT, FDP_METADATA_STATE, SH
 
 REC = "http://localhost:8000/catalog/c1"
 NOW = datetime(2026, 6, 2, 12, 0, tzinfo=UTC)

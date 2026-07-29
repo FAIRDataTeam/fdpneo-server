@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from fdp.metadata.profiles import load_profile, validate_profile
+from fdpneo_server.metadata.profiles import load_profile, validate_profile
 from tests.unit.metadata.profiles.conftest import (
     MANIFEST_WITHOUT_RDS,
     SCHEMA_TTL,
@@ -92,7 +92,7 @@ def test_manifest_rejects_unknown_keys_in_resource_definition(
         "  - urlPrefix: dataset\n    name: Dataset\n    schema: dcat:Dataset\n",
         "  - urlPrefix: dataset\n    name: Dataset\n    schema: dcat:Dataset\n    bogus: 1\n",
     )
-    from fdp.shared.errors import BadRequest
+    from fdpneo_server.shared.errors import BadRequest
 
     with pytest.raises(BadRequest):
         load_profile(_bundle_with_two_schemas(write_bundle, manifest))

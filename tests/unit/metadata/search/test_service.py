@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from fdp.config import SearchSettings
-from fdp.metadata.search.repository import FacetBucket, SearchQuery, SearchResult
-from fdp.metadata.search.service import SearchRequest, SearchService
-from fdp.metadata.settings import SearchFilter, SearchFilters
-from fdp.shared.context import RequestContext
+from fdpneo_server.config import SearchSettings
+from fdpneo_server.metadata.search.repository import FacetBucket, SearchQuery, SearchResult
+from fdpneo_server.metadata.search.service import SearchRequest, SearchService
+from fdpneo_server.metadata.settings import SearchFilter, SearchFilters
+from fdpneo_server.shared.context import RequestContext
 
 DCT_LICENSE = "http://purl.org/dc/terms/license"
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

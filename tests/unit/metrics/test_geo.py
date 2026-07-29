@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metrics.geo`."""
+"""Unit tests for :mod:`fdpneo_server.metrics.geo`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from fdp.metrics.geo import GeoResult, NullGeoLookup, open_geo_lookup
+from fdpneo_server.metrics.geo import GeoResult, NullGeoLookup, open_geo_lookup
 
 
 @pytest.mark.unit

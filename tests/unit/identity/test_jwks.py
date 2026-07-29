@@ -1,4 +1,4 @@
-"""Unit tests for ``fdp.identity.jwks``."""
+"""Unit tests for ``fdpneo_server.identity.jwks``."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from fdp.identity.jwks import (
+from fdpneo_server.identity.jwks import (
     JWKSClient,
     JWKSFetchError,
     UnknownSigningKey,

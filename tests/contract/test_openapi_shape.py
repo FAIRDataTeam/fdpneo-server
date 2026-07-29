@@ -27,13 +27,13 @@ from typing import Any
 
 import pytest
 
-from fdp.main import create_app
-from fdp.metadata.profiles.registry import (
+from fdpneo_server.main import create_app
+from fdpneo_server.metadata.profiles.registry import (
     ChildLinkInfo,
     ResourceDefinition,
     ResourceDefinitionCache,
 )
-from fdp.shared.reserved import RESERVED_API_PATH
+from fdpneo_server.shared.reserved import RESERVED_API_PATH
 
 
 def _spec_without_cache() -> dict[str, Any]:

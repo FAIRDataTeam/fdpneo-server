@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 import pytest
 from rdflib import Graph
 
-from fdp.metadata.shacl import (
+from fdpneo_server.metadata.shacl import (
     ShaclValidator,
     UnknownShapeError,
     ValidationReport,
 )
-from fdp.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
+from fdpneo_server.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
 
 # A trivial SHACL shape that requires dct:title on dcat:Catalog records.
 CATALOG_SHAPE_TTL = """\
@@ -144,7 +144,7 @@ async def test_license_shape_resolves_even_when_unseeded() -> None:
     # Regression (client report): PUT/validate /licenses 500'd with
     # UnknownShapeError when the license shape was not seeded in the store. The
     # composite provider resolves the server-owned shape from code instead.
-    from fdp.metadata.licenses import LICENSE_SHAPE_IRI, predefined_license_shape_graph
+    from fdpneo_server.metadata.licenses import LICENSE_SHAPE_IRI, predefined_license_shape_graph
 
     repo = _FakeRepo()  # store is empty — shape was never seeded
     validator = ShaclValidator(

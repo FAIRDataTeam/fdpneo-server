@@ -19,13 +19,13 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 
-from fdp.main import _container_targets, _warm_anonymous_authz_cache, _warm_authz
-from fdp.metadata.profiles.registry import (
+from fdpneo_server.main import _container_targets, _warm_anonymous_authz_cache, _warm_authz
+from fdpneo_server.metadata.profiles.registry import (
     ResourceDefinition,
     ResourceDefinitionCache,
 )
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
 
 
 class _FakePDP:

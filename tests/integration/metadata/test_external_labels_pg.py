@@ -21,9 +21,9 @@ from alembic.config import Config
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from fdp.config import RemoteLabelSettings, get_settings
-from fdp.metadata.external_labels import ExternalLabelCache
-from fdp.metadata.labels import LabelResolver
+from fdpneo_server.config import RemoteLabelSettings, get_settings
+from fdpneo_server.metadata.external_labels import ExternalLabelCache
+from fdpneo_server.metadata.labels import LabelResolver
 
 pytestmark = pytest.mark.integration
 
@@ -68,7 +68,7 @@ def pg_dsn() -> Iterator[str]:
         saved = os.environ.get("POSTGRES_DSN")
         os.environ["POSTGRES_DSN"] = dsn
         get_settings.cache_clear()
-        config = Config(str(files("fdp") / "alembic.ini"))
+        config = Config(str(files("fdpneo_server") / "alembic.ini"))
         command.upgrade(config, "head")
         try:
             yield dsn

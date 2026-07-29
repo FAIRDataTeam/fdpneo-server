@@ -13,14 +13,14 @@ from pydantic import HttpUrl, PostgresDsn
 from rdflib import Graph
 from rdflib.namespace import RDF
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.metadata.profiles import load_profile
-from fdp.metadata.profiles.iri import IRIExpander
-from fdp.metadata.profiles.migrate import migrate_schema_namespace
-from fdp.metadata.profiles.rd_records import ResourceDefinitionRecord, record_to_graph
-from fdp.metadata.states import MetadataState
-from fdp.shared.graphs import record_graph_uri, resource_definition_graph_uri
-from fdp.shared.namespaces import FDP_RESOURCE_DEFINITION, LDP
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.metadata.profiles import load_profile
+from fdpneo_server.metadata.profiles.iri import IRIExpander
+from fdpneo_server.metadata.profiles.migrate import migrate_schema_namespace
+from fdpneo_server.metadata.profiles.rd_records import ResourceDefinitionRecord, record_to_graph
+from fdpneo_server.metadata.states import MetadataState
+from fdpneo_server.shared.graphs import record_graph_uri, resource_definition_graph_uri
+from fdpneo_server.shared.namespaces import FDP_RESOURCE_DEFINITION, LDP
 from tests.unit.metadata.profiles.conftest import SCHEMA_TTL
 
 BASE = "http://localhost:8000"

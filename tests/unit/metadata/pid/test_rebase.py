@@ -1,4 +1,4 @@
-"""Tests for ``fdp.metadata.pid.rebase`` — identifier-base adoption migration."""
+"""Tests for ``fdpneo_server.metadata.pid.rebase`` — identifier-base adoption migration."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 
-from fdp.metadata.pid.rebase import _rewrite_term, rebase_identifiers, rebased
+from fdpneo_server.metadata.pid.rebase import _rewrite_term, rebase_identifiers, rebased
 
 OLD = "http://localhost:8000"
 NEW = "https://w3id.org/myfdp"

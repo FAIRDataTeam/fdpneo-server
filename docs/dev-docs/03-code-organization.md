@@ -9,7 +9,7 @@ This is the practical map: where every kind of code lives, the naming convention
 ## 3.1 Repository layout
 
 ```
-src/fdp/
+src/fdpneo_server/
 ├── main.py            Composition root: create_app(), middleware + router wiring, lifespan
 ├── config.py          Pydantic Settings (env-driven) — all configuration
 ├── cli.py             The `fdp` CLI (profile apply, pid, …)
@@ -24,7 +24,9 @@ src/fdp/
 ├── storage/
 │   ├── triplestore/   The SPARQL 1.1 adapter (the ONLY path to RDF)
 │   └── postgres/      SQLAlchemy models, engine, custom types
-└── shared/            Kernel: namespaces, events, context, errors, logging, RDF + safety utils
+├── shared/            Kernel: namespaces, events, context, errors, logging, RDF + safety utils
+├── migrations/        Alembic migration chain (ships in the wheel)
+└── profiles/default/  The bundled DCAT deployment profile (ships in the wheel)
 
 tests/
 ├── unit/              Fast, no I/O. Most tests live here.
@@ -37,7 +39,6 @@ docs/
 ├── adr/               14 ADRs (the "why")
 └── dev-docs/          ← you are here
 
-profiles/default/      The bundled DCAT deployment profile (schemas, offers, manifest)
 deploy/                compose.yaml (dev stack) + helm/ (production)
 ```
 
@@ -90,18 +91,18 @@ If `metadata/` feels like a lot, that's because it is — see the boundary note 
 
 | You want to… | Start in | Then probably |
 |---|---|---|
-| Change how a record is read/written over HTTP | [metadata/ldp/router.py](../../src/fdp/metadata/ldp/router.py) | `repository.py`, `meta.py` |
-| Change SHACL validation or schema **composition** | [metadata/shacl.py](../../src/fdp/metadata/shacl.py) | `shape_provider.py`, the profile shapes in `profiles/default/schemas/` |
-| Add/change a metadata **type** (resource definition) | [metadata/rd_api.py](../../src/fdp/metadata/rd_api.py) | [ADR-0009](../adr/0009-runtime-resource-definitions.md) |
-| Change an access-control decision | [policy/evaluator.py](../../src/fdp/policy/evaluator.py), `pdp.py` | `cache.py`, [ADR-0006](../adr/0006-odrl-profile-permission-prohibition.md) |
-| Change SPARQL access / query rewriting | [access/rewriter.py](../../src/fdp/access/rewriter.py) | `parser.py`, `router.py`, [ADR-0004](../adr/0004-sparql-access-via-named-graph-projection.md) |
-| Change what metrics are captured | [metrics/middleware.py](../../src/fdp/metrics/middleware.py), `pipeline.py` | `anonymize.py`, [ADR-0002](../adr/0002-anonymous-metrics.md) |
-| Add a config option | [config.py](../../src/fdp/config.py) | wire it in `main.py` |
-| Add an RDF prefix | [shared/namespaces.py](../../src/fdp/shared/namespaces.py) | never redefine prefixes in module code |
-| Change the error envelope | [shared/errors.py](../../src/fdp/shared/errors.py) | error middleware in `main.py` |
-| Change how the triple store is called | [storage/triplestore/adapter.py](../../src/fdp/storage/triplestore/adapter.py) | capability flags in `config.py` |
-| Change a Postgres table | [storage/postgres/models.py](../../src/fdp/storage/postgres/models.py) | add an Alembic migration |
-| Change bootstrap / a profile | [metadata/profiles/](../../src/fdp/metadata/profiles/), `profiles/default/` | [doc 5 §6](05-key-processes.md#6-profile-bootstrap) |
+| Change how a record is read/written over HTTP | [metadata/ldp/router.py](../../src/fdpneo_server/metadata/ldp/router.py) | `repository.py`, `meta.py` |
+| Change SHACL validation or schema **composition** | [metadata/shacl.py](../../src/fdpneo_server/metadata/shacl.py) | `shape_provider.py`, the profile shapes in `src/fdpneo_server/profiles/default/schemas/` |
+| Add/change a metadata **type** (resource definition) | [metadata/rd_api.py](../../src/fdpneo_server/metadata/rd_api.py) | [ADR-0009](../adr/0009-runtime-resource-definitions.md) |
+| Change an access-control decision | [policy/evaluator.py](../../src/fdpneo_server/policy/evaluator.py), `pdp.py` | `cache.py`, [ADR-0006](../adr/0006-odrl-profile-permission-prohibition.md) |
+| Change SPARQL access / query rewriting | [access/rewriter.py](../../src/fdpneo_server/access/rewriter.py) | `parser.py`, `router.py`, [ADR-0004](../adr/0004-sparql-access-via-named-graph-projection.md) |
+| Change what metrics are captured | [metrics/middleware.py](../../src/fdpneo_server/metrics/middleware.py), `pipeline.py` | `anonymize.py`, [ADR-0002](../adr/0002-anonymous-metrics.md) |
+| Add a config option | [config.py](../../src/fdpneo_server/config.py) | wire it in `main.py` |
+| Add an RDF prefix | [shared/namespaces.py](../../src/fdpneo_server/shared/namespaces.py) | never redefine prefixes in module code |
+| Change the error envelope | [shared/errors.py](../../src/fdpneo_server/shared/errors.py) | error middleware in `main.py` |
+| Change how the triple store is called | [storage/triplestore/adapter.py](../../src/fdpneo_server/storage/triplestore/adapter.py) | capability flags in `config.py` |
+| Change a Postgres table | [storage/postgres/models.py](../../src/fdpneo_server/storage/postgres/models.py) | add an Alembic migration |
+| Change bootstrap / a profile | [metadata/profiles/](../../src/fdpneo_server/metadata/profiles/), `src/fdpneo_server/profiles/default/` | [doc 5 §6](05-key-processes.md#6-profile-bootstrap) |
 
 ## 3.5 Conventions you must follow
 
@@ -110,7 +111,7 @@ These are enforced in review and by the CI quality gate. Full list in [CLAUDE.md
 - **Type hints everywhere.** Pyright runs in strict mode. No bare `Any` without a comment explaining why.
 - **Async by default.** Routes, SQLAlchemy sessions, and the triple store adapter are async. No sync I/O on the request path.
 - **Pydantic at the edge, dataclasses inside.** Pydantic validates untrusted input at the HTTP boundary; internal domain types are plain dataclasses/attrs. Don't propagate Pydantic models deep into a context.
-- **SPARQL and SQL are parsed/parameterized, never interpolated.** Build SPARQL via RDFLib algebra; never f-string a URI or literal into a query. SQL is always parameterized. (See [shared/sparql_safety.py](../../src/fdp/shared/sparql_safety.py).)
+- **SPARQL and SQL are parsed/parameterized, never interpolated.** Build SPARQL via RDFLib algebra; never f-string a URI or literal into a query. SQL is always parameterized. (See [shared/sparql_safety.py](../../src/fdpneo_server/shared/sparql_safety.py).)
 - **Structured logging only.** `structlog` with bound request context. No `print`, no stdlib logging formatter.
 - **Structured errors.** Every HTTP error carries a stable `code`, a human message, and a `docs_url`. Raise the typed errors in `shared/errors.py`.
 - **Imports** follow ruff's isort defaults: stdlib, third-party, first-party. `shared` is the only first-party module any context may import freely.
@@ -119,9 +120,9 @@ These are enforced in review and by the CI quality gate. Full list in [CLAUDE.md
 
 ```bash
 uv sync                                  # install/sync deps (uv, not pip)
-uv run fastapi dev src/fdp/main.py       # dev server (auto-reload)
+uv run fastapi dev src/fdpneo_server/main.py       # dev server (auto-reload)
 uv run fdp db migrate                    # run migrations
-uv run fdp profile apply ./profiles/default
+uv run fdp profile apply                 # defaults to the bundled profile
 uv run ruff check . && uv run ruff format .
 uv run pyright
 uv run pytest                            # full suite

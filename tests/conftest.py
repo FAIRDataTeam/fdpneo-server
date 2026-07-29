@@ -27,7 +27,7 @@ from collections.abc import Iterator
 import pytest
 
 # Provide placeholder values for required Settings fields before any test
-# imports `fdp.config` or `fdp.main`. These are session-wide and never reach a
+# imports `fdpneo_server.config` or `fdpneo_server.main`. These are session-wide and never reach a
 # real backend — unit tests must not touch I/O.
 _TEST_ENV = {
     "POSTGRES_DSN": "postgresql+asyncpg://fdp:fdp@localhost:5432/fdp_test",
@@ -49,7 +49,7 @@ def anyio_backend() -> str:
 @pytest.fixture
 def reset_settings_cache() -> Iterator[None]:
     """Clear the ``get_settings`` LRU cache around a test that changes env vars."""
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     get_settings.cache_clear()
     yield

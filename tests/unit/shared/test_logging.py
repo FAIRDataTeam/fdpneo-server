@@ -1,4 +1,4 @@
-"""Tests for ``fdp.shared.logging``."""
+"""Tests for ``fdpneo_server.shared.logging``."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from io import StringIO
 import pytest
 import structlog
 
-from fdp.shared.context import RequestContext, bound
-from fdp.shared.logging import configure_logging
+from fdpneo_server.shared.context import RequestContext, bound
+from fdpneo_server.shared.logging import configure_logging
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -85,7 +85,7 @@ def test_explicit_subject_kwarg_is_pseudonymized(capture_root_logs: StringIO) ->
 
 @pytest.mark.unit
 def test_configured_salt_makes_pseudonym_stable() -> None:
-    from fdp.shared.logging import pseudonymize_subject
+    from fdpneo_server.shared.logging import pseudonymize_subject
 
     subject = "https://idp.example/realms/fdp#carol"
     first = pseudonymize_subject(subject, "salt-A")

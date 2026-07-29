@@ -22,13 +22,13 @@ from pydantic import HttpUrl
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from fdp.config import DataSettings, TripleStoreSettings
-from fdp.data.router import build_data_router
-from fdp.metadata.repository import MetadataRepository
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.storage.triplestore.adapter import TripleStoreAdapter
+from fdpneo_server.config import DataSettings, TripleStoreSettings
+from fdpneo_server.data.router import build_data_router
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
 BASE_URL = "https://fdp.example"
 DIST_ID = "dist-1"

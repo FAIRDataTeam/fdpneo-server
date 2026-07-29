@@ -1,0 +1,57 @@
+# Default system-default ODRL Offer for the bundled FDP profile.
+#
+# Semantics: anyone (including anonymous callers) may read; only callers
+# with the role "steward" may modify, delete, or redistribute.
+#
+# The IRI below is the bundle's *intrinsic* declaration only. On apply,
+# the applier (fdpneo_server.metadata.profiles.applier) rewrites the Offer subject
+# to the deployment-local managed-policy IRI {base_url}/policies/{offer-id}
+# and stores it there (ADR-0012), so the Offer is dereferenceable at
+# GET /policies/{id} and dct:rights references resolve locally. The offer
+# id ("system-default" in profile.yaml) is the stable handle, not this IRI.
+#
+# LeftOperand vocabulary:
+# * odrl:assignee — standard ODRL party identity.
+# * <https://specs.fairdatapoint.org/odrl-profile#role>
+# * <https://specs.fairdatapoint.org/odrl-profile#group>
+#   (See policy/model.py FDP_PROFILE_NS and ADR-0006.)
+#
+# Conflict strategy is the FDP default (deny_wins). This Offer has no
+# prohibitions so no conflicts arise.
+
+@prefix odrl:    <http://www.w3.org/ns/odrl/2/> .
+@prefix fdp-pol: <https://specs.fairdatapoint.org/odrl-profile#> .
+
+<https://w3id.org/fdp/profiles/default/offers/public-read-steward-modify>
+    a odrl:Offer ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:read
+    ] ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:modify ;
+        odrl:constraint [
+            odrl:leftOperand fdp-pol:role ;
+            odrl:operator odrl:eq ;
+            odrl:rightOperand "steward"
+        ]
+    ] ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:delete ;
+        odrl:constraint [
+            odrl:leftOperand fdp-pol:role ;
+            odrl:operator odrl:eq ;
+            odrl:rightOperand "steward"
+        ]
+    ] ;
+    odrl:permission [
+        a odrl:Permission ;
+        odrl:action odrl:distribute ;
+        odrl:constraint [
+            odrl:leftOperand fdp-pol:role ;
+            odrl:operator odrl:eq ;
+            odrl:rightOperand "steward"
+        ]
+    ] .

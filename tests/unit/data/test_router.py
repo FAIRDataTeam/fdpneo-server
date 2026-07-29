@@ -12,12 +12,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from rdflib import Graph, URIRef
 
-from fdp.config import DataSettings
-from fdp.data.router import build_data_router
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.shared.namespaces import DCAT, DCT
+from fdpneo_server.config import DataSettings
+from fdpneo_server.data.router import build_data_router
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.shared.namespaces import DCAT, DCT
 
 BASE_URL = "https://fdp.example"
 DIST_ID = "dist-1"

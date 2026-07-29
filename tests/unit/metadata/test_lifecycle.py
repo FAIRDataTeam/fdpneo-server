@@ -17,15 +17,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from rdflib import Dataset, Graph, Literal, URIRef
 
-from fdp.identity.deps import current_context
-from fdp.metadata.lifecycle import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.lifecycle import (
     StateGate,
     StateReader,
     StateService,
     build_state_router,
 )
-from fdp.metadata.meta import build_meta_graph
-from fdp.metadata.states import (
+from fdpneo_server.metadata.meta import build_meta_graph
+from fdpneo_server.metadata.states import (
     DEFAULT_STATE,
     SEED_STATE,
     MetadataState,
@@ -33,11 +33,11 @@ from fdp.metadata.states import (
     is_visible_state,
     transition_requires_admin,
 )
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import Conflict, Forbidden, NotFound, register_exception_handlers
-from fdp.shared.graphs import meta_graph_uri, record_graph_uri
-from fdp.shared.namespaces import DCT, FDP_METADATA_STATE, OWL, PROV
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import Conflict, Forbidden, NotFound, register_exception_handlers
+from fdpneo_server.shared.graphs import meta_graph_uri, record_graph_uri
+from fdpneo_server.shared.namespaces import DCT, FDP_METADATA_STATE, OWL, PROV
 
 # The rdflib ``Dataset`` SPARQL path emits internal DeprecationWarnings; this
 # is a test-only fake, so silence them rather than let the suite's

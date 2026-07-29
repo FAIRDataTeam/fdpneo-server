@@ -9,9 +9,9 @@ import pytest
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.containment import ContainmentManager
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import DCAT, DCT, LDP
+from fdpneo_server.metadata.containment import ContainmentManager
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import DCAT, DCT, LDP
 
 BASE = "http://localhost:8000"
 PARENT = BASE

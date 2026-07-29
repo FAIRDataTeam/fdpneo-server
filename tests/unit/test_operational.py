@@ -24,8 +24,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 
-from fdp.config import MetricsSettings, OIDCSettings, Settings
-from fdp.operational import build_info_router, build_readiness_router
+from fdpneo_server.config import MetricsSettings, OIDCSettings, Settings
+from fdpneo_server.operational import build_info_router, build_readiness_router
 
 # --- /info -----------------------------------------------------------------
 

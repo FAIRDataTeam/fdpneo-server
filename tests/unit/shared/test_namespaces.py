@@ -1,4 +1,4 @@
-"""Tests for ``fdp.shared.namespaces``."""
+"""Tests for ``fdpneo_server.shared.namespaces``."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 from pydantic import HttpUrl
 from rdflib import Graph, Namespace, URIRef
 
-from fdp.shared.namespaces import (
+from fdpneo_server.shared.namespaces import (
     DCAT,
     DCT,
     FDP_DEFAULT,

@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.policy.evaluator import evaluate
-from fdp.policy.model import (
+from fdpneo_server.policy.evaluator import evaluate
+from fdpneo_server.policy.model import (
     Action,
     ConflictStrategy,
     ConstraintOperator,
@@ -21,7 +21,7 @@ from fdp.policy.model import (
     RoleConstraint,
     TimeConstraint,
 )
-from fdp.shared.context import RequestContext
+from fdpneo_server.shared.context import RequestContext
 
 OFFER = "https://example.org/offer/1"
 ALICE = "https://idp.example/realms/fdp#alice"

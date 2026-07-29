@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from fdp.main import _docs_enabled, create_app
+from fdpneo_server.main import _docs_enabled, create_app
 
 
 @pytest.mark.unit
@@ -24,10 +24,10 @@ def test_docs_enabled_logic(environment: str, expose: bool, expected: bool) -> N
 
 @pytest.mark.unit
 def test_docs_routes_absent_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     prod = get_settings().model_copy(update={"environment": "production", "expose_api_docs": False})
-    monkeypatch.setattr("fdp.main.get_settings", lambda: prod)
+    monkeypatch.setattr("fdpneo_server.main.get_settings", lambda: prod)
 
     app = create_app()
     paths = {getattr(r, "path", None) for r in app.routes}

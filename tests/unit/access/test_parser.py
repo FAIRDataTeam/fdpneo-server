@@ -1,16 +1,16 @@
-"""Unit tests for :mod:`fdp.access.parser`."""
+"""Unit tests for :mod:`fdpneo_server.access.parser`."""
 
 from __future__ import annotations
 
 import pytest
 
-from fdp.access.parser import (
+from fdpneo_server.access.parser import (
     ParsedRead,
     ParsedUpdate,
     QueryForm,
     parse,
 )
-from fdp.shared.errors import BadRequest
+from fdpneo_server.shared.errors import BadRequest
 
 G1 = "https://example.org/g1"
 G2 = "https://example.org/g2"

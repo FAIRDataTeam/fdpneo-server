@@ -21,10 +21,9 @@ COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
-# Project sources (migrations + alembic.ini ship inside the package) and the
-# default deployment profile the runtime auto-applies.
+# Project sources (migrations, alembic.ini, and the default deployment
+# profile all ship inside the package).
 COPY src ./src
-COPY profiles ./profiles
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
@@ -54,7 +53,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     ENVIRONMENT=production \
     FDP_PROFILE_AUTO_APPLY=true \
-    FDP_PROFILE_PATH=/app/profiles/default \
     FDP_METRICS_GEOIP_DATABASE_PATH=/app/geo/GeoLite2-City.mmdb
 
 USER fdp

@@ -1,4 +1,4 @@
-"""Unit tests for ``fdp.metadata.signposting`` (ADR-0017 §2, FAIR Signposting L1)."""
+"""Unit tests for ``fdpneo_server.metadata.signposting`` (ADR-0017 §2, FAIR Signposting L1)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.signposting import (
+from fdpneo_server.metadata.signposting import (
     MAX_LINKS,
     REL_HAS_EXPANDED_VIEW,
     REL_HAS_MEMBER_PAGE,
@@ -20,7 +20,7 @@ from fdp.metadata.signposting import (
     select_cite_as,
     signposting_links,
 )
-from fdp.shared.namespaces import ADMS, DCAT, DCT, LDP, OWL, SKOS, XSD
+from fdpneo_server.shared.namespaces import ADMS, DCAT, DCT, LDP, OWL, SKOS, XSD
 
 BASE = "https://w3id.org/myfdp"
 CANON = f"{BASE}/catalog/c1"

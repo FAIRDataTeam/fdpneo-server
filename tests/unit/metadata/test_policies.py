@@ -17,15 +17,15 @@ from fastapi.testclient import TestClient
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.policies import (
+from fdpneo_server.metadata.policies import (
     PolicyService,
     ValidationResultView,
     build_policy_router,
 )
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Conflict, NotFound
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import ODRL
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest, Conflict, NotFound
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import ODRL
 
 BASE = "http://localhost:8000"
 
@@ -256,7 +256,7 @@ class _FakeService:
     async def put(self, policy_id: str, turtle: str, *, subject: str | None):
         del subject
         self.puts.append((policy_id, turtle))
-        from fdp.metadata.policies import PolicyInfo
+        from fdpneo_server.metadata.policies import PolicyInfo
 
         return PolicyInfo(id=policy_id, iri=self.iri(policy_id), version=1)
 
@@ -271,15 +271,15 @@ class _FakeService:
         return ValidationResultView(conforms=True, violations=[])
 
     async def list_policies(self, *, published_only: bool = False):
-        from fdp.metadata.policies import PolicyInfo
+        from fdpneo_server.metadata.policies import PolicyInfo
 
         self.list_published_only = published_only
         return [PolicyInfo(id="public-read", iri=self.iri("public-read"))]
 
 
 def _client(service: _FakeService, *, ctx: RequestContext) -> TestClient:
-    from fdp.identity.deps import current_context
-    from fdp.shared.errors import register_exception_handlers
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.shared.errors import register_exception_handlers
 
     app = FastAPI()
     register_exception_handlers(app)

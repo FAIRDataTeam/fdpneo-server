@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metrics.anonymize`.
+"""Unit tests for :mod:`fdpneo_server.metrics.anonymize`.
 
 The anonymizer is the privacy boundary: the tests here verify both the
 positive contract (geo + visitor-hash derivation work) and the negative
@@ -12,10 +12,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.metrics.anonymize import anonymize
-from fdp.metrics.events import MetricEventType, RequestObserved
-from fdp.metrics.geo import GeoLookup, GeoResult, NullGeoLookup
-from fdp.metrics.salt import SaltRotator
+from fdpneo_server.metrics.anonymize import anonymize
+from fdpneo_server.metrics.events import MetricEventType, RequestObserved
+from fdpneo_server.metrics.geo import GeoLookup, GeoResult, NullGeoLookup
+from fdpneo_server.metrics.salt import SaltRotator
 
 NOW = datetime(2026, 6, 1, 12, 34, 56, tzinfo=UTC)
 

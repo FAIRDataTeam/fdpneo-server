@@ -27,7 +27,7 @@ single source of truth. `access/parser.py` imports those primitives; `data/route
 (`default_graph_uris=(data_graph,)`) is unchanged.
 
 **Note on the original plan.** The first draft of this section said "call
-`fdp.access.parser.parse()` from the data router." That was **not** taken: `data/` may
+`fdpneo_server.access.parser.parse()` from the data router." That was **not** taken: `data/` may
 only import `shared, policy, storage` — never `access/` (CLAUDE.md module boundary). The
 shared-gate approach satisfies the same intent without crossing the boundary. *Federation
 -off is a structural invariant shared by both endpoints; authorization stays per-endpoint
@@ -40,7 +40,7 @@ standing rule 1. Tests: `tests/unit/shared/test_sparql_safety.py`,
 **Shipped fix.** `fdp/shared/ssrf.py::assert_public_url` enforces an `http`/`https`
 scheme allowlist and resolves the host, rejecting loopback / link-local /
 RFC-1918 / ULA / reserved / IPv4-mapped-IPv6 targets. `_stream_upstream`
-(`src/fdp/data/router.py`) validates the entry URL up front (clean `502`) and follows
+(`src/fdpneo_server/data/router.py`) validates the entry URL up front (clean `502`) and follows
 redirects **manually** (`follow_redirects=False`), re-validating every hop.
 The operator knob shipped is `FDP_DATA_ALLOWED_DOWNLOAD_HOSTS` (an optional egress
 allow-list; empty = any *public* host) — note the name differs from the originally
@@ -52,7 +52,7 @@ redirect/entry-block tests in `tests/unit/data/test_router.py`.
 
 `DataSettings.proxy_max_bytes` default lowered 1 GiB → 256 MiB; added
 `proxy_max_seconds` (60 s total wall-clock deadline, enforced in the stream loop) and
-`proxy_max_redirects` (3). (`src/fdp/config.py`, `src/fdp/data/router.py`.)
+`proxy_max_redirects` (3). (`src/fdpneo_server/config.py`, `src/fdpneo_server/data/router.py`.)
 
 ### A-4 (Low) — Subject PII in logs (F-09 / R-10) ✅
 
@@ -80,12 +80,12 @@ source of truth, so endpoints in **any** bounded context can enforce it without 
 module boundaries (`data/` may not import `access/`). Which entry point you call depends
 on the context:
 
-- The access `/sparql` endpoint uses `fdp.access.parser.parse()`, which *additionally*
+- The access `/sparql` endpoint uses `fdpneo_server.access.parser.parse()`, which *additionally*
   extracts graph targets and authorizes via the rewriter/PDP — it reuses the shared
   `reject_service` primitive internally.
 - A read-only surface that does its own authorization (the data provider's
   `/data/{id}/sparql`, which authorizes the distribution's anonymous Offer and scopes to
-  the data graph) calls `fdp.shared.sparql_safety.assert_query_safe(query)`.
+  the data graph) calls `fdpneo_server.shared.sparql_safety.assert_query_safe(query)`.
 
 Never call the adapter with a client-supplied string that hasn't been through one of
 these. Bypassing the gate silently re-opens federation SSRF (this is exactly how N-01

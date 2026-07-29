@@ -11,8 +11,8 @@ import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import DCTERMS, PROV, RDF
 
-from fdp.metadata.backup import RestoreError, dump_store, restore_store
-from fdp.metadata.backup.dump import RECORDS_FILE
+from fdpneo_server.metadata.backup import RestoreError, dump_store, restore_store
+from fdpneo_server.metadata.backup.dump import RECORDS_FILE
 
 BASE = "http://localhost:8000"
 DCAT_CATALOG = URIRef("http://www.w3.org/ns/dcat#Catalog")

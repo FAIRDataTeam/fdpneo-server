@@ -11,9 +11,9 @@ import pytest
 from rdflib import Graph, URIRef
 from rdflib.namespace import DCTERMS
 
-from fdp.metadata.backup import import_reference_fdp
-from fdp.metadata.graphs import meta_graph_uri
-from fdp.metadata.repository import MetadataRepository
+from fdpneo_server.metadata.backup import import_reference_fdp
+from fdpneo_server.metadata.graphs import meta_graph_uri
+from fdpneo_server.metadata.repository import MetadataRepository
 
 pytestmark = pytest.mark.unit
 

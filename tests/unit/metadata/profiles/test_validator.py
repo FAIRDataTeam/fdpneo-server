@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from fdp.metadata.profiles import load_profile, validate_profile
+from fdpneo_server.metadata.profiles import load_profile, validate_profile
 from tests.unit.metadata.profiles.conftest import (
     BROKEN_OFFER_TTL,
     MANIFEST,

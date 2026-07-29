@@ -15,15 +15,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.metadata.profiles import (
+from fdpneo_server.metadata.profiles import (
     ResourceDefinitionRecord,
     rd_record_slug,
     resolve_cache,
 )
-from fdp.metadata.profiles.registry import ResourceDefinitionCache
-from fdp.metadata.rd_api import build_resource_definition_router
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
+from fdpneo_server.metadata.profiles.registry import ResourceDefinitionCache
+from fdpneo_server.metadata.rd_api import build_resource_definition_router
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
 
 BASE = "http://localhost:8000"
 DCAT = "http://www.w3.org/ns/dcat#"
@@ -89,7 +89,7 @@ def _build(service: _FakeService, *, ctx: RequestContext) -> TestClient:
     # Bind the request context the deps layer reads (no auth middleware here).
     app.dependency_overrides = {}
 
-    from fdp.identity.deps import current_context
+    from fdpneo_server.identity.deps import current_context
 
     app.dependency_overrides[current_context] = lambda: ctx
     return TestClient(app)
@@ -159,7 +159,7 @@ def _build_with_base(service: _FakeService, *, base_url: str) -> TestClient:
             base_url=base_url,
         )
     )
-    from fdp.identity.deps import current_context
+    from fdpneo_server.identity.deps import current_context
 
     app.dependency_overrides[current_context] = lambda: _consumer()
     return TestClient(app)

@@ -1,4 +1,4 @@
-"""Unit tests for the dynamic OpenAPI wiring in :mod:`fdp.main` (sub-task 15e).
+"""Unit tests for the dynamic OpenAPI wiring in :mod:`fdpneo_server.main` (sub-task 15e).
 
 These tests bypass the lifespan (which would need a real triple store)
 by constructing the app directly and manipulating
@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from fdp.main import _DynamicContainerRegistry, create_app
-from fdp.metadata.profiles.registry import (
+from fdpneo_server.main import _DynamicContainerRegistry, create_app
+from fdpneo_server.metadata.profiles.registry import (
     ChildLinkInfo,
     ResourceDefinition,
     ResourceDefinitionCache,

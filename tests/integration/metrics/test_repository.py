@@ -12,8 +12,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fdp.metrics.events import MetricEventType, MetricSample
-from fdp.metrics.repository import (
+from fdpneo_server.metrics.events import MetricEventType, MetricSample
+from fdpneo_server.metrics.repository import (
     DailyAggregate,
     HourlyAggregate,
     MetricsHourly,

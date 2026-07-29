@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from fdp.shared.errors import BadRequest
-from fdp.shared.sparql_safety import assert_query_safe, sparql_string_literal
+from fdpneo_server.shared.errors import BadRequest
+from fdpneo_server.shared.sparql_safety import assert_query_safe, sparql_string_literal
 
 
 @pytest.mark.unit

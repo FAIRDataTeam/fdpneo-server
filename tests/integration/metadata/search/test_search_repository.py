@@ -18,9 +18,9 @@ from alembic.config import Config
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from fdp.metadata.search.extract import ExtractedRecord
-from fdp.metadata.search.repository import SearchIndexRepository, SearchQuery
-from fdp.metadata.states import MetadataState
+from fdpneo_server.metadata.search.extract import ExtractedRecord
+from fdpneo_server.metadata.search.repository import SearchIndexRepository, SearchQuery
+from fdpneo_server.metadata.states import MetadataState
 
 NOW = datetime(2026, 6, 2, 12, 0, tzinfo=UTC)
 
@@ -43,13 +43,13 @@ def postgres_container() -> Iterator[PostgresContainer]:
 @pytest.fixture
 def migrated(postgres_container: PostgresContainer) -> Iterator[str]:
     """Apply ``alembic upgrade head`` (sync — Alembic drives its own loop)."""
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     dsn = _async_dsn(postgres_container)
     original = os.environ.get("POSTGRES_DSN")
     os.environ["POSTGRES_DSN"] = dsn
     get_settings.cache_clear()
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     try:
         command.upgrade(config, "head")
         yield dsn

@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from fdp.metrics.events import MetricEventType, RequestObserved
-from fdp.metrics.middleware import RequestObservationMiddleware
-from fdp.shared.context import RequestContext, bound
-from fdp.shared.events import EventBus
+from fdpneo_server.metrics.events import MetricEventType, RequestObserved
+from fdpneo_server.metrics.middleware import RequestObservationMiddleware
+from fdpneo_server.shared.context import RequestContext, bound
+from fdpneo_server.shared.events import EventBus
 
 # --- ASGI driver helpers ---------------------------------------------------
 

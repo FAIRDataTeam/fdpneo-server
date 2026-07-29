@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from fdp.metrics.geo import MaxMindGeoLookup, open_geo_lookup
+from fdpneo_server.metrics.geo import MaxMindGeoLookup, open_geo_lookup
 
 _DB_PATH = Path(os.environ.get("FDP_METRICS_GEOIP_DATABASE_PATH", "data/geoip/GeoLite2-City.mmdb"))
 

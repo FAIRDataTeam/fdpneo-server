@@ -23,16 +23,16 @@ import respx
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from fdp.config import SchemaSyncSettings
-from fdp.metadata.schema_sync import (
+from fdpneo_server.config import SchemaSyncSettings
+from fdpneo_server.metadata.schema_sync import (
     RemoteSchema,
     SchemaSyncService,
     SyncStatus,
 )
-from fdp.metadata.schemas import SchemaService
-from fdp.metadata.shacl import ShaclValidator, UnknownShapeError
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import DCT, SH
+from fdpneo_server.metadata.schemas import SchemaService
+from fdpneo_server.metadata.shacl import ShaclValidator, UnknownShapeError
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import DCT, SH
 
 BASE = "http://localhost:8000"
 REMOTE = "https://shapes.example/ontology.ttl"

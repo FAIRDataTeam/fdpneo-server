@@ -17,8 +17,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.config import ApiKeySettings
-from fdp.identity.api_keys import (
+from fdpneo_server.config import ApiKeySettings
+from fdpneo_server.identity.api_keys import (
     TOKEN_PREFIX,
     ApiKeyRepository,
     ApiKeyRow,
@@ -27,11 +27,11 @@ from fdp.identity.api_keys import (
     generate_token,
     hash_token,
 )
-from fdp.identity.deps import current_context
-from fdp.identity.principal import SubjectPrincipalRepository
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Forbidden, NotFound, register_exception_handlers
-from fdp.storage.postgres.models import Base, register_all_models
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.identity.principal import SubjectPrincipalRepository
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest, Forbidden, NotFound, register_exception_handlers
+from fdpneo_server.storage.postgres.models import Base, register_all_models
 
 NOW = datetime(2026, 6, 2, 12, 0, tzinfo=UTC)
 ALICE = "https://idp/realms/fdp#alice"

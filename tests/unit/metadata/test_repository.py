@@ -9,9 +9,9 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.graphs import audit_graph_uri, meta_graph_uri
-from fdp.metadata.repository import MetadataRepository
-from fdp.shared.namespaces import DCT, OWL, PROV
+from fdpneo_server.metadata.graphs import audit_graph_uri, meta_graph_uri
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.shared.namespaces import DCT, OWL, PROV
 
 RECORD = "https://example.org/records/r1"
 RECORD_URI = URIRef(RECORD)
@@ -192,8 +192,8 @@ async def test_put_with_no_creator_still_writes_meta() -> None:
 
 @pytest.mark.unit
 async def test_write_imported_preserves_supplied_provenance() -> None:
-    from fdp.metadata.states import MetadataState
-    from fdp.shared.namespaces import FDP_METADATA_STATE
+    from fdpneo_server.metadata.states import MetadataState
+    from fdpneo_server.shared.namespaces import FDP_METADATA_STATE
 
     repo, adapter = _repo()  # server clock = 2026-06-01
     src_created = datetime(2020, 1, 1, tzinfo=UTC)

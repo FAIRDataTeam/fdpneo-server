@@ -1,4 +1,4 @@
-"""Tests for ``fdp.metadata.identifiers`` — dual identifier model (ADR-0014/0017)."""
+"""Tests for ``fdpneo_server.metadata.identifiers`` — dual identifier model (ADR-0014/0017)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import pytest
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.identifiers import reconcile_identifiers
-from fdp.shared.errors import AmbiguousSubject
-from fdp.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
+from fdpneo_server.metadata.identifiers import reconcile_identifiers
+from fdpneo_server.shared.errors import AmbiguousSubject
+from fdpneo_server.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
 
 ID_BASE = "https://w3id.org/myfdp"
 CANON = f"{ID_BASE}/catalog/c1"

@@ -1,11 +1,11 @@
-"""Unit tests for ``fdp.metadata.etag``."""
+"""Unit tests for ``fdpneo_server.metadata.etag``."""
 
 from __future__ import annotations
 
 import pytest
 from rdflib import Graph, Literal, URIRef
 
-from fdp.metadata.etag import compute_etag
+from fdpneo_server.metadata.etag import compute_etag
 
 EX = "https://example.org/"
 

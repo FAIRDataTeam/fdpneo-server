@@ -20,20 +20,20 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.metadata.autocomplete import (
+from fdpneo_server.metadata.autocomplete import (
     AutocompleteService,
     _parse_sparql_items,
     _resolve_inline,
     build_autocomplete_router,
 )
-from fdp.metadata.settings import (
+from fdpneo_server.metadata.settings import (
     AutocompleteItem,
     AutocompleteSource,
     AutocompleteSources,
     SettingsRepository,
 )
-from fdp.shared.errors import register_exception_handlers
-from fdp.storage.postgres.models import Base
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.storage.postgres.models import Base
 
 # --- fixtures ------------------------------------------------------------
 
@@ -239,7 +239,7 @@ async def test_service_appends_limit_when_source_omits_it(
 async def test_service_raises_not_found_for_unknown_source(
     session_factory: Any,
 ) -> None:
-    from fdp.shared.errors import NotFound
+    from fdpneo_server.shared.errors import NotFound
 
     repo = SettingsRepository(session_factory=session_factory)
     service = AutocompleteService(

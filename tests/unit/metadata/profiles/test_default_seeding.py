@@ -11,10 +11,10 @@ import pytest
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.profiles.applier import _rewrite_subject
-from fdp.metadata.profiles.licenses import default_license_graphs
-from fdp.policy.parser import parse_offer
-from fdp.shared.namespaces import DCT, ODRL
+from fdpneo_server.metadata.profiles.applier import _rewrite_subject
+from fdpneo_server.metadata.profiles.licenses import default_license_graphs
+from fdpneo_server.policy.parser import parse_offer
+from fdpneo_server.shared.namespaces import DCT, ODRL
 
 BASE = "http://localhost:8000"
 
@@ -84,12 +84,12 @@ def test_rewrite_leaves_unrelated_nodes_untouched() -> None:
 async def test_seeded_default_licenses_conform_to_the_license_shape() -> None:
     # The built-in license set must satisfy the shipped license SHACL shape, so a
     # re-validation (or client round-trip) of a seeded license passes.
-    from fdp.metadata.licenses import (
+    from fdpneo_server.metadata.licenses import (
         LICENSE_SHAPE_IRI,
         _probe_graph,
         predefined_license_shape_graph,
     )
-    from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
+    from fdpneo_server.metadata.shacl import InMemoryShapeProvider, ShaclValidator
 
     validator = ShaclValidator(
         InMemoryShapeProvider(

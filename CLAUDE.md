@@ -76,17 +76,17 @@ docker compose -f deploy/compose.yaml up -d
 # Install / sync dependencies
 uv sync
 
-# Run migrations (alembic.ini + migrations/ live inside the package: src/fdp/)
+# Run migrations (alembic.ini + migrations/ live inside the package: src/fdpneo_server/)
 uv run fdp db migrate
 
 # Create a new migration
-uv run alembic -c src/fdp/alembic.ini revision --autogenerate -m "describe change"
+uv run alembic -c src/fdpneo_server/alembic.ini revision --autogenerate -m "describe change"
 
 # Apply the default deployment profile
-uv run fdp profile apply ./profiles/default
+uv run fdp profile apply   # defaults to the bundled profile (src/fdpneo_server/profiles/default)
 
 # Start the API server in dev mode
-uv run fastapi dev src/fdp/main.py
+uv run fastapi dev src/fdpneo_server/main.py
 
 # Run tests
 uv run pytest                          # full suite
@@ -128,7 +128,7 @@ The namespace registry is in `shared/namespaces.py`. Add prefixes there; do not 
 ## Repository layout
 
 ```
-src/fdp/
+src/fdpneo_server/
 ├── identity/         OIDC, request context
 ├── metadata/         LDP server, records, schemas, SHACL
 ├── policy/           ODRL evaluator, PDP, authorization cache
@@ -149,9 +149,10 @@ deploy/
 docs/
 ├── architecture/
 └── adr/
-profiles/
-└── default/          Bundled DCAT default profile
 ```
+
+The bundled DCAT default profile ships inside the package at
+`src/fdpneo_server/profiles/default/`.
 
 ## When working on a task
 

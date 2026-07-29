@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metrics.events`.
+"""Unit tests for :mod:`fdpneo_server.metrics.events`.
 
 The most important test here is :func:`test_metric_sample_has_no_identifying_fields`:
 it asserts the *shape* of the post-anonymization sample. Adding an IP /
@@ -13,8 +13,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.metrics.events import MetricEventType, MetricSample, RequestObserved
-from fdp.shared.events import Event
+from fdpneo_server.metrics.events import MetricEventType, MetricSample, RequestObserved
+from fdpneo_server.shared.events import Event
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
 

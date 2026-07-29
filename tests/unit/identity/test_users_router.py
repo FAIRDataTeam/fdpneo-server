@@ -15,16 +15,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fdp.identity.users import (
+from fdpneo_server.identity.users import (
     CreateUserRequest,
     UpdateUserRequest,
     UserDirectory,
     UserInfo,
     build_users_router,
 )
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import Conflict, NotFound
-from fdp.shared.events import EventBus
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import Conflict, NotFound
+from fdpneo_server.shared.events import EventBus
 
 ISSUER = "http://idp.local/realms/fdp"
 ADMIN_ID = "11111111-1111-1111-1111-111111111111"
@@ -104,8 +104,8 @@ def _client(
     ctx: RequestContext,
     event_bus: EventBus | None = None,
 ) -> TestClient:
-    from fdp.identity.deps import current_context
-    from fdp.shared.errors import register_exception_handlers
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.shared.errors import register_exception_handlers
 
     app = FastAPI()
     register_exception_handlers(app)
@@ -304,7 +304,7 @@ def test_non_uuid_id_rejected_before_upstream(method: str) -> None:
 
 @pytest.mark.unit
 def test_mutations_emit_admin_action_audit_events() -> None:
-    from fdp.shared.events import AdminActionAudited
+    from fdpneo_server.shared.events import AdminActionAudited
 
     bus = _CapturingBus()
     dir_ = _seed()

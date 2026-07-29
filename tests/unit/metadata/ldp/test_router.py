@@ -11,14 +11,14 @@ from fastapi.testclient import TestClient
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.identity.deps import current_context
-from fdp.metadata.etag import compute_etag
-from fdp.metadata.events import RecordCreated, RecordDeleted, RecordModified
-from fdp.metadata.graphs import meta_graph_uri
-from fdp.metadata.ldp import ContainerRegistry, build_ldp_router
-from fdp.metadata.repository import MetadataRepository
-from fdp.metadata.shacl import InMemoryShapeProvider, ShaclValidator
-from fdp.metadata.signposting import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.etag import compute_etag
+from fdpneo_server.metadata.events import RecordCreated, RecordDeleted, RecordModified
+from fdpneo_server.metadata.graphs import meta_graph_uri
+from fdpneo_server.metadata.ldp import ContainerRegistry, build_ldp_router
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.metadata.shacl import InMemoryShapeProvider, ShaclValidator
+from fdpneo_server.metadata.signposting import (
     REL_HAS_EXPANDED_VIEW,
     REL_HAS_MEMBER_PAGE,
     REL_HAS_META_METADATA,
@@ -27,18 +27,18 @@ from fdp.metadata.signposting import (
     REL_HAS_STATE_TRANSITION,
     Link,
 )
-from fdp.policy.model import Action, Decision, Outcome
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.shared.events import EventBus
-from fdp.shared.namespaces import (
+from fdpneo_server.policy.model import Action, Decision, Outcome
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.shared.events import EventBus
+from fdpneo_server.shared.namespaces import (
     DCT,
     FDP_ALLOWED_STATE_TRANSITION,
     FDP_METADATA_STATE,
     LDP,
     OWL,
 )
-from fdp.shared.negotiation import (
+from fdpneo_server.shared.negotiation import (
     JSON_LD,
     N_TRIPLES,
     RDF_XML,
@@ -1222,8 +1222,8 @@ _PROFILE_V1 = "http://testserver/fdp-api/profiles/catalog/1"
 
 
 async def test_put_stamps_conformsto_and_records_validated_against() -> None:
-    from fdp.metadata.prof import provision_profile
-    from fdp.shared.namespaces import FDP_VALIDATED_AGAINST
+    from fdpneo_server.metadata.prof import provision_profile
+    from fdpneo_server.shared.namespaces import FDP_VALIDATED_AGAINST
 
     repo, adapter = _make_repo()
     await provision_profile(adapter, base_url="http://testserver", slug="catalog", version=1)  # type: ignore[arg-type]
@@ -1242,7 +1242,7 @@ async def test_put_stamps_conformsto_and_records_validated_against() -> None:
 
 
 async def test_put_strips_client_profile_conformsto_keeps_external() -> None:
-    from fdp.metadata.prof import provision_profile
+    from fdpneo_server.metadata.prof import provision_profile
 
     repo, adapter = _make_repo()
     await provision_profile(adapter, base_url="http://testserver", slug="catalog", version=1)  # type: ignore[arg-type]

@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from fdp.config import OIDCSettings, Settings, TripleStoreSettings
-from fdp.storage.postgres import build_engine, build_session_factory
+from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
+from fdpneo_server.storage.postgres import build_engine, build_session_factory
 
 
 def _make_settings(dsn: str) -> Settings:

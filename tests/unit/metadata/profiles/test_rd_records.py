@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`fdp.metadata.profiles.rd_records` (task #7).
+"""Unit tests for :mod:`fdpneo_server.metadata.profiles.rd_records` (task #7).
 
 Covers the RDF record layer for resource definitions: round-trip
 serialization, parse-error surfacing, and that the predefined SHACL shape
@@ -14,7 +14,7 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF, XSD
 
-from fdp.metadata.profiles.rd_records import (
+from fdpneo_server.metadata.profiles.rd_records import (
     RD_SHAPE_IRI,
     ChildLinkRecord,
     ResourceDefinitionParseError,
@@ -23,7 +23,7 @@ from fdp.metadata.profiles.rd_records import (
     record_from_graph,
     record_to_graph,
 )
-from fdp.shared.namespaces import (
+from fdpneo_server.shared.namespaces import (
     FDP_NAME,
     FDP_RESOURCE_DEFINITION,
     FDP_URL_PREFIX,

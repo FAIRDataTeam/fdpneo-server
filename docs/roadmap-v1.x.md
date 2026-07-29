@@ -13,7 +13,7 @@ This roadmap collects the work deferred from 0.1 — sourced from architecture
 ### 1. Access-controlled data delivery — **L** — *headline feature*
 Today the data provider authorizes every request against a synthetic **anonymous**
 context and serves only open-access distributions
-([`data/router.py`](../src/fdp/data/router.py), [`data/__init__.py`](../src/fdp/data/__init__.py)).
+([`data/router.py`](../src/fdpneo_server/data/router.py), [`data/__init__.py`](../src/fdpneo_server/data/__init__.py)).
 For a clinical / HIPAA deployment this is the biggest functional gap: a restricted
 distribution can be *described* but never *delivered* through the FDP.
 
@@ -29,7 +29,7 @@ distribution can be *described* but never *delivered* through the FDP.
 
 ### 2. Metrics per-record ownership scoping — **M**
 The dashboard can't yet scope metrics to a steward's own records
-([`metrics/api.py`](../src/fdp/metrics/api.py), [`metadata/dashboard.py`](../src/fdp/metadata/dashboard.py))
+([`metrics/api.py`](../src/fdpneo_server/metrics/api.py), [`metadata/dashboard.py`](../src/fdpneo_server/metadata/dashboard.py))
 — it depends on a record-ownership model that isn't built. Unblocks steward-scoped
 analytics. Keep the anonymization boundary (ADR-0002) intact — ownership scoping is a
 *query filter*, never identifying data in the pipeline.
@@ -40,7 +40,7 @@ analytics. Keep the anonymization boundary (ADR-0002) intact — ownership scopi
 
 ### 3. IdP role → FDP role mapping — **M–L** — §15.7
 Map IdP groups/claims to FDP-internal roles via deployment config. The seam already
-exists ([`identity/principal.py`](../src/fdp/identity/principal.py)). Intersects with
+exists ([`identity/principal.py`](../src/fdpneo_server/identity/principal.py)). Intersects with
 AAI config in non-trivial ways → **needs its own design pass + ADR** before coding.
 
 ### 4. Schema draft/release lifecycle + version-history browsing — **M** — `schemas.py:29`
@@ -67,7 +67,7 @@ one-step flow over today's explicit two-step model). Builds on
 
 ### 8. Smaller deferrals — **S each**
 - Remote-vocabulary source for autocomplete & labels
-  ([`autocomplete.py`](../src/fdp/metadata/autocomplete.py), [`labels.py`](../src/fdp/metadata/labels.py)).
+  ([`autocomplete.py`](../src/fdpneo_server/metadata/autocomplete.py), [`labels.py`](../src/fdpneo_server/metadata/labels.py)).
 - Offer-version "consolidate" action to tame noisy edit history (§15.4).
 - Profile distribution as OCI artifact / signed bundles (§15.8).
 

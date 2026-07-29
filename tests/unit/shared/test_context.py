@@ -1,4 +1,4 @@
-"""Tests for ``fdp.shared.context``."""
+"""Tests for ``fdpneo_server.shared.context``."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.shared.context import RequestContext, bound, get_current
+from fdpneo_server.shared.context import RequestContext, bound, get_current
 
 
 @pytest.mark.unit

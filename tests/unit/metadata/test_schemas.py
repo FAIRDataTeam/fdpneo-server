@@ -18,17 +18,17 @@ from fastapi.testclient import TestClient
 from rdflib import Graph
 from rdflib.namespace import RDF
 
-from fdp.metadata.schemas import (
+from fdpneo_server.metadata.schemas import (
     SchemaProtected,
     SchemaService,
     ValidationResultView,
     build_schema_router,
 )
-from fdp.metadata.shacl import ShaclValidator, UnknownShapeError
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import BadRequest, Conflict, NotFound
-from fdp.shared.graphs import record_graph_uri
-from fdp.shared.namespaces import SH
+from fdpneo_server.metadata.shacl import ShaclValidator, UnknownShapeError
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import BadRequest, Conflict, NotFound
+from fdpneo_server.shared.graphs import record_graph_uri
+from fdpneo_server.shared.namespaces import SH
 
 BASE = "http://localhost:8000"
 
@@ -135,7 +135,7 @@ async def test_put_stores_shape_and_reports_target_class() -> None:
 
 @pytest.mark.unit
 async def test_put_auto_provisions_conformance_profile() -> None:
-    from fdp.shared.namespaces import PROF
+    from fdpneo_server.shared.namespaces import PROF
 
     store = _Store()
     await _service(store).put("ontology", ONTOLOGY_SHAPE, subject="admin")
@@ -343,7 +343,7 @@ class _FakeService:
     async def put(self, schema_id: str, turtle: str, *, subject: str | None):
         del subject
         self.puts.append((schema_id, turtle))
-        from fdp.metadata.schemas import SchemaInfo
+        from fdpneo_server.metadata.schemas import SchemaInfo
 
         return SchemaInfo(id=schema_id, iri=self.iri(schema_id), version=1)
 
@@ -358,14 +358,14 @@ class _FakeService:
         return ValidationResultView(conforms=True, violations=[])
 
     async def list_schemas(self):
-        from fdp.metadata.schemas import SchemaInfo
+        from fdpneo_server.metadata.schemas import SchemaInfo
 
         return [SchemaInfo(id="ontology", iri=self.iri("ontology"))]
 
 
 def _client(service: _FakeService, *, ctx: RequestContext) -> TestClient:
-    from fdp.identity.deps import current_context
-    from fdp.shared.errors import register_exception_handlers
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.shared.errors import register_exception_handlers
 
     app = FastAPI()
     register_exception_handlers(app)

@@ -20,21 +20,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from fdp.identity.deps import current_context
-from fdp.metadata.admin import (
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.admin import (
     RESET_CONFIRMATION_TOKEN,
     ResetResponse,
     ResetService,
     build_admin_router,
 )
-from fdp.metadata.settings import (
+from fdpneo_server.metadata.settings import (
     AutocompleteSources,
     SearchFilters,
     SettingsRepository,
 )
-from fdp.shared.context import RequestContext
-from fdp.shared.errors import register_exception_handlers
-from fdp.storage.postgres.models import Base
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.storage.postgres.models import Base
 
 # --- fixtures --------------------------------------------------------------
 
@@ -178,7 +178,7 @@ def test_reset_happy_path_returns_report_and_threads_subject() -> None:
 async def test_service_refuses_without_configured_bundle(session_factory: Any) -> None:
     from types import SimpleNamespace
 
-    from fdp.shared.errors import Conflict
+    from fdpneo_server.shared.errors import Conflict
 
     # A settings stand-in with no profile bundle configured.
     settings = SimpleNamespace(profile=SimpleNamespace(path=None))

@@ -8,10 +8,10 @@ import pytest
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.metadata.search.extract import extract, is_indexable
-from fdp.metadata.states import MetadataState
-from fdp.shared.graphs import meta_graph_uri
-from fdp.shared.namespaces import DCAT, DCT, FDP_METADATA_STATE, LDP, ODRL, SH
+from fdpneo_server.metadata.search.extract import extract, is_indexable
+from fdpneo_server.metadata.states import MetadataState
+from fdpneo_server.shared.graphs import meta_graph_uri
+from fdpneo_server.shared.namespaces import DCAT, DCT, FDP_METADATA_STATE, LDP, ODRL, SH
 
 REC = "http://localhost:8000/catalog/c1"
 NOW = datetime(2026, 6, 2, 12, 0, tzinfo=UTC)

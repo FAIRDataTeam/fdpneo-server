@@ -9,11 +9,11 @@ from fastapi.testclient import TestClient
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from fdp.identity.deps import current_context
-from fdp.metadata.ldp import build_ldp_router
-from fdp.metadata.repository import MetadataRepository
-from fdp.shared.errors import register_exception_handlers
-from fdp.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
+from fdpneo_server.identity.deps import current_context
+from fdpneo_server.metadata.ldp import build_ldp_router
+from fdpneo_server.metadata.repository import MetadataRepository
+from fdpneo_server.shared.errors import register_exception_handlers
+from fdpneo_server.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
 from tests.unit.metadata.ldp.test_router import (
     FakeAdapter,
     FakePDP,

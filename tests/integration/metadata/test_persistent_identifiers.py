@@ -1,6 +1,6 @@
 """End-to-end persistent identifiers (ADR-0014) over a real Oxigraph + Postgres.
 
-Drives the whole HTTP stack via :func:`fdp.main.create_app` with a distinct
+Drives the whole HTTP stack via :func:`fdpneo_server.main.create_app` with a distinct
 ``IDENTIFIER_BASE`` (a W3ID-style URL) and ``BASE_URL`` (the serving origin the
 TestClient talks to). Proves:
 
@@ -32,8 +32,8 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from testcontainers.postgres import PostgresContainer
 
-from fdp.shared.context import RequestContext
-from fdp.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
+from fdpneo_server.shared.context import RequestContext
+from fdpneo_server.shared.namespaces import ADMS, DCAT, DCT, OWL, SKOS, XSD
 
 OXIGRAPH_PORT = 7878
 SERVING_URL = "http://testserver"
@@ -146,7 +146,7 @@ def app_env(
     oxigraph_container: DockerContainer,
     bundle: Path,
 ) -> Iterator[None]:
-    from fdp.config import get_settings
+    from fdpneo_server.config import get_settings
 
     host = oxigraph_container.get_container_host_ip()
     port = oxigraph_container.get_exposed_port(OXIGRAPH_PORT)
@@ -167,7 +167,7 @@ def app_env(
     os.environ.update(env)
     get_settings.cache_clear()
 
-    config = Config(str(files("fdp") / "alembic.ini"))
+    config = Config(str(files("fdpneo_server") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
@@ -189,8 +189,8 @@ def _admin() -> RequestContext:
 
 
 def _make_client() -> TestClient:
-    from fdp.identity.deps import current_context
-    from fdp.main import create_app
+    from fdpneo_server.identity.deps import current_context
+    from fdpneo_server.main import create_app
 
     app = create_app()
     app.dependency_overrides[current_context] = _admin

@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from fdp.policy.cache import ANONYMOUS_SUBJECT_KEY, compute_subject_key
-from fdp.policy.model import (
+from fdpneo_server.policy.cache import ANONYMOUS_SUBJECT_KEY, compute_subject_key
+from fdpneo_server.policy.model import (
     Action,
     ConstraintOperator,
     Offer,
@@ -16,8 +16,8 @@ from fdp.policy.model import (
     PartyConstraint,
     Permission,
 )
-from fdp.policy.pdp import PDP
-from fdp.shared.context import RequestContext
+from fdpneo_server.policy.pdp import PDP
+from fdpneo_server.shared.context import RequestContext
 
 ALICE = "https://idp.example/realms/fdp#alice"
 BOB = "https://idp.example/realms/fdp#bob"
