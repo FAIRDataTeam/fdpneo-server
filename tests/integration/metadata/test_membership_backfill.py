@@ -194,7 +194,7 @@ async def _run() -> None:
 
     settings = get_settings()
     root = URIRef(BASE_URL)
-    async with TripleStoreAdapter.from_settings(settings.triplestore) as adapter:
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
         repository = MetadataRepository(adapter)
 
         # The seed already made the root a Direct Container (post-15.1).

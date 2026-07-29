@@ -726,7 +726,7 @@ wheels = [
 
 [[package]]
 name = "fdpneo"
-version = "0.13.1"
+version = "0.13.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

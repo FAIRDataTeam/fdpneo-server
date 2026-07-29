@@ -120,13 +120,18 @@ from fdpneo_server.storage.triplestore.conformance import verify_named_graph_iso
 
 log = structlog.get_logger(__name__)
 
-TripleStoreFactory = Callable[[TripleStoreSettings], TripleStoreAdapter]
+TripleStoreFactory = Callable[[TripleStoreSettings | None], TripleStoreAdapter]
 """Downstream seam (ADR-0023): builds the adapter every service will use.
 
 The default is :meth:`TripleStoreAdapter.from_settings`; a downstream that
 needs to mediate RDF I/O (driver quirks, telemetry, query budgets) passes
 its own callable to :func:`create_app` and returns a subclassed or wrapped
 adapter.
+
+The factory receives ``settings.triplestore``, which is ``None`` when the
+operator configured no ``FDP_TRIPLESTORE_*`` environment — the normal state
+for an embedder whose factory owns storage configuration and ignores the
+argument. Only the no-factory default path *requires* the settings.
 """
 
 
@@ -188,9 +193,13 @@ def _build_shared_state(
     # Each request that needs the adapter borrows the singleton; the
     # underlying httpx client pools connections. A downstream may supply
     # its own factory (ADR-0023) to mediate the adapter — every RDF read
-    # and write in the app goes through the instance built here.
-    build_adapter = triple_store_factory or TripleStoreAdapter.from_settings
-    app.state.triplestore = build_adapter(settings.triplestore)
+    # and write in the app goes through the instance built here. Only the
+    # default path demands FDP_TRIPLESTORE_* configuration; a factory
+    # receives whatever is configured (usually None) and may ignore it.
+    if triple_store_factory is None:
+        app.state.triplestore = TripleStoreAdapter.from_settings(settings.require_triplestore())
+    else:
+        app.state.triplestore = triple_store_factory(settings.triplestore)
     app.state.metadata_repository = MetadataRepository(app.state.triplestore)
     # Set True until the startup named-graph isolation self-test runs (audit R-03);
     # the lifespan flips it to the probe result. Until then reads behave normally.
@@ -881,7 +890,11 @@ async def _verify_store_conformance(app: FastAPI) -> None:
     spans more than one named graph, rather than risk a leak.
     """
     settings = get_settings()
-    if not settings.triplestore.verify_named_graph_isolation:
+    # A factory-injected adapter has no settings block (None); run the probe
+    # against it anyway — verification is about the store's behavior, and the
+    # safe default is to check unless the operator explicitly opted out.
+    ts_settings = settings.triplestore
+    if ts_settings is not None and not ts_settings.verify_named_graph_isolation:
         log.info("named_graph_isolation_check_skipped")
         return
     safe = await verify_named_graph_isolation(app.state.triplestore)

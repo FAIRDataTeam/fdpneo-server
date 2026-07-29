@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, field_validator
+from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DownloadMode = Literal["redirect", "stream"]
@@ -611,6 +611,23 @@ class MigrationSettings(BaseSettings):
     postgres_dsn: PostgresDsn
 
 
+def _triplestore_from_env() -> TripleStoreSettings | None:
+    """Build :class:`TripleStoreSettings` from the environment, or ``None``.
+
+    ``None`` only when the store is *entirely* unconfigured — both required
+    endpoints absent from env/.env. Anything else (one endpoint set, an
+    invalid URL) re-raises, so a misconfiguration never masquerades as
+    "embedder brings their own adapter".
+    """
+    try:
+        return TripleStoreSettings()  # type: ignore[call-arg]  # pydantic-settings fills from env
+    except ValidationError as err:
+        problems = {str(e["loc"][0]): e["type"] for e in err.errors()}
+        if problems == {"query_endpoint": "missing", "update_endpoint": "missing"}:
+            return None
+        raise
+
+
 class Settings(BaseSettings):
     """Top-level application settings.
 
@@ -666,8 +683,13 @@ class Settings(BaseSettings):
     postgres_dsn: PostgresDsn
 
     # Subgroups — required fields are filled from prefixed env vars at construction time.
-    triplestore: TripleStoreSettings = Field(
-        default_factory=lambda: TripleStoreSettings(),  # type: ignore[call-arg]
+    # The triple store block is optional (ADR-0023): an embedder that supplies
+    # create_app(triple_store_factory=...) owns storage configuration and must
+    # not have to state placeholder endpoints nothing reads. ``None`` means
+    # "not configured" — a store that is configured but *misconfigured* (a
+    # typo'd URL, only one endpoint set) still fails loudly at construction.
+    triplestore: TripleStoreSettings | None = Field(
+        default_factory=lambda: _triplestore_from_env(),
     )
     oidc: OIDCSettings = Field(default_factory=lambda: OIDCSettings())  # type: ignore[call-arg]
     cors: CORSSettings = Field(default_factory=lambda: CORSSettings())
@@ -682,6 +704,22 @@ class Settings(BaseSettings):
     idp_admin: IdpAdminSettings = Field(default_factory=lambda: IdpAdminSettings())
     rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
     pid: PIDSettings = Field(default_factory=lambda: PIDSettings())
+
+    def require_triplestore(self) -> TripleStoreSettings:
+        """The triple store settings, or a clear error naming both fixes.
+
+        Call sites that build the default adapter (the CLI, ``create_app``
+        without a ``triple_store_factory``) go through this so a standalone
+        deployment that forgot to configure its store fails with an
+        actionable message instead of a pydantic traceback.
+        """
+        if self.triplestore is None:
+            raise RuntimeError(
+                "No triple store configured: set FDP_TRIPLESTORE_QUERY_ENDPOINT and "
+                "FDP_TRIPLESTORE_UPDATE_ENDPOINT, or (when embedding) supply "
+                "create_app(triple_store_factory=...)."
+            )
+        return self.triplestore
 
     @property
     def serving_base(self) -> str:

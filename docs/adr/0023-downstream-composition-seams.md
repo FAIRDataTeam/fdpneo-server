@@ -40,7 +40,7 @@ nothing changes for callers that pass nothing:
 ```python
 def create_app(
     *,
-    triple_store_factory: Callable[[TripleStoreSettings], TripleStoreAdapter] | None = None,
+    triple_store_factory: Callable[[TripleStoreSettings | None], TripleStoreAdapter] | None = None,
     extension_routers: Sequence[APIRouter] | None = None,
 ) -> FastAPI: ...
 ```
@@ -55,6 +55,24 @@ def create_app(
   the invariant that **all RDF I/O goes through the triple store
   adapter** is unchanged — the seam decides *which* adapter, not whether
   one is used.
+
+  **The factory's argument is `TripleStoreSettings | None`** (amended
+  2026-07-29, 0.13.2). `Settings.triplestore` is optional: when no
+  `FDP_TRIPLESTORE_*` environment is configured at all it is `None`, and
+  that is the normal state for an embedder whose factory owns storage
+  configuration — it must not have to state placeholder endpoints that
+  nothing reads and nobody maintains. The rules:
+
+  - *Factory supplied*: it is called with whatever is configured — a
+    populated `TripleStoreSettings` or `None`. Factories that ignore the
+    argument (the common embedding case) are unaffected.
+  - *No factory*: the settings are **required**; `create_app` raises a
+    `RuntimeError` naming both fixes (set the env vars, or pass a
+    factory) instead of a pydantic traceback.
+  - *Misconfigured is not unconfigured*: `None` arises only when **both**
+    endpoints are absent. One endpoint set, or an invalid URL, still
+    fails loudly at settings construction — a typo must never silently
+    degrade into "embedder brings their own adapter".
 
 - **`extension_routers`** are mounted at the very end of composition,
   after every reserved `/fdp-api` router and **immediately before the LDP

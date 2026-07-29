@@ -5,6 +5,34 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.13.2] — 2026-07-29
+
+### Fixed
+
+- **`Settings.triplestore` is optional when a `triple_store_factory` is
+  supplied** (completes the ADR-0023 seams). Previously the sub-model was
+  constructed eagerly, so `create_app(triple_store_factory=…)` still demanded
+  `FDP_TRIPLESTORE_QUERY_ENDPOINT`/`FDP_TRIPLESTORE_UPDATE_ENDPOINT` — values
+  an embedder's factory never reads, forcing decorative placeholders in
+  downstream deploy configs. Now:
+  - With no `FDP_TRIPLESTORE_*` configured at all, `settings.triplestore` is
+    `None` and a factory-supplied app builds cleanly; the factory receives
+    `None`.
+  - Without a factory, a missing store raises an actionable `RuntimeError`
+    naming both fixes instead of a pydantic traceback (also via the new
+    `Settings.require_triplestore()`, used by every CLI command that opens
+    the store).
+  - Misconfigured is not unconfigured: one endpoint set, or an invalid URL,
+    still fails loudly at settings construction.
+
+### Changed
+
+- **`TripleStoreFactory` widens to `Callable[[TripleStoreSettings | None],
+  TripleStoreAdapter]`.** Factories that ignore their argument (the common
+  embedding case) are unaffected; factories annotated with the old
+  non-optional parameter type need the annotation loosened. Documented in the
+  ADR-0023 amendment.
+
 ## [0.13.1] — 2026-07-29
 
 ### Fixed
