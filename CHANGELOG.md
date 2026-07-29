@@ -5,6 +5,32 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.13.0] — 2026-07-29
+
+Downstream composition seams ([ADR-0023](docs/adr/0023-downstream-composition-seams.md)):
+`create_app()` gains keyword-only, optional parameters so platforms that extend
+the server by composition stop monkeypatching internals. No behavior change for
+callers that pass nothing.
+
+### Added
+
+- **`create_app(triple_store_factory=...)`** — replaces the internal
+  `TripleStoreAdapter.from_settings` call. The factory receives the resolved
+  `TripleStoreSettings` and returns the adapter instance every service uses,
+  so a downstream can mediate all RDF I/O (driver quirks, telemetry, query
+  budgets) by subclassing or wrapping the adapter. Public type alias:
+  `fdpneo_server.main.TripleStoreFactory`.
+- **`create_app(extension_routers=[...])`** — routers mounted after every
+  reserved `/fdp-api` router and immediately before the LDP catch-all: they
+  win the paths they claim, cannot shadow the FDP's fixed API, and everything
+  else falls through to LDP unchanged.
+
+### Notes
+
+- Both parameters are public API under semver; everything on `app.state`
+  remains internal. Extracting a structural `TripleStorePort` protocol is
+  deliberately deferred (see the ADR).
+
 ## [0.12.0] — 2026-07-29
 
 Packaging and naming release: the wheel is now fully self-contained (an
