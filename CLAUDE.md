@@ -76,8 +76,11 @@ docker compose -f deploy/compose.yaml up -d
 # Install / sync dependencies
 uv sync
 
-# Run migrations
-uv run alembic upgrade head
+# Run migrations (alembic.ini + migrations/ live inside the package: src/fdp/)
+uv run fdp db migrate
+
+# Create a new migration
+uv run alembic -c src/fdp/alembic.ini revision --autogenerate -m "describe change"
 
 # Apply the default deployment profile
 uv run fdp profile apply ./profiles/default

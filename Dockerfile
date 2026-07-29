@@ -21,10 +21,9 @@ COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
-# Project sources + the bits the runtime needs (migrations, alembic, profiles).
+# Project sources (migrations + alembic.ini ship inside the package) and the
+# default deployment profile the runtime auto-applies.
 COPY src ./src
-COPY alembic.ini ./
-COPY migrations ./migrations
 COPY profiles ./profiles
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev

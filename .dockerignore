@@ -1,6 +1,6 @@
 # Keep the build context small + deterministic. The image needs pyproject,
-# uv.lock, README.md, src/, alembic.ini, migrations/, profiles/, and
-# deploy/docker-entrypoint.sh — everything else is excluded.
+# uv.lock, README.md, src/ (which includes alembic.ini + migrations/),
+# profiles/, and deploy/docker-entrypoint.sh — everything else is excluded.
 .venv
 .git
 .gitignore

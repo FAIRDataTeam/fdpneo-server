@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from importlib.resources import files
 
 import pytest
 from alembic import command
@@ -22,7 +22,6 @@ from fdp.metadata.search.extract import ExtractedRecord
 from fdp.metadata.search.repository import SearchIndexRepository, SearchQuery
 from fdp.metadata.states import MetadataState
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 NOW = datetime(2026, 6, 2, 12, 0, tzinfo=UTC)
 
 pytestmark = pytest.mark.integration
@@ -50,8 +49,7 @@ def migrated(postgres_container: PostgresContainer) -> Iterator[str]:
     original = os.environ.get("POSTGRES_DSN")
     os.environ["POSTGRES_DSN"] = dsn
     get_settings.cache_clear()
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     try:
         command.upgrade(config, "head")
         yield dsn

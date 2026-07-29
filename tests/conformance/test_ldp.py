@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterator
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -88,8 +89,7 @@ def client(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     command.upgrade(config, "head")
 
     app = create_app()

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,6 @@ from testcontainers.postgres import PostgresContainer
 
 from fdp.shared.context import RequestContext
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
 CATALOG = "http://www.w3.org/ns/dcat#Catalog"
@@ -149,8 +149,7 @@ def app_env(
     saved = {k: os.environ.get(k) for k in env}
     os.environ.update(env)
     get_settings.cache_clear()
-    config = Config(str(REPO_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config = Config(str(files("fdp") / "alembic.ini"))
     command.upgrade(config, "head")
     try:
         yield
