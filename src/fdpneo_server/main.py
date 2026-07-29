@@ -1111,4 +1111,21 @@ async def _warm_anonymous_authz_cache(app: FastAPI) -> None:
     await _warm_authz(app, [str(record_graph_uri(base + "/"))])
 
 
-app = create_app()
+app: FastAPI
+"""The default application, built lazily on first attribute access (PEP 562).
+
+``uvicorn fdpneo_server.main:app`` and ``fastapi dev`` resolve the attribute
+through :func:`__getattr__` below, so they behave exactly as if the app were
+bound at module level. A bare ``import fdpneo_server.main`` no longer
+constructs an application — it needs no configuration, builds no engines or
+HTTP clients, and is safe for tools that only want a symbol (ADR-0023).
+"""
+
+
+def __getattr__(name: str) -> FastAPI:
+    """Build the default app on first access instead of at import time."""
+    if name == "app":
+        global app
+        app = create_app()
+        return app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
