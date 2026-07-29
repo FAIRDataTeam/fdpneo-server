@@ -5,6 +5,20 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.13.1] — 2026-07-29
+
+### Fixed
+
+- **Importing `fdpneo_server.main` no longer builds an application.** The
+  module-level `app` was constructed at import time, so a bare import
+  demanded full configuration (`FDP_TRIPLESTORE_*`, `POSTGRES_DSN`) and
+  leaked one un-closed `httpx.AsyncClient` per process — even for embedders
+  about to call `create_app(triple_store_factory=…)` with their own storage,
+  and for tools that import the module only to reach a symbol. `app` is now
+  built lazily on first attribute access (PEP 562) and cached;
+  `uvicorn fdpneo_server.main:app` and `fastapi dev` are unaffected.
+  Import-time behaviour change only — no configured deployment changes.
+
 ## [0.13.0] — 2026-07-29
 
 Downstream composition seams ([ADR-0023](docs/adr/0023-downstream-composition-seams.md)):
