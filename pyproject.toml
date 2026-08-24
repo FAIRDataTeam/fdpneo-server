@@ -1,6 +1,6 @@
 [project]
 name = "fdpneo"
-version = "0.13.2"
+version = "0.13.3"
 description = "FAIR Data Point v2 server — a FAIR-aligned metadata repository implementing the FDP specifications."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -48,8 +48,9 @@ dependencies = [
   # PYSEC-2026-175/177/178/179 (token-validation issues in earlier 2.x).
   "pyjwt[crypto]>=2.13.0",
   # Transitive via authlib / pyjwt[crypto]; floor clears GHSA-537c-gmf6-5ccf
-  # (fixed in cryptography 48.0.1). Keep until a parent requires it (pip-audit gate).
-  "cryptography>=48.0.1",
+  # (fixed in 48.0.1) and PYSEC-2026-3552 (fixed in 50.0.0). Keep until a
+  # parent requires it (pip-audit gate).
+  "cryptography>=50.0.0",
   "httpx>=0.27",
 
   # Storage
@@ -67,10 +68,11 @@ dependencies = [
 
   # Geo lookup for anonymized metrics
   "geoip2>=4.8",
-  # Transitive via geoip2; pinned to a floor that clears CVE-2026-34993 and
-  # CVE-2026-47265 (fixed in aiohttp 3.14.0). Keep until geoip2 itself
-  # requires a safe aiohttp (security-scan / pip-audit gate).
-  "aiohttp>=3.14.0",
+  # Transitive via geoip2; pinned to a floor that clears CVE-2026-34993,
+  # CVE-2026-47265 (fixed in 3.14.0), and PYSEC-2026-3545/3546/3547 (fixed in
+  # 3.14.3). Keep until geoip2 itself requires a safe aiohttp
+  # (security-scan / pip-audit gate).
+  "aiohttp>=3.14.3",
 
   # CLI
   "typer>=0.12",
