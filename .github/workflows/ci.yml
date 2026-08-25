@@ -1,6 +1,17 @@
 # Build/test CI for the FDP server: lint + types + tests, then build the Docker
 # image and push it to GHCR on pushes to main. Complements security-scan.yml
 # (dependency audit + SBOM).
+#
+# ⚠ Job names below are load-bearing: the `main-protection` ruleset requires
+# these exact check contexts, and a required check that never reports blocks
+# every merge with no error pointing here. If you rename a job (or change the
+# matrix, which changes the rendered name), update the ruleset in the same
+# change: Settings → Rules → main-protection, or
+#   gh api repos/FAIRDataTeam/fdpneo-server/rulesets/<id>
+# Currently required: dco · ruff · pyright · pytest (unit + contract, py3.12)
+# · pytest (unit + contract, py3.14) · pytest (LDP conformance) · build + push
+# image. (Learned the hard way: the {3.12, 3.14} matrix renamed the pytest
+# check and silently blocked merging until the ruleset caught up.)
 name: ci
 
 on:
