@@ -32,9 +32,9 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
-from testcontainers.postgres import PostgresContainer
 
 from fdpneo_server.shared.context import RequestContext
 

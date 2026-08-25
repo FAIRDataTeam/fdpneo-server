@@ -19,7 +19,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
+from testcontainers.community.postgres import PostgresContainer
 
 from fdpneo_server.config import RemoteLabelSettings, get_settings
 from fdpneo_server.metadata.external_labels import ExternalLabelCache

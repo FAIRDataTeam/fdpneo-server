@@ -28,9 +28,9 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
-from testcontainers.postgres import PostgresContainer
 
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
