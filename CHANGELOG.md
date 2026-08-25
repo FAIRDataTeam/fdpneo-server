@@ -5,6 +5,51 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.14.0] — 2026-08-25
+
+The shipped container moves to Python 3.14; the library floor is unchanged.
+
+### Fixed
+
+- **In-flight metrics publishes are drained at shutdown.** The request-
+  observation middleware fire-and-forgets one publish task per request
+  (deliberately — a response never blocks on metrics delivery), but nothing
+  awaited the pending set: a task still in flight when the event loop went
+  away was killed holding a checked-out database connection mid-transaction,
+  silently dropping the last metrics writes on SIGTERM. The lifespan now
+  drains `app.state.metrics_publish_tasks` first in shutdown, before the
+  pipeline, engine, and HTTP client are torn down. For embedders,
+  `RequestObservationMiddleware` gains an optional `pending` parameter
+  (additive; constructed without it, behaviour is unchanged).
+- **`docker build .` works again without `--build-arg`.** The bundled DB-IP
+  database default (`DBIP_CITY_VERSION`) had aged out of DB-IP's archive;
+  refreshed, and the failure mode is documented next to the ARG.
+
+### Changed
+
+- **The container image runs Python 3.14** (`python:3.14-slim`, both stages).
+  The library contract is untouched: `requires-python` stays `>=3.12`, so
+  downstream consumers on 3.12 resolve and run exactly as before. CI now
+  tests both ends — the 3.12 floor and the 3.14 image runtime — as a matrix.
+- **Dependency lock refreshed** (57 packages; `pip-audit` clean). Notable:
+  ruff 0.16 (one new-rule auto-fix; Markdown files excluded from the
+  formatter so ADR code samples keep their deliberate layout).
+
+### Tests
+
+- testcontainers floor raised to **4.15** and imports moved to
+  `testcontainers.community.postgres` (the old path is a deprecated shim that
+  `filterwarnings=["error"]` turns into a collection error).
+- The oxigraph data-router tests run fixtures, app, and requests on one
+  event loop (`httpx.ASGITransport`), removing a flaky cross-loop failure.
+
+## [0.13.3] — 2026-08-24
+
+### Security
+
+- Dependency floors raised to clear published advisories: `aiohttp >= 3.14.3`
+  (PYSEC-2026-3545/3546/3547) and `cryptography >= 50.0.0` (PYSEC-2026-3552).
+
 ## [0.13.2] — 2026-07-29
 
 ### Fixed
