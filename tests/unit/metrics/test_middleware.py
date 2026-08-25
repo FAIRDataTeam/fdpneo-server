@@ -318,3 +318,63 @@ async def test_non_http_scope_passes_through_without_emitting() -> None:
     mw2 = RequestObservationMiddleware(noop, bus_provider=lambda: EventBus())  # type: ignore[arg-type]
     await mw2(scope, receive, send)  # type: ignore[arg-type]
     assert recorder.events == []
+
+
+# --- shutdown drain (shared pending set) ------------------------------------
+
+
+@pytest.mark.unit
+async def test_shared_pending_set_lets_shutdown_drain_in_flight_publishes() -> None:
+    """The lifespan's drain contract: an in-flight publish is awaitable, not lost.
+
+    The middleware fire-and-forgets one publish task per request. When the
+    composition root passes a shared ``pending`` set, a shutdown sequence can
+    ``gather`` it — otherwise a task still in flight when the event loop goes
+    away is killed holding a checked-out connection mid-transaction (dropped
+    metrics writes on SIGTERM).
+    """
+    bus = EventBus()
+    gate = asyncio.Event()
+    seen: list[RequestObserved] = []
+
+    async def slow_handler(event: RequestObserved) -> None:
+        await gate.wait()  # a metrics write still in flight at shutdown
+        seen.append(event)
+
+    sub = bus.subscribe(RequestObserved, slow_handler)
+    assert sub is not None
+
+    pending: set[asyncio.Task[None]] = set()
+    mw = RequestObservationMiddleware(
+        _echo_app(),  # type: ignore[arg-type]
+        bus_provider=lambda: bus,
+        pending=pending,
+    )
+
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    # The response completes while the publish is still blocked on the gate.
+    await mw(_scope(), receive, send)  # type: ignore[arg-type]
+    await asyncio.sleep(0)
+    assert len(pending) == 1
+    assert seen == []
+
+    # What the lifespan does on shutdown: release + drain.
+    gate.set()
+    await asyncio.gather(*tuple(pending), return_exceptions=True)
+    assert len(seen) == 1
+    assert not pending  # the done-callback emptied the shared set
+
+
+@pytest.mark.unit
+async def test_default_pending_set_is_private_per_instance() -> None:
+    """Without an injected set the middleware still guards its own tasks."""
+    mw1, recorder, _ = _build()
+    await _drive(mw1, _scope())
+    assert len(recorder.events) == 1

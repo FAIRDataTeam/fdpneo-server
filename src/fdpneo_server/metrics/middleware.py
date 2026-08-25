@@ -73,11 +73,16 @@ class RequestObservationMiddleware:
         app: ASGIApp,
         *,
         bus_provider: Callable[[], EventBus | None],
+        pending: set[asyncio.Task[None]] | None = None,
     ) -> None:
         self._app = app
         self._bus_provider = bus_provider
-        # Strong refs to in-flight fire-and-forget publish tasks (GC guard).
-        self._pending: set[asyncio.Task[None]] = set()
+        # Strong refs to in-flight fire-and-forget publish tasks. Serves two
+        # purposes: a GC guard (RUF006), and — when the composition root passes
+        # a shared set — the drain point the lifespan awaits on shutdown, so an
+        # in-flight metrics write is never killed mid-transaction with a
+        # checked-out connection when the event loop goes away.
+        self._pending: set[asyncio.Task[None]] = pending if pending is not None else set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
