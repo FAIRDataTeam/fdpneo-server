@@ -29,9 +29,9 @@ from alembic import command
 from alembic.config import Config
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
+from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
-from testcontainers.postgres import PostgresContainer
 
 from fdpneo_server.metadata.profiles import bundled_default_profile
 from fdpneo_server.shared.namespaces import DCT, LDP

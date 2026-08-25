@@ -19,9 +19,9 @@ from alembic import command
 from alembic.config import Config
 from pydantic import HttpUrl, PostgresDsn
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
-from testcontainers.postgres import PostgresContainer
 
 from fdpneo_server.config import OIDCSettings, Settings, TripleStoreSettings
 from fdpneo_server.metadata.profiles import (
