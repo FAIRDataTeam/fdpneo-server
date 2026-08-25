@@ -5,7 +5,7 @@
 # uvicorn; the default profile auto-applies on first boot (FDP_PROFILE_AUTO_APPLY).
 
 # --- builder: resolve + install deps and the project into /app/.venv ---------
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -46,7 +46,7 @@ RUN mkdir -p /app/geo \
     && rm /tmp/geo.mmdb.gz
 
 # --- runtime: slim image with just the venv + app, run as non-root -----------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 RUN groupadd --system fdp \
     && useradd --system --gid fdp --home-dir /app --no-create-home fdp

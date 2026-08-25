@@ -136,7 +136,7 @@ class _LabelCache:
         self._ttl = float(ttl_seconds)
         self._data: dict[tuple[str, str], tuple[float, str | None]] = {}
 
-    def get(self, iri: str, language: str) -> str | None | _Sentinel:
+    def get(self, iri: str, language: str) -> str | _Sentinel | None:
         entry = self._data.get((iri, language))
         if entry is None:
             return _MISS

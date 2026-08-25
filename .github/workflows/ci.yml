@@ -39,14 +39,21 @@ jobs:
       - run: uv run pyright
 
   test:
-    name: pytest (unit + contract)
+    name: pytest (unit + contract, py${{ matrix.python }})
     runs-on: ubuntu-latest
+    # The floor (3.12) is the library contract downstream consumers resolve
+    # against; 3.14 is what the shipped image runs. Test both ends; the
+    # versions between get no dedicated job.
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --frozen --extra dev
+      - run: uv sync --frozen --extra dev --python ${{ matrix.python }}
       # Unit + contract are fast and need no services. The testcontainers-backed
       # integration suite (GraphDB/Fuseki/Postgres) can be added as a separate
       # job with Docker services when desired.
