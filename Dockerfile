@@ -32,7 +32,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # lookup reads it unchanged. Bump DBIP_CITY_VERSION monthly (CI passes --build-arg);
 # the layer re-downloads only when the arg changes. Attribution lives in NOTICE.
 # `gunzip` is in the debian-slim base; this all happens in the discarded builder.
-ARG DBIP_CITY_VERSION=2026-06
+#
+# NOTE: DB-IP keeps only recent months online, so this default goes stale and a
+# plain `docker build .` then fails on the ADD below. CI resolves the newest
+# published month dynamically (ci.yml, "Resolve newest available GeoIP DB
+# month") and scripts/fetch-geoip.sh does the same for local dev; pass
+# --build-arg DBIP_CITY_VERSION=YYYY-MM when building by hand after this
+# default ages out.
+ARG DBIP_CITY_VERSION=2026-08
 ADD https://download.db-ip.com/free/dbip-city-lite-${DBIP_CITY_VERSION}.mmdb.gz /tmp/geo.mmdb.gz
 RUN mkdir -p /app/geo \
     && gunzip -c /tmp/geo.mmdb.gz > /app/geo/GeoLite2-City.mmdb \
