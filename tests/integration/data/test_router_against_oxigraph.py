@@ -11,13 +11,13 @@ Verifies that:
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 import httpx
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
@@ -113,7 +113,9 @@ class _FakePDP:
 # --- app builder ----------------------------------------------------------
 
 
-def _build_app(*, adapter: TripleStoreAdapter, pdp: _FakePDP) -> FastAPI:
+def _build_app(
+    *, adapter: TripleStoreAdapter, pdp: _FakePDP, http_client: httpx.AsyncClient
+) -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
     repository = MetadataRepository(adapter)
@@ -124,25 +126,44 @@ def _build_app(*, adapter: TripleStoreAdapter, pdp: _FakePDP) -> FastAPI:
             adapter=adapter,
             settings=DataSettings(),
             base_url=BASE_URL,
-            http_client=httpx.AsyncClient(),
+            http_client=http_client,
         )
     )
     return app
+
+
+@asynccontextmanager
+async def _client(adapter: TripleStoreAdapter, pdp: _FakePDP) -> AsyncGenerator[httpx.AsyncClient]:
+    """An in-process client for the data router, everything on one event loop.
+
+    The adapter fixture, the router's upstream ``http_client``, and the test's
+    requests all run in pytest-asyncio's loop. The previous ``TestClient``
+    version drove the app in a *second* loop (anyio portal) while the adapter
+    was built and torn down in the first — httpx pool primitives then blew up
+    with "bound to a different event loop", and the router's inline
+    ``httpx.AsyncClient()`` was never closed at all.
+    """
+    async with httpx.AsyncClient() as upstream:
+        app = _build_app(adapter=adapter, pdp=pdp, http_client=upstream)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
+            yield client
 
 
 # --- tests ---------------------------------------------------------------
 
 
 @pytest.mark.integration
-def test_sparql_returns_data_graph_triples_only(seeded_adapter: TripleStoreAdapter) -> None:
+async def test_sparql_returns_data_graph_triples_only(
+    seeded_adapter: TripleStoreAdapter,
+) -> None:
     """A SELECT against the distribution endpoint scopes to its data graph."""
-    app = _build_app(adapter=seeded_adapter, pdp=_FakePDP())
-    client = TestClient(app)
-    response = client.get(
-        f"/data/{DIST_ID}/sparql",
-        params={"query": "SELECT ?s WHERE { ?s ?p ?o } ORDER BY ?s"},
-        headers={"accept": "application/sparql-results+json"},
-    )
+    async with _client(seeded_adapter, _FakePDP()) as client:
+        response = await client.get(
+            f"/data/{DIST_ID}/sparql",
+            params={"query": "SELECT ?s WHERE { ?s ?p ?o } ORDER BY ?s"},
+            headers={"accept": "application/sparql-results+json"},
+        )
     assert response.status_code == 200
     bindings = json.loads(response.content)["results"]["bindings"]
     subjects = {b["s"]["value"] for b in bindings}
@@ -152,25 +173,24 @@ def test_sparql_returns_data_graph_triples_only(seeded_adapter: TripleStoreAdapt
 
 
 @pytest.mark.integration
-def test_download_redirects_to_upstream_url(seeded_adapter: TripleStoreAdapter) -> None:
-    app = _build_app(adapter=seeded_adapter, pdp=_FakePDP())
-    client = TestClient(app, follow_redirects=False)
-    response = client.get(f"/data/{DIST_ID}")
+async def test_download_redirects_to_upstream_url(seeded_adapter: TripleStoreAdapter) -> None:
+    async with _client(seeded_adapter, _FakePDP()) as client:
+        response = await client.get(f"/data/{DIST_ID}")
     assert response.status_code == 302
     assert response.headers["location"] == "https://files.example.org/dist-1.csv"
 
 
 @pytest.mark.integration
-def test_denied_distribution_returns_403(seeded_adapter: TripleStoreAdapter) -> None:
+async def test_denied_distribution_returns_403(seeded_adapter: TripleStoreAdapter) -> None:
     pdp = _FakePDP(Decision(outcome=Outcome.DENY, rule=None, reason="not open"))
-    app = _build_app(adapter=seeded_adapter, pdp=pdp)
-    client = TestClient(app, follow_redirects=False)
-    assert client.get(f"/data/{DIST_ID}").status_code == 403
+    async with _client(seeded_adapter, pdp) as client:
+        response = await client.get(f"/data/{DIST_ID}")
+    assert response.status_code == 403
 
 
 @pytest.mark.integration
-def test_unknown_distribution_returns_404(adapter: TripleStoreAdapter) -> None:
+async def test_unknown_distribution_returns_404(adapter: TripleStoreAdapter) -> None:
     """No seeding — distribution record is absent."""
-    app = _build_app(adapter=adapter, pdp=_FakePDP())
-    client = TestClient(app)
-    assert client.get(f"/data/{DIST_ID}").status_code == 404
+    async with _client(adapter, _FakePDP()) as client:
+        response = await client.get(f"/data/{DIST_ID}")
+    assert response.status_code == 404
