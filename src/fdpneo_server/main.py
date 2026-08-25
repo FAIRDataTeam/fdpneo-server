@@ -11,6 +11,7 @@ dependencies (storage adapters, OIDC JWKS cache, event-bus subscribers).
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
@@ -448,6 +449,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
     finally:
         log.info("fdp_stopping")
+        # Drain in-flight metrics publishes BEFORE stopping their consumers and
+        # disposing the engine: a fire-and-forget publish task killed by loop
+        # shutdown abandons a checked-out asyncpg connection mid-transaction —
+        # dropped metrics writes on SIGTERM in production, and flaky
+        # ResourceWarnings under TestClient's short-lived loop in tests.
+        pending_publishes = tuple(app.state.metrics_publish_tasks)
+        if pending_publishes:
+            await asyncio.gather(*pending_publishes, return_exceptions=True)
         app.state.search_indexer.stop()
         await app.state.index_pinger.stop()
         await app.state.backup_job_registry.shutdown()
@@ -522,9 +531,14 @@ def create_app(
         api_key_authenticator_provider=lambda: app.state.api_key_service,
         principal_recorder_provider=lambda: app.state.subject_principal_repo,
     )
+    # The pending-task set is shared with the lifespan: the middleware
+    # fire-and-forgets one publish task per request, and shutdown drains the
+    # set before tearing the pipeline and engine down (see ``lifespan``).
+    app.state.metrics_publish_tasks = set()
     app.add_middleware(
         RequestObservationMiddleware,
         bus_provider=lambda: app.state.event_bus,
+        pending=app.state.metrics_publish_tasks,
     )
     # Request limits (audit R-02) — added here so they sit just inside CORS and
     # outside auth: floods and oversize bodies are shed before the JWKS/auth work.
