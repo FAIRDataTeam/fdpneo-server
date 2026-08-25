@@ -5,6 +5,9 @@ on:
 
 jobs:
   dco:
+    # ⚠ "dco" is a required check in the `main-protection` ruleset — renaming
+    # this job blocks every merge until the ruleset is updated (see the note
+    # at the top of ci.yml).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
