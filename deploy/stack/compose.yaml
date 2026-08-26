@@ -14,7 +14,7 @@
 #   start-dev mode) are DEVELOPMENT-ONLY. Rotate every secret and harden Keycloak
 #   (TLS, production mode) before any real deployment — see README.md.
 
-name: fdp
+name: fdpneo
 
 
 services:
@@ -163,12 +163,17 @@ services:
       - "${CLIENT_PORT:-5173}:80"
 
   # MCP bridge (ADR-0018): a read-only Model Context Protocol sidecar so coding
-  # agents can consume this FDP. It uses ONLY the public FDP surface, so the
-  # stack comes up "agent-ready" out of the box. Streamable-HTTP transport; the
-  # MCP endpoint is at http://PUBLIC_HOST:MCP_PORT/mcp, liveness at /healthz.
+  # agents can consume this FDP. It uses ONLY the public FDP surface. Streamable-
+  # HTTP transport; the MCP endpoint is at http://PUBLIC_HOST:MCP_PORT/mcp,
+  # liveness at /healthz.
   #
-  # Off switch: `docker compose -f deploy/stack/compose.yaml up -d --scale mcp=0`.
+  # OPT-IN via the `mcp` profile — the fdp-mcp image is not public (yet), so a
+  # default `up` skips this service rather than failing the pull for anyone
+  # without GHCR access. Enable with `--profile mcp` on the `up` command (or
+  # COMPOSE_PROFILES=mcp); building from source additionally needs the private
+  # `mcp` repo checked out as a sibling.
   mcp:
+    profiles: ["mcp"]
     image: ghcr.io/fairdatateam/fdp-mcp:${IMAGE_TAG:-main}
     build:
       context: ../../../mcp

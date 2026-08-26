@@ -111,7 +111,7 @@ Then open the UI at **http://localhost:5173**, the API at **http://localhost:800
 
 **API documentation.** The OpenAPI spec is always served at **http://localhost:8000/fdp-api/openapi.json** (in every environment — point client codegen and tooling here). The interactive docs UIs — Swagger at **/fdp-api/docs** and ReDoc at **/fdp-api/redoc** — are served only in `development` mode or when `EXPOSE_API_DOCS=true`; the full-stack `.env` enables them by default for evaluation.
 
-**Agent access (MCP).** The full stack comes up **agent-ready**: an [`fdp-mcp`](../mcp) Model Context Protocol bridge (ADR-0018) runs at **http://localhost:8002/mcp**, exposing a read-only tool surface over the *public* FDP API only. Point any MCP client at it — see [`../mcp/docs/agent-quickstart.md`](../mcp/docs/agent-quickstart.md). Disable it with `--scale mcp=0`.
+**Agent access (MCP, opt-in).** An [`fdp-mcp`](../mcp) Model Context Protocol bridge (ADR-0018) can run alongside the stack at **http://localhost:8002/mcp**, exposing a read-only tool surface over the *public* FDP API only. It sits behind the `mcp` compose profile because its image is not publicly pullable — enable it with `--profile mcp` (needs pull access to `ghcr.io/fairdatateam/fdp-mcp`, or `--build` with the `mcp` repo checked out as a sibling). Point any MCP client at it — see [`../mcp/docs/agent-quickstart.md`](../mcp/docs/agent-quickstart.md).
 
 > [!WARNING]
 > The bundled Keycloak realm and credentials are **development-only**. Rotate every secret and harden Keycloak before any real deployment.
