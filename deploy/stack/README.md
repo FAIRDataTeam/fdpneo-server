@@ -31,13 +31,25 @@ via `EXPOSE_API_DOCS=true`; they are otherwise served only when `ENVIRONMENT=dev
 Log in with a bundled realm user (e.g. `alice` / `alice`, admin `admin` / `admin`
 — see `deploy/keycloak/realm-fdp-dev.json`).
 
-### Agent access (MCP)
+### Agent access (MCP) — opt-in
 
-The stack comes up **agent-ready**: an [`fdp-mcp`](../../../mcp) Model Context
-Protocol bridge (ADR-0018) runs at **http://localhost:8002/mcp** (liveness at
-`/healthz`), pointed at this FDP. It exposes a read-only tool surface over the
-**public** FDP API only. Point any MCP client (Claude Desktop, an IDE agent, the
-MCP inspector) at that URL — see [`../../../mcp/docs/agent-quickstart.md`](../../../mcp/docs/agent-quickstart.md).
+An [`fdp-mcp`](../../../mcp) Model Context Protocol bridge (ADR-0018) can run
+alongside the stack at **http://localhost:8002/mcp** (liveness at `/healthz`),
+pointed at this FDP. It exposes a read-only tool surface over the **public**
+FDP API only. The service sits behind the `mcp` compose profile because its
+image is not publicly pullable (yet) — a default `up` skips it. Enable it with:
+
+```bash
+docker compose -f deploy/stack/compose.yaml --env-file deploy/stack/.env \
+  --profile mcp up -d
+```
+
+This needs pull access to `ghcr.io/fairdatateam/fdp-mcp` (`docker login ghcr.io`
+with a token that can read the package), or `--build` with the private `mcp`
+repo checked out as a sibling (`fdpneo/mcp`).
+
+Point any MCP client (Claude Desktop, an IDE agent, the MCP inspector) at the
+URL above — see [`../../../mcp/docs/agent-quickstart.md`](../../../mcp/docs/agent-quickstart.md).
 Smoke-check it after `up`:
 
 ```bash
@@ -45,8 +57,6 @@ curl -fsS http://localhost:8002/healthz            # bridge liveness
 # then run an MCP `initialize` + `fdp_info` from your MCP client to confirm it
 # reaches the FDP (fdp_info reports the root title and available tools).
 ```
-
-Disable the bridge with `--scale mcp=0` on the `up` command.
 
 ## Build from source instead of pulling
 
@@ -63,7 +73,7 @@ The `server` build context is this repo root; the `client` context is the siblin
 |----------------|---------------|------|
 | `client`       | `:8080` → 80  | Vue SPA (nginx). API URL injected at runtime into `/config.js`. |
 | `server`       | `:8000`       | FastAPI API + resource IRIs (`BASE_URL`). |
-| `mcp`          | `:8002` → 8000| MCP bridge (ADR-0018): read-only agent access at `/mcp`. Uses only the public FDP surface. |
+| `mcp`          | `:8002` → 8000| MCP bridge (ADR-0018): read-only agent access at `/mcp`. Uses only the public FDP surface. Opt-in via `--profile mcp`. |
 | `keycloak`     | `:8081` → 8080| OIDC login (browser-facing). |
 | `graphdb`      | internal      | Triple store. `graphdb-init` creates the `fdp` repo. |
 | `postgres`     | internal      | Operational state (metrics, auth cache, jobs). |
