@@ -8,9 +8,10 @@ bootstrapped automatically on first boot.
 ## Prerequisites
 
 - Docker Engine 24+ with the Compose plugin.
-- Either access to the GHCR images (`ghcr.io/fairdatateam/fdpneo-server`,
-  `ghcr.io/fairdatateam/fdpneo-client`) **or** both repos checked out as siblings
-  (`fdpneo/server`, `fdpneo/client`) to build from source.
+- Nothing else for the default path: the `ghcr.io/fairdatateam/fdpneo-server`
+  and `ghcr.io/fairdatateam/fdpneo-client` images are **public** — no GHCR
+  login needed. To build from source instead, check out both repos as siblings
+  (`fdpneo/server`, `fdpneo/client`).
 
 ## Quick start (pull pre-built images)
 
