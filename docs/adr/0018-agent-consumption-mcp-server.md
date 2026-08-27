@@ -9,6 +9,12 @@
 > Supersedes an earlier draft of this ADR (same number, never accepted) that
 > proposed embedding the MCP server in the monolith. The trade-off analysis is
 > retained under *Alternatives considered*.
+>
+> **Superseded in part by [ADR-0024](0024-mcp-opt-in-write-tools.md)
+> (2026-08-26):** the "no mutation tools" clause of §5 is replaced by an
+> opt-in write extension (four tools behind `FDP_MCP_ENABLE_WRITE`). All other
+> decisions here — sidecar placement, public surface only, credential
+> pass-through with no authorization logic, strict egress, API honesty — stand.
 
 ## Context
 
