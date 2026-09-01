@@ -1,0 +1,25 @@
+# Override for running the production stack behind a HOST-LEVEL nginx instead
+# of the bundled Caddy: publishes the app containers on loopback-only ports for
+# nginx (see nginx/fdpneo.conf) and is used with `--scale caddy=0`:
+#
+#   docker compose -f compose.yaml -f compose.nginx.yaml up -d --scale caddy=0
+#
+# Loopback binding means nothing is reachable from outside except through
+# nginx; GraphDB and Postgres stay entirely internal as before.
+
+services:
+  client:
+    ports:
+      - "127.0.0.1:8090:80"
+
+  server:
+    ports:
+      - "127.0.0.1:8091:8000"
+
+  keycloak:
+    ports:
+      - "127.0.0.1:8092:8080"
+
+  mcp:
+    ports:
+      - "127.0.0.1:8093:8000"
