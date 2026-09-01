@@ -1,0 +1,148 @@
+{
+  "realm": "fdp",
+  "displayName": "FAIR Data Point",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "internationalizationEnabled": false,
+  "supportedLocales": [],
+  "defaultLocale": "en",
+
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "FDP administrator: system-wide read/write."
+      },
+      {
+        "name": "steward",
+        "description": "FDP steward: curates records and policies."
+      }
+    ]
+  },
+
+  "users": [
+    {
+      "username": "fdp-admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "FDP",
+      "lastName": "Administrator",
+      "email": "${FDP_ADMIN_EMAIL}",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${FDP_ADMIN_INITIAL_PASSWORD}",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["admin", "steward"]
+    },
+    {
+      "username": "service-account-fdp-server",
+      "enabled": true,
+      "serviceAccountClientId": "fdp-server",
+      "clientRoles": {
+        "realm-management": ["view-users", "query-users", "manage-users", "view-realm"]
+      }
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "fdp-client",
+      "name": "FAIR Data Point Client",
+      "description": "Web UI for the FDP. Public client; PKCE-protected browser flow.",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "access.token.lifespan": "300"
+      },
+      "redirectUris": ["${FDP_PUBLIC_ORIGIN}/*"],
+      "webOrigins": ["${FDP_PUBLIC_ORIGIN}"],
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "fdp-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "fdp",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "fdp-server",
+      "name": "FAIR Data Point Server (service account)",
+      "description": "Confidential service-account client for the /users admin facade (ADR-0013). Holds a least-privilege realm-management subset.",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${FDP_SERVER_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    }
+  ],
+
+  "defaultDefaultClientScopes": [
+    "basic",
+    "role_list",
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "acr"
+  ],
+  "defaultOptionalClientScopes": [
+    "offline_access",
+    "address",
+    "phone",
+    "microprofile-jwt"
+  ]
+}

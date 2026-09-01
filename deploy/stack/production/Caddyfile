@@ -1,0 +1,75 @@
+# Edge for the single-domain production stack: TLS termination (automatic ACME
+# certificates), HSTS + baseline headers, and path/conneg routing that puts the
+# client, the API, record IRIs, and Keycloak on ONE origin.
+#
+# For a public DNS name nothing needs configuring — Caddy obtains and renews
+# the certificate itself. To smoke-test on a host without public DNS, add
+# `tls internal` inside the site block (self-signed via Caddy's local CA).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# Strip upstream software/version disclosure. (No X-Frame-Options at
+		# the edge: Keycloak and the client manage their own frame policy —
+		# the OIDC session iframe must keep working.)
+		-Server
+		-X-Powered-By
+	}
+
+	request_body {
+		max_size 20MB
+	}
+
+	# --- the API: everything the server namespaces under /fdp-api ------------
+	handle /fdp-api/* {
+		reverse_proxy server:8000
+	}
+
+	# --- Keycloak under /auth (KC_HTTP_RELATIVE_PATH) -------------------------
+	handle /auth/* {
+		reverse_proxy keycloak:8080
+	}
+
+	# --- MCP bridge (only with `--profile mcp`; 502 on this path otherwise) --
+	handle /mcp* {
+		reverse_proxy mcp:8000
+	}
+
+	# --- SPA static files ------------------------------------------------------
+	handle /assets/* {
+		reverse_proxy client:80
+	}
+	handle /config.js {
+		reverse_proxy client:80
+	}
+	handle /favicon* {
+		reverse_proxy client:80
+	}
+	handle /robots.txt {
+		reverse_proxy client:80
+	}
+
+	# --- the shared IRI space --------------------------------------------------
+	# Every remaining path is a resource IRI (records live at the origin root,
+	# any prefix except fdp-api) AND a potential SPA route. Split on content
+	# negotiation, exactly like the FDP reference implementation: browsers
+	# (Accept: text/html) get the SPA, which fetches the record over /fdp-api;
+	# RDF clients dereference the IRI straight to the server.
+	@html header Accept *text/html*
+	handle {
+		handle @html {
+			reverse_proxy client:80
+		}
+		handle {
+			reverse_proxy server:8000
+		}
+	}
+}

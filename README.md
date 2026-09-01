@@ -107,7 +107,7 @@ cp deploy/stack/.env.example deploy/stack/.env      # then edit PUBLIC_HOST / se
 docker compose -f deploy/stack/compose.yaml --env-file deploy/stack/.env up -d
 ```
 
-Then open the UI at **http://localhost:5173**, the API at **http://localhost:8000**, and Keycloak at **http://localhost:8081**. Images are pulled from GHCR by default; add `--build` to build from source (the client builds from a sibling `../client` checkout). See [`deploy/stack/README.md`](deploy/stack/README.md) for details and production-hardening notes.
+Then open the UI at **http://localhost:5173**, the API at **http://localhost:8000**, and Keycloak at **http://localhost:8081**. Images are pulled from GHCR by default; add `--build` to build from source (the client builds from a sibling `../client` checkout). See [`deploy/stack/README.md`](deploy/stack/README.md) for details and production-hardening notes. For a real server (public DNS name, TLS), use the **single-domain production compose** in [`deploy/stack/production/`](deploy/stack/production/README.md) instead — one HTTPS origin for client, API, and Keycloak, no CORS to configure.
 
 **API documentation.** The OpenAPI spec is always served at **http://localhost:8000/fdp-api/openapi.json** (in every environment — point client codegen and tooling here). The interactive docs UIs — Swagger at **/fdp-api/docs** and ReDoc at **/fdp-api/redoc** — are served only in `development` mode or when `EXPOSE_API_DOCS=true`; the full-stack `.env` enables them by default for evaluation.
 
