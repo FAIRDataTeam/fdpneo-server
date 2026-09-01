@@ -1,0 +1,225 @@
+# Single-domain production deployment — client, API, record IRIs, and Keycloak
+# all behind one TLS-terminating Caddy on ONE public origin:
+#
+#   https://PUBLIC_HOST/            → client (SPA) for browsers,
+#                                     RDF conneg → server (record IRIs)
+#   https://PUBLIC_HOST/fdp-api/…   → server (API, OpenAPI, SPARQL)
+#   https://PUBLIC_HOST/auth/…      → Keycloak (production mode, own Postgres DB)
+#   https://PUBLIC_HOST/mcp         → MCP bridge (optional, --profile mcp)
+#
+# One origin ⇒ no CORS to configure and one consistent OIDC issuer. Caddy
+# obtains/renews certificates automatically (ACME) for a public DNS name.
+#
+#   cp .env.example .env       # set PUBLIC_HOST + every CHANGE-ME secret
+#   docker compose up -d       # from this directory
+#
+# See README.md for the walkthrough (DNS/port prerequisites, first login).
+
+name: fdpneo-prod
+
+services:
+  # --- edge -------------------------------------------------------------------
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      client:
+        condition: service_started
+      server:
+        condition: service_started
+
+  # --- backing services ---------------------------------------------------------
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fdp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-fdp}
+      # Read by the init script that creates Keycloak's own database (first
+      # boot of an empty volume only).
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fdp} -d ${POSTGRES_DB:-fdp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  graphdb:
+    image: ontotext/graphdb:10.7.0
+    restart: unless-stopped
+    environment:
+      GDB_JAVA_OPTS: -Xmx2g -Xms1g
+    volumes:
+      - graphdb-data:/opt/graphdb/home
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7200/rest/repositories"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  # Oneshot: create the `fdp` GraphDB repository if missing (idempotent).
+  graphdb-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      graphdb:
+        condition: service_healthy
+    volumes:
+      - ../../graphdb/fdp-repo-config.ttl:/config/fdp-repo-config.ttl:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if curl -fsS "http://graphdb:7200/repositories/fdp/size" >/dev/null 2>&1; then
+          echo "[graphdb-init] repository 'fdp' already exists — nothing to do."
+        else
+          echo "[graphdb-init] creating repository 'fdp'..."
+          curl -fsS -X POST "http://graphdb:7200/rest/repositories" \
+            -F "config=@/config/fdp-repo-config.ttl" \
+            && echo "[graphdb-init] repository 'fdp' created."
+        fi
+    restart: "no"
+
+  # Keycloak in PRODUCTION mode: its own Postgres database, hostname pinned to
+  # the public origin under /auth, TLS terminated at Caddy (proxy headers).
+  # The imported realm template has NO demo users and env-parameterized
+  # redirect URIs/secrets — see realm-fdp-prod.json.
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
+      KC_HOSTNAME: https://${PUBLIC_HOST}/auth
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HTTP_ENABLED: "true" # TLS terminates at Caddy
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # Substituted into the imported realm (redirect URIs, secrets):
+      FDP_PUBLIC_ORIGIN: https://${PUBLIC_HOST}
+      FDP_SERVER_CLIENT_SECRET: ${FDP_SERVER_CLIENT_SECRET:?set FDP_SERVER_CLIENT_SECRET in .env}
+      FDP_ADMIN_INITIAL_PASSWORD: ${FDP_ADMIN_INITIAL_PASSWORD:?set FDP_ADMIN_INITIAL_PASSWORD in .env}
+      FDP_ADMIN_EMAIL: ${FDP_ADMIN_EMAIL:?set FDP_ADMIN_EMAIL in .env}
+    volumes:
+      - ./realm-fdp-prod.json:/opt/keycloak/data/import/realm-fdp-prod.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /auth/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # --- application tier ---------------------------------------------------------
+  server:
+    image: ghcr.io/fairdatateam/fdpneo-server:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      graphdb-init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    # The server validates tokens against the PUBLIC issuer URL (the same one
+    # the browser uses). Resolve the public hostname to the docker host so the
+    # discovery fetch goes host → Caddy → Keycloak even when the deployment's
+    # network can't hairpin its own public IP.
+    extra_hosts:
+      - "${PUBLIC_HOST}:host-gateway"
+    environment:
+      ENVIRONMENT: production
+      EXPOSE_API_DOCS: ${EXPOSE_API_DOCS:-false}
+      BASE_URL: https://${PUBLIC_HOST}
+      POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-fdp}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fdp}
+      FDP_TRIPLESTORE_QUERY_ENDPOINT: http://graphdb:7200/repositories/fdp
+      FDP_TRIPLESTORE_UPDATE_ENDPOINT: http://graphdb:7200/repositories/fdp/statements
+      FDP_TRIPLESTORE_GRAPH_STORE_ENDPOINT: http://graphdb:7200/repositories/fdp/rdf-graphs/service
+      FDP_OIDC_ISSUER: https://${PUBLIC_HOST}/auth/realms/fdp
+      FDP_OIDC_AUDIENCE: ${FDP_OIDC_AUDIENCE:-fdp}
+      # Same origin as the SPA ⇒ the browser never makes a cross-origin call;
+      # the explicit entry keeps tooling on other origins honest, not the SPA.
+      FDP_CORS_ALLOW_ORIGINS: https://${PUBLIC_HOST}
+      FDP_CORS_ALLOW_CREDENTIALS: "true"
+      # /fdp-api/users IdP-admin facade (ADR-0013) over the internal network.
+      FDP_IDP_ADMIN_CLIENT_ID: fdp-server
+      FDP_IDP_ADMIN_CLIENT_SECRET: ${FDP_SERVER_CLIENT_SECRET}
+      FDP_IDP_ADMIN_BASE_URL: http://keycloak:8080/auth
+      FDP_PROFILE_AUTO_APPLY: "true"
+      # Behind the TLS proxy: key rate limits on the real client IP.
+      FDP_RATELIMIT_ENABLED: "true"
+      FDP_RATELIMIT_TRUST_FORWARDED_FOR: "true"
+      # External label resolution (ADR-0012 extension); see stack README.
+      FDP_REMOTE_LABELS_ENABLED: ${FDP_REMOTE_LABELS_ENABLED:-true}
+      FDP_REMOTE_LABELS_ALLOWED_HOSTS: ${FDP_REMOTE_LABELS_ALLOWED_HOSTS:-doi.org,api.crossref.org,data.crossref.org,data.datacite.org,orcid.org,pub.orcid.org}
+      # Announce to FDP Index instances (ADR-0020/0021); empty = disabled.
+      FDP_INDEX_PING_TARGETS: ${FDP_INDEX_PING_TARGETS:-}
+
+  client:
+    image: ghcr.io/fairdatateam/fdpneo-client:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+    environment:
+      # Same public origin for everything — the whole point of this stack.
+      FDP_API_URL: https://${PUBLIC_HOST}
+      FDP_PUBLIC_ORIGIN: https://${PUBLIC_HOST}
+      FDP_IDP_ORIGIN: https://${PUBLIC_HOST}
+      # Look & feel (optional): generate with the in-app Appearance editor
+      # (/appearance → "Docker env") and paste here.
+      # FDP_BRANDING: '{"orgName":"…","theme":{…}}'
+      # FDP_BRANDING_ORG_NAME: "…"
+
+  # MCP bridge (ADR-0018), opt-in: `docker compose --profile mcp up -d`.
+  # Served at https://PUBLIC_HOST/mcp via Caddy. Needs pull access to the
+  # (currently private) fdp-mcp image, or a sibling mcp checkout to --build.
+  mcp:
+    profiles: ["mcp"]
+    image: ghcr.io/fairdatateam/fdp-mcp:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
+    extra_hosts:
+      - "${PUBLIC_HOST}:host-gateway"
+    environment:
+      FDP_BASE_URL: https://${PUBLIC_HOST}
+      FDP_MCP_TRANSPORT: streamable-http
+      FDP_MCP_HOST: 0.0.0.0
+      FDP_MCP_PORT: 8000
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=3).status==200 else 1)\""
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+  graphdb-data:
+  caddy-data:
+  caddy-config:

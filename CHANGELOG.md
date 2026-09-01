@@ -5,6 +5,30 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.14.1] — 2026-09-01
+
+### Added
+
+- **Single-domain production deployment** (`deploy/stack/production/`): one
+  `docker compose up` serves the client, the API, record IRIs, and Keycloak
+  under **one HTTPS origin** behind Caddy (automatic ACME certificates). Same
+  origin ⇒ **no CORS to configure**; the OIDC issuer is consistent for browser
+  and server by construction. Ships a production Keycloak realm template
+  (env-parameterized redirect URIs and secrets, brute-force protection on, no
+  demo users, a bootstrap `fdp-admin` with a forced password change) with
+  Keycloak running in production mode against its own Postgres database.
+  Record IRIs and the SPA share the origin: requests preferring `text/html`
+  route to the client, everything else (RDF content negotiation) to the
+  server — the same pattern the FDP reference implementation uses.
+
+### Fixed
+
+- **Stack docs: deploying on another host.** The "Deploying on another host"
+  section suggested `PUBLIC_HOST` alone was enough; it now warns that the
+  bundled dev realm only allows `http://localhost:5173` OIDC redirects — so
+  login cannot work on a public hostname — and points at the production
+  compose instead.
+
 ## [0.14.0] — 2026-08-25
 
 The shipped container moves to Python 3.14; the library floor is unchanged.

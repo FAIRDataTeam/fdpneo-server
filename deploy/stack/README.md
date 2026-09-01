@@ -98,6 +98,15 @@ browser and from inside the containers (a LAN IP or real DNS name) — the OIDC
 issuer must match both sides. Adjust `CLIENT_PORT`/`SERVER_PORT`/`KEYCLOAK_PORT`
 if those host ports are taken.
 
+> **⚠ Login only works over plain HTTP at the exact origin
+> `http://<PUBLIC_HOST>:5173`.** The bundled dev realm allows OIDC redirect
+> URIs only at `http://localhost:5173` (and :3000/:8000) — on any other origin,
+> and on **any HTTPS deployment**, Keycloak rejects the login redirect and the
+> browser blocks the mixed/mismatched origins (CORS). Don't fight this stack
+> into a public deployment: use the **single-domain production compose** in
+> [`production/`](production/README.md) instead — one HTTPS origin for client,
+> API, and Keycloak, which eliminates the CORS configuration entirely.
+
 ## ⚠ Before production — this stack is dev-credentialed
 
 The bundled realm runs Keycloak in `start-dev` mode with **development
