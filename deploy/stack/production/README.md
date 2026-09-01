@@ -76,6 +76,47 @@ Serves the read-only agent bridge (ADR-0018) at `https://PUBLIC_HOST/mcp`.
 Needs pull access to the (currently private) `ghcr.io/fairdatateam/fdp-mcp`
 image, or a sibling `mcp` checkout to `--build`.
 
+## Using nginx instead of Caddy
+
+If the host already runs nginx (or you prefer it), keep the same one-origin
+routing contract and replace only the edge:
+
+1. **Publish the app containers on loopback ports** and drop the Caddy
+   service:
+
+   ```bash
+   docker compose -f compose.yaml -f compose.nginx.yaml up -d --scale caddy=0
+   ```
+
+   [`compose.nginx.yaml`](compose.nginx.yaml) binds client/server/Keycloak
+   (and mcp, with the profile) to `127.0.0.1:8090–8093` — reachable only
+   through nginx.
+
+2. **Obtain a certificate** (nginx doesn't do ACME itself):
+
+   ```bash
+   sudo certbot certonly --webroot -w /var/www/certbot -d fdp.example.org
+   ```
+
+3. **Install the site config** [`nginx/fdpneo.conf`](nginx/fdpneo.conf) —
+   replace `fdp.example.org` with your `PUBLIC_HOST` and check the cert paths,
+   then:
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+The config reproduces the Caddyfile exactly: `/fdp-api` → server, `/auth` →
+Keycloak, `/mcp` → bridge, SPA static files → client, and for everything else
+an `Accept`-header `map` sends `text/html` (browsers) to the client and all
+other content negotiation (RDF, `*/*`) to the server. This is the same split
+the FDP **reference implementation** performs inside its client image — at
+port 80 of an RI deployment, a browser gets the UI while `curl` reaches the
+server, and Swagger UI paths are forced to the server; here the split lives at
+the edge so the stock images stay unchanged. Forwarded headers matter: Keycloak
+(`KC_PROXY_HEADERS=xforwarded`) and the server's rate limiter
+(`FDP_RATELIMIT_TRUST_FORWARDED_FOR`) both key on `X-Forwarded-*`.
+
 ## Operations
 
 - **Updates:** `docker compose pull && docker compose up -d` (pin `IMAGE_TAG`
