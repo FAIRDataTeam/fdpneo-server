@@ -121,7 +121,11 @@ class IndexPinger:
         self._task: asyncio.Task[None] | None = None
         self._subs: list[Subscription] = []
         self._lock = asyncio.Lock()
-        self._last = 0.0  # monotonic time of the last ping (throttle baseline)
+        # Monotonic time of the last ping, or None before the first one. The
+        # sentinel matters: a 0.0 baseline reads as "pinged at boot" on a
+        # freshly started machine (small monotonic clock), throttling the
+        # very first on-change ping — visible on CI runners.
+        self._last: float | None = None
 
     def start(self, bus: EventBus) -> None:
         """Launch the periodic loop and subscribe to changes.
@@ -199,7 +203,10 @@ class IndexPinger:
 
     async def _on_change(self, event: Event) -> None:
         del event
-        if time.monotonic() - self._last < self._settings.ping_min_interval_seconds:
+        if (
+            self._last is not None
+            and time.monotonic() - self._last < self._settings.ping_min_interval_seconds
+        ):
             return  # throttled: a recent ping already covers this change
         await self.ping_now("on-change")
 
