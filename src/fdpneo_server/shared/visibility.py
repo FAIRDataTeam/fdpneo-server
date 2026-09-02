@@ -16,9 +16,18 @@ if TYPE_CHECKING:
 
 
 class StateVisibility(Protocol):
-    """Resolves which named graphs a caller may read once state is layered on."""
+    """Resolves which named graphs a caller may read once state is layered on.
+
+    All three resolutions are *deterministic*: candidates come from the store
+    and missing ODRL decisions are evaluated (and cached) on demand, so the
+    answer never depends on which resources the subject fetched before.
+    """
 
     async def visible_read_graphs(self, ctx: RequestContext) -> set[str]: ...
+
+    async def updatable_graphs(self, ctx: RequestContext) -> set[str]: ...
+
+    async def update_read_scope(self, ctx: RequestContext) -> set[str]: ...
 
 
 __all__ = ["StateVisibility"]

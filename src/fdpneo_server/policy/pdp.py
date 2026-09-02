@@ -36,6 +36,8 @@ from fdpneo_server.policy.model import Action, Decision, Outcome
 from fdpneo_server.shared.graphs import is_internal_graph_uri
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from fdpneo_server.policy.model import Offer
     from fdpneo_server.shared.context import RequestContext
 
@@ -89,6 +91,32 @@ class PDP:
         )
         return decision
 
+    async def authorize_many(
+        self,
+        ctx: RequestContext,
+        action: Action,
+        resource_iris: Iterable[str],
+    ) -> set[str]:
+        """Return the subset of ``resource_iris`` permitted for ``ctx`` + ``action``.
+
+        Bulk-reads the cached permits, then evaluates (and caches) every
+        candidate without a cached decision — so the result is complete for
+        the given candidate set regardless of what this subject has touched
+        before. Candidates with a cached DENY cost one cache lookup each and
+        are not re-evaluated.
+        """
+        subject_key = compute_subject_key(ctx)
+        cached_permits = await self._cache.authorized_resources(
+            subject_key=subject_key, action=action.value
+        )
+        candidates = set(resource_iris)
+        permitted = candidates & cached_permits
+        for iri in candidates - cached_permits:
+            decision = await self.authorize(ctx, action, iri)
+            if decision.outcome is Outcome.PERMIT:
+                permitted.add(iri)
+        return {g for g in permitted if not is_internal_graph_uri(g)}
+
     async def authorized_graphs(
         self,
         ctx: RequestContext,
@@ -96,9 +124,10 @@ class PDP:
     ) -> set[str]:
         """Return every resource IRI cached as ``PERMIT`` for ``ctx`` + ``action``.
 
-        This is the bulk lookup the SPARQL endpoint uses to inject
-        ``FROM NAMED`` clauses. The cache must be warmed for the subject
-        first — entries the PDP has never evaluated do not appear here.
+        Bulk cache lookup only — entries the PDP has never evaluated do not
+        appear here. Callers that need a *complete* answer over a known
+        candidate set (the SPARQL projection) use :meth:`authorize_many`,
+        which evaluates and caches the missing decisions on demand.
 
         Internal graphs (meta-metadata, audit, resource-definition records —
         see :func:`fdpneo_server.shared.graphs.is_internal_graph_uri`) are stripped

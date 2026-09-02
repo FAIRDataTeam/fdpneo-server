@@ -271,6 +271,48 @@ async def test_authorized_graphs_excludes_internal_graphs() -> None:
     assert await pdp.authorized_graphs(ctx, Action.READ) == {RESOURCE}
 
 
+# --- authorize_many (deterministic bulk) ------------------------------------
+
+
+@pytest.mark.unit
+async def test_authorize_many_evaluates_missing_candidates_and_caches() -> None:
+    # A fresh subject with an EMPTY cache gets a complete answer over the
+    # candidate set — the pre-0.16 projection returned only what the subject
+    # had previously fetched over REST.
+    r1, r2 = "https://example.org/r1", "https://example.org/r2"
+    pdp, cache, resolver = _pdp(offers={r1: _permitting_offer(), r2: None})
+    ctx = _ctx(subject=ALICE)
+
+    permitted = await pdp.authorize_many(ctx, Action.READ, {r1, r2})
+
+    assert permitted == {r1}
+    assert sorted(resolver.calls) == [r1, r2]
+    assert len(cache.rows) == 2  # both outcomes cached, deny included
+
+
+@pytest.mark.unit
+async def test_authorize_many_skips_resolution_for_cached_decisions() -> None:
+    r1, r2 = "https://example.org/r1", "https://example.org/r2"
+    pdp, _cache, resolver = _pdp(offers={r1: _permitting_offer(), r2: None})
+    ctx = _ctx(subject=ALICE)
+    await pdp.authorize(ctx, Action.READ, r1)  # cached permit
+    await pdp.authorize(ctx, Action.READ, r2)  # cached deny
+    resolver.calls.clear()
+
+    permitted = await pdp.authorize_many(ctx, Action.READ, {r1, r2})
+
+    assert permitted == {r1}
+    assert resolver.calls == []  # permits from bulk lookup, denies from cache hit
+
+
+@pytest.mark.unit
+async def test_authorize_many_excludes_internal_graphs() -> None:
+    rd_iri = "http://localhost:8000/fdp-api/resource-definitions/catalog"
+    pdp, _cache, _ = _pdp(offers={RESOURCE: _permitting_offer(), rd_iri: _permitting_offer()})
+    ctx = _ctx(subject=ALICE)
+    assert await pdp.authorize_many(ctx, Action.READ, {RESOURCE, rd_iri}) == {RESOURCE}
+
+
 # --- invalidation ---------------------------------------------------------
 
 

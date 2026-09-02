@@ -19,11 +19,13 @@ Protocol:
 1. Extract SPARQL text from the request (form / raw body / query param).
 2. :func:`fdpneo_server.access.parser.parse` classifies it.
 3. Anonymous updates → 401.
-4. Reads → :func:`fdpneo_server.access.rewriter.rewrite_read` against
-   ``pdp.authorized_graphs(ctx, Action.READ)``; protocol-level dataset
+4. Reads → :func:`fdpneo_server.access.rewriter.rewrite_read` against the
+   deterministic ``state_gate.visible_read_graphs(ctx)`` (fallback:
+   ``pdp.authorized_graphs(ctx, Action.READ)``); protocol-level dataset
    override is forwarded to the triple store.
 5. Updates → :func:`fdpneo_server.access.rewriter.authorize_update` against
-   ``pdp.authorized_graphs(ctx, Action.MODIFY)``; the WHERE clauses of
+   ``state_gate.updatable_graphs(ctx)`` (fallback: cached
+   ``pdp.authorized_graphs(ctx, Action.MODIFY)``); the WHERE clauses of
    the update are additionally scoped to the user's authorized read set
    via ``using-named-graph-uri`` so a write to an authorized target
    cannot leak data from outside that set.
@@ -86,8 +88,12 @@ def build_sparql_router(
 
     ``state_gate`` is optional (Phase 12 / ADR-0010). When supplied, the read
     projection is the publication-state-visible subset of the ODRL read set
-    (anonymous sees only ``PUBLISHED`` graphs); updates are unaffected — an
-    authenticated writer's WHERE still observes their full authorized-read set.
+    (anonymous sees only ``PUBLISHED`` graphs) and both sets are resolved
+    *deterministically* — candidates come from the store and missing ODRL
+    decisions are evaluated on demand, so the projection never depends on the
+    subject's REST browsing history. Updates keep their state-independent
+    semantics: an authenticated writer's WHERE still observes their full
+    authorized-read set.
 
     ``multigraph_safe_provider`` reports whether the triple store passed the
     named-graph isolation self-test (audit R-03). When it returns ``False``, a
@@ -109,9 +115,17 @@ def build_sparql_router(
     async def _handle_update(ctx: RequestContext, sparql: str, parsed: ParsedUpdate) -> Response:
         if ctx.is_anonymous:
             raise Unauthenticated("authentication required for SPARQL updates")
-        authorized_modify = await pdp.authorized_graphs(ctx, Action.MODIFY)
+        authorized_modify = (
+            await state_gate.updatable_graphs(ctx)
+            if state_gate is not None
+            else await pdp.authorized_graphs(ctx, Action.MODIFY)
+        )
         authorize_update(parsed, authorized_modify=authorized_modify)
-        authorized_read = await pdp.authorized_graphs(ctx, Action.READ)
+        authorized_read = (
+            await state_gate.update_read_scope(ctx)
+            if state_gate is not None
+            else await pdp.authorized_graphs(ctx, Action.READ)
+        )
         log.info(
             "sparql_update",
             subject=ctx.subject,

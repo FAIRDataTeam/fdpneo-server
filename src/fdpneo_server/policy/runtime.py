@@ -19,6 +19,8 @@ from fdpneo_server.policy.cache import CacheRepository
 from fdpneo_server.policy.pdp import PDP
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     from fdpneo_server.policy.model import Action, Decision
@@ -64,6 +66,22 @@ class RequestScopedPDP:
                 offer_resolver=self._offer_resolver,
             )
             return await pdp.authorized_graphs(ctx, action)
+
+    async def authorize_many(
+        self,
+        ctx: RequestContext,
+        action: Action,
+        resource_iris: Iterable[str],
+    ) -> set[str]:
+        """Complete permit subset over ``resource_iris``; one session for the batch."""
+        async with self._session_factory() as session:
+            pdp = PDP(
+                cache=CacheRepository(session),
+                offer_resolver=self._offer_resolver,
+            )
+            permitted = await pdp.authorize_many(ctx, action, resource_iris)
+            await session.commit()
+            return permitted
 
     async def invalidate_all(self) -> int:
         """Clear the whole authz index — used when a managed policy changes (ADR-0012)."""

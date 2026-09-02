@@ -5,6 +5,22 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [Unreleased]
+
+### Fixed
+
+- **Deterministic SPARQL projection.** The dataset projection (and the search
+  API, which shares it) was bounded by the subject's *cached* policy
+  decisions, i.e. by which records that principal had previously fetched over
+  REST — so a logged-in user could see fewer published records in SPARQL and
+  search than an anonymous visitor. The projection now derives its candidate
+  sets from the store (published records; for authenticated callers also
+  unpublished ones for the curator pass) and evaluates-and-caches any missing
+  ODRL decision on demand (`PDP.authorize_many`). Admins now see every
+  non-internal record graph in SPARQL, matching REST. SPARQL Update target
+  and WHERE-scope resolution got the same determinism fix (ADR-0010 §2
+  amended).
+
 ## [0.15.0] — 2026-09-02
 
 Fixes and features driven by the first real bulk-population of a live
