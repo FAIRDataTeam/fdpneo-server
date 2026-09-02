@@ -164,6 +164,8 @@ There are no sessions. Every request is self-contained. Token refresh is the cli
 
 Owns the lifecycle of metadata records and schemas. Implements the LDP server semantics: container management, content negotiation, ETag/`If-Match` concurrency control. SHACL validation runs on every write, both for the record content (against the schema declared by its container's `ldp:constrainedBy`) and for the meta-metadata block (against the configured meta-metadata schema).
 
+Every record also carries a **publication state** (`DRAFT → PUBLISHED → ARCHIVED`, [ADR-0010](../adr/0010-metadata-publication-state.md)) in its meta graph. LDP-created records start as `DRAFT` — visible only to their owner and admins (404 to everyone else) even when the in-force ODRL Offer permits anonymous read — and are published via `POST /fdp-api/{path}/state {"to": "PUBLISHED"}`. A creating `PUT`/`POST` may instead carry **`Prefer: publication-state=PUBLISHED`** to mint the record visible in one step (ADR-0010 §4 amendment): an authorized shortcut, since the create's PDP `modify` permit subsumes the owner-side publish permit. Every 201 response states the birth state in an **`FDP-Metadata-State`** header (plus `Preference-Applied` when the preference was honored), so API clients — bulk loaders especially — see `DRAFT` in-band rather than discovering it when their records 404 for everyone else.
+
 Records are written to named graphs in the triple store via the storage adapter. The metadata provider does not evaluate policy directly; it delegates to the security enforcer through the explicit `authorize(subject, action, resource)` interface.
 
 ### 5.4 Security enforcer
