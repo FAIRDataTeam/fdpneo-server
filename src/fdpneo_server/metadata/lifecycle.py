@@ -38,7 +38,12 @@ from fdpneo_server.metadata.states import (
 from fdpneo_server.policy.model import Action, Outcome
 from fdpneo_server.shared.context import RequestContext
 from fdpneo_server.shared.errors import Conflict, Forbidden, NotFound
-from fdpneo_server.shared.graphs import meta_graph_uri, record_graph_uri, state_record_iri
+from fdpneo_server.shared.graphs import (
+    is_internal_graph_uri,
+    meta_graph_uri,
+    record_graph_uri,
+    state_record_iri,
+)
 from fdpneo_server.shared.namespaces import DCT, FDP_METADATA_STATE
 from fdpneo_server.storage.triplestore.adapter import construct_named_graph
 
@@ -91,20 +96,35 @@ class StateReader:
         )
 
     async def published_graphs(self) -> set[str]:
-        """Every record IRI whose meta state is ``PUBLISHED``.
+        """Every non-internal record IRI whose meta state is ``PUBLISHED``.
 
-        Used by the SPARQL projection to intersect with the ODRL-permitted
-        read set. Scoped to ``…/meta`` graphs so only managed records match.
+        Used by the SPARQL projection as the candidate set for anonymous
+        visibility. Scoped to ``…/meta`` graphs so only managed records match;
+        FDP machinery records (resource definitions) are stripped.
         """
+        return await self._state_bearing_records(
+            f' ?record <{FDP_METADATA_STATE}> "{MetadataState.PUBLISHED.value}" }}'
+        )
+
+    async def all_record_graphs(self) -> set[str]:
+        """Every non-internal record IRI that carries a publication state.
+
+        The full LDP-managed record universe — the candidate set for the
+        deterministic SPARQL projection (admins, and the MODIFY pass that
+        makes a subject's own drafts visible).
+        """
+        return await self._state_bearing_records(f" ?record <{FDP_METADATA_STATE}> ?state }}")
+
+    async def _state_bearing_records(self, pattern_tail: str) -> set[str]:
         rows = await self._select(
             "SELECT ?record WHERE { GRAPH ?meta {"
-            f' ?record <{FDP_METADATA_STATE}> "{MetadataState.PUBLISHED.value}" }}'
-            ' FILTER(STRENDS(STR(?meta), "/meta")) }'
+            + pattern_tail
+            + ' FILTER(STRENDS(STR(?meta), "/meta")) }'
         )
         out: set[str] = set()
         for row in rows:
             iri = row.get("record", {}).get("value")
-            if iri:
+            if iri and not is_internal_graph_uri(iri):
                 out.add(iri)
         return out
 
@@ -146,21 +166,54 @@ class StateGate:
         return await self._can_curate(ctx, record_iri)
 
     async def visible_read_graphs(self, ctx: RequestContext) -> set[str]:
-        """The ODRL-read set narrowed to what ``ctx`` may see by state.
+        """The graphs ``ctx`` may read once publication state is layered on.
 
-        Visible = the read-permitted set intersected with (published graphs
-        union the subject's modify-permitted graphs). For an anonymous caller
-        the modify set is empty, so this collapses to read-permitted-and-
-        published. Replaces a bare ``authorized_graphs(ctx, READ)`` in the
-        SPARQL endpoint.
+        Deterministic: the candidate sets come from the store (published
+        records; for authenticated callers also their curatable drafts), and
+        any candidate without a cached ODRL decision is evaluated — and
+        cached — on the spot. The projection therefore never depends on what
+        this subject happened to fetch over REST before (the pre-0.16 bug
+        where a logged-in user saw *fewer* records than anonymous).
+
+        Visible = read-permitted published graphs, plus (for authenticated
+        callers) unpublished graphs they hold both ``modify`` and ``read``
+        on — mirroring the REST rule in :meth:`ensure_visible`. Admins see
+        every non-internal record graph, exactly as over REST.
         """
-        read_set = await self._pdp.authorized_graphs(ctx, Action.READ)
-        if not read_set:
-            return read_set
-        visible = read_set & await self._reader.published_graphs()
+        if _ADMIN_ROLE in ctx.roles:
+            return await self._reader.all_record_graphs()
+        published = await self._reader.published_graphs()
+        visible = await self._pdp.authorize_many(ctx, Action.READ, published)
         if not ctx.is_anonymous:
-            visible |= read_set & await self._pdp.authorized_graphs(ctx, Action.MODIFY)
+            unpublished = await self._reader.all_record_graphs() - published
+            curatable = await self._pdp.authorize_many(ctx, Action.MODIFY, unpublished)
+            if curatable:
+                visible |= await self._pdp.authorize_many(ctx, Action.READ, curatable)
         return visible
+
+    async def updatable_graphs(self, ctx: RequestContext) -> set[str]:
+        """The graphs ``ctx`` may target with SPARQL Update — deterministic.
+
+        Candidates are every managed record graph; admins get them all
+        (matching the REST write PEPs' admin short-circuit), others the
+        subset ODRL ``modify`` permits.
+        """
+        candidates = await self._reader.all_record_graphs()
+        if _ADMIN_ROLE in ctx.roles:
+            return candidates
+        return await self._pdp.authorize_many(ctx, Action.MODIFY, candidates)
+
+    async def update_read_scope(self, ctx: RequestContext) -> set[str]:
+        """The WHERE-clause read scope for SPARQL Update — deterministic.
+
+        The full ODRL-read set over all managed records, deliberately *not*
+        narrowed by publication state (a writer's WHERE observes their full
+        authorized-read set, as documented on the SPARQL router).
+        """
+        candidates = await self._reader.all_record_graphs()
+        if _ADMIN_ROLE in ctx.roles:
+            return candidates
+        return await self._pdp.authorize_many(ctx, Action.READ, candidates)
 
     async def _can_curate(self, ctx: RequestContext, record_iri: str) -> bool:
         if _ADMIN_ROLE in ctx.roles:

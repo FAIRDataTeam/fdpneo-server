@@ -166,6 +166,21 @@ def _user() -> RequestContext:
     )
 
 
+def _fresh_user() -> RequestContext:
+    """A second authenticated user with no prior REST history (empty authz cache)."""
+    return RequestContext(
+        subject="http://idp.local/realms/fdp#bob", roles=frozenset(), trace_id="it"
+    )
+
+
+def _admin() -> RequestContext:
+    return RequestContext(
+        subject="http://idp.local/realms/fdp#root",
+        roles=frozenset({"admin"}),
+        trace_id="it",
+    )
+
+
 class _Client:
     def __init__(self, client: TestClient, holder: dict[str, RequestContext]) -> None:
         self.http = client
@@ -173,6 +188,14 @@ class _Client:
 
     def as_user(self) -> TestClient:
         self._holder["ctx"] = _user()
+        return self.http
+
+    def as_fresh_user(self) -> TestClient:
+        self._holder["ctx"] = _fresh_user()
+        return self.http
+
+    def as_admin(self) -> TestClient:
+        self._holder["ctx"] = _admin()
         return self.http
 
     def as_anonymous(self) -> TestClient:
@@ -209,9 +232,9 @@ def _put_catalog(c: _Client, slug: str, title: str) -> str:
     return iri
 
 
-def _sparql_titles_anon(c: _Client) -> set[str]:
+def _sparql_titles(http: TestClient) -> set[str]:
     q = "SELECT ?t WHERE { GRAPH ?g { ?s <http://purl.org/dc/terms/title> ?t } }"
-    resp = c.as_anonymous().get(
+    resp = http.get(
         "/fdp-api/sparql",
         params={"query": q},
         headers={"Accept": "application/sparql-results+json"},
@@ -219,6 +242,10 @@ def _sparql_titles_anon(c: _Client) -> set[str]:
     assert resp.status_code == 200, resp.text
     payload: dict[str, Any] = json.loads(resp.content)
     return {b["t"]["value"] for b in payload.get("results", {}).get("bindings", []) if "t" in b}
+
+
+def _sparql_titles_anon(c: _Client) -> set[str]:
+    return _sparql_titles(c.as_anonymous())
 
 
 # --- tests -----------------------------------------------------------------
@@ -312,3 +339,33 @@ def test_sparql_projection_excludes_drafts_for_anonymous(app_env: None) -> None:
         # even though the Offer permits anonymous read on its graph.
         assert "Secret Draft Cat" not in titles
         assert "Published Cat" in titles
+
+
+def test_sparql_projection_is_complete_for_fresh_subjects(app_env: None) -> None:
+    """The 0.15 bug: a logged-in user saw FEWER records than anonymous.
+
+    The projection was bounded by the subject's cached decisions, i.e. by what
+    they happened to fetch over REST. Now the candidate set comes from the
+    store and missing decisions are evaluated on demand: a brand-new subject's
+    first SPARQL query must see every published record.
+    """
+    c = _make_client()
+    with c.http:
+        slugs = ("alpha", "beta", "gamma", "delta")
+        for slug in slugs:
+            _put_catalog(c, slug, f"Cat {slug}")
+            resp = c.as_user().post(f"/fdp-api/catalog/{slug}/state", json={"to": "PUBLISHED"})
+            assert resp.status_code == 200, resp.text
+
+        # bob has never issued a single REST request — his authz cache is empty.
+        titles = _sparql_titles(c.as_fresh_user())
+        assert {f"Cat {slug}" for slug in slugs} <= titles
+
+
+def test_sparql_projection_admin_sees_drafts(app_env: None) -> None:
+    c = _make_client()
+    with c.http:
+        _put_catalog(c, "admincat", "Admin Draft Cat")  # stays DRAFT
+
+        assert "Admin Draft Cat" in _sparql_titles(c.as_admin())
+        assert "Admin Draft Cat" not in _sparql_titles_anon(c)

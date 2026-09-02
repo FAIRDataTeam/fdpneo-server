@@ -94,21 +94,36 @@ class _FakePDP:
         self,
         *,
         modify_permit: set[str] | None = None,
+        read_deny: set[str] | None = None,
         read_graphs: set[str] | None = None,
         modify_graphs: set[str] | None = None,
     ) -> None:
         self._modify_permit = modify_permit or set()
+        self._read_deny = read_deny or set()
         self._read = read_graphs or set()
         self._modify = modify_graphs or set()
 
     async def authorize(self, ctx: RequestContext, action: Action, resource_iri: str) -> Decision:
         del ctx
-        permit = action is not Action.MODIFY or resource_iri in self._modify_permit
+        if action is Action.MODIFY:
+            permit = resource_iri in self._modify_permit
+        else:
+            permit = resource_iri not in self._read_deny
         return Decision(outcome=Outcome.PERMIT if permit else Outcome.DENY, rule=None, reason="")
 
     async def authorized_graphs(self, ctx: RequestContext, action: Action) -> set[str]:
         del ctx
         return set(self._read if action is Action.READ else self._modify)
+
+    async def authorize_many(
+        self, ctx: RequestContext, action: Action, resource_iris: set[str]
+    ) -> set[str]:
+        out: set[str] = set()
+        for iri in resource_iris:
+            decision = await self.authorize(ctx, action, iri)
+            if decision.outcome is Outcome.PERMIT:
+                out.add(iri)
+        return out
 
 
 def _ctx(
@@ -217,6 +232,17 @@ async def test_reader_published_graphs_scopes_to_meta() -> None:
     assert await reader.published_graphs() == {f"{BASE}/a", f"{BASE}/c"}
 
 
+@pytest.mark.unit
+async def test_reader_all_record_graphs_spans_states_and_strips_internal() -> None:
+    adapter = _DatasetAdapter()
+    adapter.seed(f"{BASE}/a", MetadataState.PUBLISHED)
+    adapter.seed(f"{BASE}/b", MetadataState.DRAFT)
+    adapter.seed(f"{BASE}/c", MetadataState.ARCHIVED)
+    adapter.seed(f"{BASE}/fdp-api/resource-definitions/catalog", MetadataState.PUBLISHED)
+    reader = StateReader(adapter)  # type: ignore[arg-type]
+    assert await reader.all_record_graphs() == {f"{BASE}/a", f"{BASE}/b", f"{BASE}/c"}
+
+
 # --- StateGate -------------------------------------------------------------
 
 
@@ -256,8 +282,7 @@ async def test_gate_visible_read_graphs_anonymous_only_published() -> None:
     adapter = _DatasetAdapter()
     adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)
     adapter.seed(f"{BASE}/draft", MetadataState.DRAFT)
-    pdp = _FakePDP(read_graphs={f"{BASE}/pub", f"{BASE}/draft"})
-    gate = StateGate(reader=StateReader(adapter), pdp=pdp)  # type: ignore[arg-type]
+    gate = StateGate(reader=StateReader(adapter), pdp=_FakePDP())  # type: ignore[arg-type]
     assert await gate.visible_read_graphs(_ANON) == {f"{BASE}/pub"}
 
 
@@ -266,12 +291,84 @@ async def test_gate_visible_read_graphs_owner_sees_own_draft() -> None:
     adapter = _DatasetAdapter()
     adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)
     adapter.seed(f"{BASE}/draft", MetadataState.DRAFT)
-    pdp = _FakePDP(
-        read_graphs={f"{BASE}/pub", f"{BASE}/draft"},
-        modify_graphs={f"{BASE}/draft"},
-    )
+    pdp = _FakePDP(modify_permit={f"{BASE}/draft"})
     gate = StateGate(reader=StateReader(adapter), pdp=pdp)  # type: ignore[arg-type]
     assert await gate.visible_read_graphs(_ctx()) == {f"{BASE}/pub", f"{BASE}/draft"}
+
+
+@pytest.mark.unit
+async def test_gate_visible_read_graphs_is_deterministic_for_fresh_subjects() -> None:
+    # The projection is computed from the store's published set — a subject
+    # who never fetched anything over REST still sees every published record
+    # (the pre-0.16 bug: logged-in users saw fewer records than anonymous).
+    adapter = _DatasetAdapter()
+    for slug in ("a", "b", "c", "d"):
+        adapter.seed(f"{BASE}/catalog/{slug}", MetadataState.PUBLISHED)
+    gate = StateGate(reader=StateReader(adapter), pdp=_FakePDP())  # type: ignore[arg-type]
+    fresh = _ctx(subject="https://idp/nobody-warmed-me")
+    assert await gate.visible_read_graphs(fresh) == {f"{BASE}/catalog/{s}" for s in "abcd"}
+
+
+@pytest.mark.unit
+async def test_gate_visible_read_graphs_respects_read_deny() -> None:
+    adapter = _DatasetAdapter()
+    adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)
+    adapter.seed(f"{BASE}/secret", MetadataState.PUBLISHED)
+    pdp = _FakePDP(read_deny={f"{BASE}/secret"})
+    gate = StateGate(reader=StateReader(adapter), pdp=pdp)  # type: ignore[arg-type]
+    assert await gate.visible_read_graphs(_ctx()) == {f"{BASE}/pub"}
+
+
+@pytest.mark.unit
+async def test_gate_visible_read_graphs_admin_sees_everything() -> None:
+    adapter = _DatasetAdapter()
+    adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)
+    adapter.seed(f"{BASE}/draft", MetadataState.DRAFT)
+    adapter.seed(f"{BASE}/gone", MetadataState.ARCHIVED)
+    gate = StateGate(reader=StateReader(adapter), pdp=_FakePDP())  # type: ignore[arg-type]
+    admin = _ctx(roles=frozenset({"admin"}))
+    expected = {f"{BASE}/pub", f"{BASE}/draft", f"{BASE}/gone"}
+    assert await gate.visible_read_graphs(admin) == expected
+
+
+@pytest.mark.unit
+async def test_gate_projection_never_includes_internal_graphs() -> None:
+    # A resource-definition record carries a meta state like any managed
+    # record, but must never surface in a SPARQL projection (ADR-0009) —
+    # not even for admins.
+    adapter = _DatasetAdapter()
+    adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)
+    rd = f"{BASE}/fdp-api/resource-definitions/catalog"
+    adapter.seed(rd, MetadataState.PUBLISHED)
+    gate = StateGate(reader=StateReader(adapter), pdp=_FakePDP())  # type: ignore[arg-type]
+    assert await gate.visible_read_graphs(_ANON) == {f"{BASE}/pub"}
+    assert await gate.visible_read_graphs(_ctx(roles=frozenset({"admin"}))) == {f"{BASE}/pub"}
+
+
+@pytest.mark.unit
+async def test_gate_updatable_graphs_owner_and_admin() -> None:
+    adapter = _DatasetAdapter()
+    adapter.seed(f"{BASE}/mine", MetadataState.DRAFT)
+    adapter.seed(f"{BASE}/theirs", MetadataState.PUBLISHED)
+    pdp = _FakePDP(modify_permit={f"{BASE}/mine"})
+    gate = StateGate(reader=StateReader(adapter), pdp=pdp)  # type: ignore[arg-type]
+    assert await gate.updatable_graphs(_ctx()) == {f"{BASE}/mine"}
+    admin = _ctx(roles=frozenset({"admin"}))
+    assert await gate.updatable_graphs(admin) == {f"{BASE}/mine", f"{BASE}/theirs"}
+
+
+@pytest.mark.unit
+async def test_gate_update_read_scope_ignores_state() -> None:
+    adapter = _DatasetAdapter()
+    adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)
+    adapter.seed(f"{BASE}/draft", MetadataState.DRAFT)
+    pdp = _FakePDP(read_deny={f"{BASE}/draft"})
+    gate = StateGate(reader=StateReader(adapter), pdp=pdp)  # type: ignore[arg-type]
+    # Full ODRL-read set over all managed records, no state narrowing:
+    assert await gate.update_read_scope(_ctx()) == {f"{BASE}/pub"}
+    pdp_open = _FakePDP()
+    gate_open = StateGate(reader=StateReader(adapter), pdp=pdp_open)  # type: ignore[arg-type]
+    assert await gate_open.update_read_scope(_ctx()) == {f"{BASE}/pub", f"{BASE}/draft"}
 
 
 # --- StateService transitions ----------------------------------------------
