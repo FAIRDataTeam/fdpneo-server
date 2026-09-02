@@ -85,12 +85,16 @@ _AUTOCOMPLETE_KEY: Final = "forms.autocomplete-sources"
 
 
 # Label predicates queried, in precedence order. A literal matched by
-# ``rdfs:label`` wins over the same literal under ``skos:prefLabel``
-# wins over ``dcterms:title`` when comparing within one language band.
+# ``rdfs:label`` wins over the same literal under ``skos:prefLabel`` wins over
+# ``dcterms:title`` (and so on) when comparing within one language band.
+# ``foaf:name``/``vcard:fn`` cover agents and contact points — the
+# publisher/creator IRIs the client resolves on every record view.
 _LABEL_PREDICATES: Final = (
     "http://www.w3.org/2000/01/rdf-schema#label",
     "http://www.w3.org/2004/02/skos/core#prefLabel",
     "http://purl.org/dc/terms/title",
+    "http://xmlns.com/foaf/0.1/name",
+    "http://www.w3.org/2006/vcard/ns#fn",
 )
 
 
