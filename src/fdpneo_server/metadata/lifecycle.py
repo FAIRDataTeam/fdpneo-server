@@ -42,6 +42,7 @@ from fdpneo_server.shared.graphs import (
     is_internal_graph_uri,
     meta_graph_uri,
     record_graph_uri,
+    record_uri_from_sibling,
     state_record_iri,
 )
 from fdpneo_server.shared.namespaces import DCT, FDP_METADATA_STATE
@@ -60,6 +61,16 @@ log = structlog.get_logger(__name__)
 _ADMIN_ROLE: Final = "admin"
 _SPARQL_JSON: Final = "application/sparql-results+json"
 _NT: Final = "application/n-triples"
+
+
+def _gate_subject(iri: str) -> str:
+    """The record URI whose publication state gates visibility of ``iri``.
+
+    A meta / audit / data sibling maps to its record; anything else is
+    normalized by :func:`record_graph_uri`.
+    """
+    base = record_uri_from_sibling(iri)
+    return str(base) if base is not None else str(record_graph_uri(iri))
 
 
 # --- state reader ----------------------------------------------------------
@@ -150,17 +161,20 @@ class StateGate:
         adds the state layer. ``PUBLISHED`` is visible to all; otherwise the
         caller must be an admin or hold ODRL ``modify`` (the owner). A hidden
         record 404s so its existence does not leak.
+
+        A sibling URI (``…/meta``, ``…/audit``, ``…/data``) is judged by its
+        *record's* state — a published record's meta-metadata is exactly as
+        visible as the record (issue #35: the gate used to look for the state
+        of ``…/meta/meta``, which never exists, so anonymous meta reads always
+        404'd and the advertised ``hasMetaMetadata`` link was dead for
+        harvesters).
         """
-        record_iri = str(record_graph_uri(record_iri))
-        if await self._reader.is_published(record_iri):
-            return
-        if await self._can_curate(ctx, record_iri):
-            return
-        raise NotFound(f"resource not found: {record_iri}")
+        if not await self.is_visible(ctx, record_iri):
+            raise NotFound(f"resource not found: {_gate_subject(record_iri)}")
 
     async def is_visible(self, ctx: RequestContext, record_iri: str) -> bool:
         """Non-raising form of :meth:`ensure_visible`."""
-        record_iri = str(record_graph_uri(record_iri))
+        record_iri = _gate_subject(record_iri)
         if await self._reader.is_published(record_iri):
             return True
         return await self._can_curate(ctx, record_iri)
