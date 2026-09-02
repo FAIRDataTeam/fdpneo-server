@@ -278,6 +278,30 @@ async def test_gate_draft_visible_to_owner_and_admin() -> None:
 
 
 @pytest.mark.unit
+async def test_gate_meta_sibling_follows_record_visibility() -> None:
+    # Issue #35: the gate used to look up the state of `<record>/meta/meta`,
+    # so anonymous meta reads 404'd even for PUBLISHED records — a published
+    # record's meta (and audit/data siblings) must be as visible as the record.
+    adapter = _DatasetAdapter()
+    adapter.seed(REC, MetadataState.PUBLISHED)
+    gate = StateGate(reader=StateReader(adapter), pdp=_FakePDP())  # type: ignore[arg-type]
+    await gate.ensure_visible(_ANON, f"{REC}/meta")  # no raise
+    assert await gate.is_visible(_ANON, f"{REC}/meta") is True
+    assert await gate.is_visible(_ANON, f"{REC}/data") is True
+
+    draft = f"{BASE}/catalog/hidden"
+    adapter.seed(draft, MetadataState.DRAFT)
+    with pytest.raises(NotFound):
+        await gate.ensure_visible(_ANON, f"{draft}/meta")
+    # …but the draft's owner still sees its meta.
+    owner_gate = StateGate(
+        reader=StateReader(adapter),  # type: ignore[arg-type]
+        pdp=_FakePDP(modify_permit={draft}),  # type: ignore[arg-type]
+    )
+    assert await owner_gate.is_visible(_ctx(), f"{draft}/meta") is True
+
+
+@pytest.mark.unit
 async def test_gate_visible_read_graphs_anonymous_only_published() -> None:
     adapter = _DatasetAdapter()
     adapter.seed(f"{BASE}/pub", MetadataState.PUBLISHED)

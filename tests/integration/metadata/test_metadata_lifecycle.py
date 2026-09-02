@@ -341,6 +341,23 @@ def test_sparql_projection_excludes_drafts_for_anonymous(app_env: None) -> None:
         assert "Published Cat" in titles
 
 
+def test_meta_of_published_record_is_anonymously_readable(app_env: None) -> None:
+    # Issue #35: anonymous GET /{record}/meta must follow the RECORD's state.
+    c = _make_client()
+    with c.http:
+        _put_catalog(c, "metacat", "Meta Cat")
+        # DRAFT: the meta sibling is hidden from anonymous like the record.
+        anon_meta = c.as_anonymous().get("/catalog/metacat/meta", headers={"Accept": "text/turtle"})
+        assert anon_meta.status_code == 404
+        assert (
+            c.as_user().post("/fdp-api/catalog/metacat/state", json={"to": "PUBLISHED"}).status_code
+            == 200
+        )
+        anon_meta = c.as_anonymous().get("/catalog/metacat/meta", headers={"Accept": "text/turtle"})
+        assert anon_meta.status_code == 200, anon_meta.text
+        assert "metadataState" in anon_meta.text
+
+
 def test_sparql_projection_is_complete_for_fresh_subjects(app_env: None) -> None:
     """The 0.15 bug: a logged-in user saw FEWER records than anonymous.
 

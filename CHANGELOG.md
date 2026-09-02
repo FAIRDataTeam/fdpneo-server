@@ -5,7 +5,19 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [0.16.0] — Unreleased
+## [0.16.1] — Unreleased
+
+### Fixed
+
+- **Anonymous `GET /{record}/meta` no longer 404s for published records**
+  (issue #35). The state gate judged a sibling URI by the state of
+  `…/meta/meta` — which never exists — so anonymous meta reads always failed
+  and the advertised `fdp-o:hasMetaMetadata` signposting link was dead for
+  harvesters. Sibling URIs (`/meta`, `/audit`, `/data`) are now gated by the
+  *record's* state: a published record's meta-metadata is exactly as visible
+  as the record; drafts stay owner/admin-only.
+
+## [0.16.0] — 2026-09-02
 
 ### Fixed
 
