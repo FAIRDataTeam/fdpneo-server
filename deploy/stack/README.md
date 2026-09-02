@@ -59,6 +59,23 @@ curl -fsS http://localhost:8002/healthz            # bridge liveness
 # reaches the FDP (fdp_info reports the root title and available tools).
 ```
 
+## Writing metadata via the API
+
+Records created through the LDP API (`PUT`/`POST` of Turtle) start in
+publication state **DRAFT**: the create returns 201 (with an
+`FDP-Metadata-State` header saying so), but the record is 404 to everyone
+except its owner and admins until published. Either publish afterwards —
+
+```bash
+curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"to":"PUBLISHED"}' https://…/fdp-api/<path>/state
+```
+
+— or create it visible in one step with `Prefer: publication-state=PUBLISHED`
+on the creating request. Updates (`PUT`/`PATCH`/`DELETE` of an existing
+record) require `If-Match` with the record's current ETag (optimistic
+concurrency); `PATCH` takes `application/sparql-update`.
+
 ## Build from source instead of pulling
 
 ```bash
