@@ -1208,14 +1208,30 @@ def index_ping() -> None:
 
 
 async def _run_index_ping() -> list[PingResult]:
-    """Ping every configured index once; returns per-target results."""
+    """Ping every effective index once; returns per-target results.
+
+    Effective = env targets union admin-registered runtime rows (ADR-0025), so a
+    cron-driven ``fdp index ping`` (``FDP_INDEX_PING_IN_PROCESS=false``) sees
+    the same set as the in-process pinger. CLI pings do not record per-target
+    status (kept scope-tight; the in-process hook owns that bookkeeping).
+    """
     import httpx
 
     from fdpneo_server.config import get_settings
     from fdpneo_server.metadata.index_ping import ping_indexes
+    from fdpneo_server.metadata.index_targets import IndexTargetRepository, normalize_target
+    from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
 
     settings = get_settings()
-    if not settings.index.enabled:
+    targets: dict[str, None] = dict.fromkeys(normalize_target(t) for t in settings.index.targets)
+    engine = build_engine(settings)
+    try:
+        repo = IndexTargetRepository(session_factory=build_session_factory(engine))
+        for row in await repo.list_all():
+            targets.setdefault(row.url)
+    finally:
+        await engine.dispose()
+    if not targets:
         return []
     client_url = settings.index.ping_client_url.strip() or settings.resolved_identifier_base.rstrip(
         "/"
@@ -1224,7 +1240,7 @@ async def _run_index_ping() -> list[PingResult]:
         return await ping_indexes(
             http_client,
             client_url=client_url,
-            targets=settings.index.targets,
+            targets=list(targets),
             timeout_seconds=settings.index.ping_timeout_seconds,
         )
 

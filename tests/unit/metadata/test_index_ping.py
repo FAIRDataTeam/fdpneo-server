@@ -139,3 +139,108 @@ async def test_client_url_override() -> None:
         pinger = IndexPinger(settings=settings, client_url=CLIENT, http_client=client)
         await pinger.ping_now()
     assert captured == [{"clientUrl": "https://public.example/fdp"}]
+
+
+# --- runtime targets provider (ADR-0025) --------------------------------------
+
+
+async def test_pinger_with_provider_starts_even_when_env_targets_empty() -> None:
+    """The zero-targets-at-boot deployment must still subscribe and loop: the
+    provider is re-read per ping, so the first admin-added target starts
+    announcing with NO restart."""
+    bus = EventBus()
+
+    async def provider() -> list[str]:
+        return []
+
+    async with _client(_ok) as client:
+        pinger = IndexPinger(
+            settings=_settings(ping_targets="", ping_in_process=False),
+            client_url=CLIENT,
+            http_client=client,
+            targets_provider=provider,
+        )
+        pinger.start(bus)
+        assert bus.subscriber_count(RecordCreated) == 1
+        await pinger.stop()
+
+
+async def test_ping_now_uses_provider_targets() -> None:
+    pinged: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        pinged.append(str(request.url))
+        return httpx.Response(204)
+
+    async def provider() -> list[str]:
+        return ["https://runtime.example"]
+
+    async with _client(handler) as client:
+        pinger = IndexPinger(
+            settings=_settings(ping_targets="https://env-ignored.example"),
+            client_url=CLIENT,
+            http_client=client,
+            targets_provider=provider,
+        )
+        results = await pinger.ping_now()
+    assert pinged == ["https://runtime.example/"]
+    assert [r.target for r in results] == ["https://runtime.example"]
+
+
+async def test_empty_provider_ping_is_noop_and_does_not_arm_throttle() -> None:
+    """A scheduled empty run must not arm the on-change throttle — otherwise the
+    first record change right after adding the deployment's first target would
+    be silently swallowed."""
+    targets: list[str] = []
+    pinged: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        pinged.append(str(request.url))
+        return httpx.Response(204)
+
+    async def provider() -> list[str]:
+        return list(targets)
+
+    event = RecordCreated(
+        record_iri=f"{CLIENT}/catalog/c1", subject=None, etag="e", timestamp=datetime.now(UTC)
+    )
+    async with _client(handler) as client:
+        pinger = IndexPinger(
+            settings=_settings(ping_targets="", ping_min_interval_seconds=3600),
+            client_url=CLIENT,
+            http_client=client,
+            targets_provider=provider,
+        )
+        assert await pinger.ping_now("scheduled") == []  # empty: no-op
+        targets.append("https://idx.example")
+        await pinger._on_change(event)  # not throttled by the empty run
+    assert pinged == ["https://idx.example/"]
+
+
+async def test_on_results_hook_invoked_and_errors_swallowed() -> None:
+    seen: list[list[str]] = []
+    calls = 0
+
+    async def hook(results: list[object]) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("bookkeeping down")
+        seen.append([r.target for r in results])  # type: ignore[attr-defined]
+
+    async def provider() -> list[str]:
+        return ["https://idx.example"]
+
+    async with _client(_ok) as client:
+        pinger = IndexPinger(
+            settings=_settings(ping_targets="", ping_min_interval_seconds=0),
+            client_url=CLIENT,
+            http_client=client,
+            targets_provider=provider,
+            on_results=hook,  # type: ignore[arg-type]
+        )
+        first = await pinger.ping_now()  # hook raises — swallowed
+        second = await pinger.ping_now()  # hook records
+    assert [r.ok for r in first] == [True]
+    assert [r.ok for r in second] == [True]
+    assert seen == [["https://idx.example"]]

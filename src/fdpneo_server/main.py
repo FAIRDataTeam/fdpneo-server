@@ -45,6 +45,11 @@ from fdpneo_server.metadata.extensions import build_extensions_router
 from fdpneo_server.metadata.external_labels import ExternalLabelCache, ExternalLabelFetcher
 from fdpneo_server.metadata.graphs import record_graph_uri
 from fdpneo_server.metadata.index_ping import IndexPinger
+from fdpneo_server.metadata.index_targets import (
+    IndexTargetRepository,
+    IndexTargetService,
+    build_index_targets_router,
+)
 from fdpneo_server.metadata.instances import InstanceLookupService, build_instances_router
 from fdpneo_server.metadata.labels import LabelResolver, build_labels_router
 from fdpneo_server.metadata.ldp.router import build_ldp_router
@@ -344,12 +349,22 @@ def _build_shared_state(
     )
     app.state.audit_log = AuditLog(session_factory=app.state.session_factory)
 
-    # Outbound Index ping (Phase 8.1): announce this FDP to configured indexes so
-    # they can harvest it (reference wire protocol). No-op unless targets are set.
+    # Runtime index targets (ADR-0025): admin-managed rows unioned with the env
+    # set. Built before the pinger, which reads them through the provider on
+    # EVERY ping — so a deployment that boots with zero targets starts
+    # announcing the moment the first target is added, with no restart.
+    app.state.index_target_service = IndexTargetService(
+        repository=IndexTargetRepository(session_factory=app.state.session_factory),
+        settings=settings.index,
+    )
+    # Outbound Index ping (Phase 8.1): announce this FDP to the effective
+    # targets so indexes can harvest it (reference wire protocol).
     app.state.index_pinger = IndexPinger(
         settings=settings.index,
         client_url=settings.resolved_identifier_base,
         http_client=http_client,
+        targets_provider=app.state.index_target_service.effective_urls,
+        on_results=app.state.index_target_service.record_results,
     )
 
     # Runtime settings repository — Postgres-backed; read on demand so admin
@@ -728,6 +743,14 @@ def create_app(
     # /fdp-api/schemas; the shapes themselves are stored at {base}/fdp-api/schemas/{id}.
     app.include_router(
         build_schema_router(service=app.state.schema_service), prefix=RESERVED_API_PATH
+    )
+    # Runtime FDP-Index targets (ADR-0025) at /fdp-api/index/* — admin-gated
+    # CRUD over the ping-target set plus a synchronous "ping now" action.
+    app.include_router(
+        build_index_targets_router(
+            service=app.state.index_target_service, pinger=app.state.index_pinger
+        ),
+        prefix=RESERVED_API_PATH,
     )
     # PROF conformance profiles (ADR-0019) — read-only at /fdp-api/profiles.
     # Profiles are the dct:conformsTo target for records; they are provisioned

@@ -29,6 +29,7 @@ _MODEL_MODULES: tuple[str, ...] = (
     "fdpneo_server.identity.principal",
     "fdpneo_server.metadata.audit",
     "fdpneo_server.metadata.external_labels",
+    "fdpneo_server.metadata.index_targets",
     "fdpneo_server.metadata.profiles.state",
     "fdpneo_server.metadata.search.model",
     "fdpneo_server.metadata.settings",

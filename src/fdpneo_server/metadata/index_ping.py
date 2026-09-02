@@ -37,7 +37,7 @@ from fdpneo_server.metadata.events import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Callable, Sequence
 
     from fdpneo_server.config import IndexSettings
     from fdpneo_server.shared.events import Event, EventBus, Subscription
@@ -88,7 +88,17 @@ async def ping_indexes(
 class IndexPinger:
     """Announces this FDP to configured indexes: a startup + periodic + on-change loop."""
 
-    __slots__ = ("_client_url", "_http", "_last", "_lock", "_settings", "_subs", "_task")
+    __slots__ = (
+        "_client_url",
+        "_http",
+        "_last",
+        "_lock",
+        "_on_results",
+        "_provider",
+        "_settings",
+        "_subs",
+        "_task",
+    )
 
     def __init__(
         self,
@@ -96,18 +106,33 @@ class IndexPinger:
         settings: IndexSettings,
         client_url: str,
         http_client: httpx.AsyncClient,
+        targets_provider: Callable[[], Awaitable[Sequence[str]]] | None = None,
+        on_results: Callable[[list[PingResult]], Awaitable[None]] | None = None,
     ) -> None:
         self._settings = settings
         self._client_url = settings.ping_client_url.strip() or client_url.rstrip("/")
         self._http = http_client
+        # ADR-0025: when a provider is injected, targets are runtime data
+        # (env union admin-registered rows) resolved fresh on every ping — targets
+        # added through the admin API take effect with no restart. Without one
+        # (CLI, tests), env settings drive everything as before.
+        self._provider = targets_provider
+        self._on_results = on_results
         self._task: asyncio.Task[None] | None = None
         self._subs: list[Subscription] = []
         self._lock = asyncio.Lock()
         self._last = 0.0  # monotonic time of the last ping (throttle baseline)
 
     def start(self, bus: EventBus) -> None:
-        """Launch the periodic loop (unless disabled) and subscribe to changes."""
-        if not self._settings.enabled:
+        """Launch the periodic loop and subscribe to changes.
+
+        With a ``targets_provider`` the loop + subscriptions ALWAYS start, even
+        when the deployment boots with zero targets: the provider is re-read on
+        every ping, so the first admin-added target starts announcing without a
+        restart (an empty scheduled iteration is a free no-op). Env-only
+        construction keeps the old disabled-when-empty behavior.
+        """
+        if self._provider is None and not self._settings.enabled:
             return
         if self._settings.ping_in_process and self._task is None:
             self._task = asyncio.create_task(self._loop(), name="index-ping")
@@ -117,6 +142,7 @@ class IndexPinger:
         log.info(
             "index_pinger_started",
             targets=self._settings.targets,
+            dynamic_targets=self._provider is not None,
             client_url=self._client_url,
             in_process=self._settings.ping_in_process,
             on_publish=self._settings.ping_on_publish,
@@ -134,15 +160,28 @@ class IndexPinger:
             self._task = None
 
     async def ping_now(self, reason: str = "manual") -> list[PingResult]:
-        """Ping every configured index once; log the outcome. Serialized by a lock."""
+        """Ping every effective index once; log the outcome. Serialized by a lock."""
         async with self._lock:
+            targets: Sequence[str] = (
+                await self._provider() if self._provider is not None else self._settings.targets
+            )
+            if not targets:
+                # Deliberately does NOT arm the throttle: otherwise a scheduled
+                # empty no-op would suppress the first on-change ping right
+                # after an admin adds the deployment's first target.
+                return []
             self._last = time.monotonic()
             results = await ping_indexes(
                 self._http,
                 client_url=self._client_url,
-                targets=self._settings.targets,
+                targets=targets,
                 timeout_seconds=self._settings.ping_timeout_seconds,
             )
+        if self._on_results is not None:
+            try:
+                await self._on_results(results)
+            except Exception:
+                log.warning("index_ping_status_record_failed", reason=reason)
         for result in results:
             if result.ok:
                 log.info("index_ping_ok", target=result.target, reason=reason)

@@ -12,6 +12,16 @@ deployment (fdpneo.semlab-leiden.nl).
 
 ### Added
 
+- **Runtime-managed FDP Index targets** (ADR-0025): admins add/remove the
+  indexes this FDP announces itself to at runtime — `GET/POST
+  /fdp-api/index/targets`, `DELETE /fdp-api/index/targets/{id}`, and `POST
+  /fdp-api/index/ping` for an immediate announce with per-target results.
+  Targets persist in Postgres (migration 0010) and union with the read-only
+  `FDP_INDEX_PING_TARGETS` env set; per-target ping status is recorded. The
+  pinger resolves targets through a live provider, so **a deployment that
+  booted with zero targets starts announcing the moment the first index is
+  added — no restart**. URLs are SSRF-guarded; `fdp index ping` (the cron
+  path) sees runtime targets too.
 - **Create-as-published** (ADR-0010 §4 amendment): a creating `PUT`/`POST`
   may carry `Prefer: publication-state=PUBLISHED` to mint the record visible
   immediately — an authorized shortcut through the same state machine, since
@@ -23,6 +33,10 @@ deployment (fdpneo.semlab-leiden.nl).
 
 ### Fixed
 
+- **Agent IRIs resolve to names.** The `/labels` resolver only looked at
+  `rdfs:label`/`skos:prefLabel`/`dcterms:title`, so a publisher/creator IRI
+  pointing at a `foaf:Agent` (which carries `foaf:name`) rendered as a raw
+  URL in the client. `foaf:name` and `vcard:fn` join the predicate order.
 - **Language-tagged literals validate.** The bundled shapes constrained
   `dct:title`/`dct:description`/`dcat:keyword` (and the managed-license
   title/description) to `xsd:string`, so any `"…"@en` — the normal DCAT-AP /
