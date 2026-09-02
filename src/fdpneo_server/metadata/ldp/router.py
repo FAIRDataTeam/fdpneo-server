@@ -777,11 +777,21 @@ def _enforce_if_match(request: Request, current: Graph, *, required: bool) -> No
         )
 
 
+# Compressing proxies rewrite ETags on the way out: Apache mod_deflate and
+# Caddy's encode handler append a content-coding suffix inside the quotes
+# ("abc" → "abc-gzip"/"abc-zstd"), and nginx's gzip weakens the tag to W/"abc".
+# The client faithfully round-trips what it received, so If-Match arrives
+# mangled and every edit 412s behind such an edge. Tolerating a *known coding
+# suffix* is safe: the value can only match when the underlying strong ETag
+# matches, so the optimistic-concurrency guarantee is unchanged.
+_PROXY_CODING_SUFFIX = re.compile(r"-(?:gzip|br|zstd|deflate)$")
+
+
 def _strip_etag(value: str) -> str:
     cleaned = value.strip()
     if cleaned.startswith("W/"):
         cleaned = cleaned[2:].strip()
-    return cleaned.strip('"')
+    return _PROXY_CODING_SUFFIX.sub("", cleaned.strip('"'))
 
 
 def _mint_member_iri(container_iri: str, slug: str | None) -> str:

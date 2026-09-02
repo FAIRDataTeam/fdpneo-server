@@ -5,6 +5,28 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.14.2] — 2026-09-02
+
+### Fixed
+
+- **Edits no longer fail behind a compressing reverse proxy.** Compressing
+  edges rewrite ETags on the wire — Caddy's `encode` and Apache `mod_deflate`
+  append a coding suffix (`"abc"` → `"abc-zstd"`/`"abc-gzip"`), nginx's gzip
+  weakens the tag — and the client faithfully round-trips what it received, so
+  every `If-Match`-guarded PUT/PATCH/DELETE failed with 412 ("If-Match does
+  not match the current resource ETag"; observed on a live deployment behind
+  Caddy). The comparison now tolerates a known coding suffix, which is safe:
+  the value can only match when the underlying strong ETag matches, so the
+  optimistic-concurrency guarantee is unchanged. The bundled production
+  Caddyfile also scopes `encode` to the SPA's hashed assets, and the nginx
+  example documents the same pitfall.
+- **Production edge: login completes.** The SPA's OIDC `redirect_uri` is
+  `<origin>/auth/callback` — a client route — but the production Caddyfile
+  and nginx example routed all of `/auth/*` to Keycloak, so the callback
+  404'd and login never finished. Both edges now route the exact callback
+  path to the client ahead of the Keycloak prefix. (Found and first fixed by
+  the semlab-leiden deployment.)
+
 ## [0.14.1] — 2026-09-01
 
 ### Added
