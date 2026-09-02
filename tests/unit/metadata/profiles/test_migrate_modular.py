@@ -211,3 +211,56 @@ async def test_migrate_no_root_record_is_safe(profile: DeploymentProfile) -> Non
     assert report.root_retyped is None
     assert report.root_already_current is False
     assert len(report.schemas_written) == 2
+
+
+@dataclass
+class _FakeStoreWithVersions(_FakeStore):
+    """A store whose meta graphs report owl:versionInfo, recording snapshots."""
+
+    versions: dict[str, int] = field(default_factory=dict)
+    replaced: dict[str, str] = field(default_factory=dict)
+
+    async def query(self, sparql: str, *, accept: str = "") -> bytes:
+        if "versionInfo" in sparql:
+            for iri, version in self.versions.items():
+                if f"<{iri}>" in sparql:
+                    return json.dumps(
+                        {"results": {"bindings": [{"v": {"value": str(version)}}]}}
+                    ).encode()
+            return json.dumps({"results": {"bindings": []}}).encode()
+        return await super().query(sparql, accept=accept)
+
+    async def replace_graph(self, graph_uri: str, data: object, *, mime: str = "") -> None:
+        del mime
+        self.replaced[graph_uri] = data if isinstance(data, str) else str(data)
+
+
+@pytest.mark.unit
+async def test_migrate_snapshots_and_provisions_changed_schema(
+    profile: DeploymentProfile,
+) -> None:
+    """Reconciled shapes get an immutable version snapshot AND a repointed 1:1
+    conformance profile (ADR-0019 §4), mirroring SchemaService.put — otherwise a
+    migrated deployment keeps advertising the pre-change validation artifact."""
+    store = _FakeStoreWithVersions(graphs={BASE: _pre_15_2_root()})
+    store.versions = {
+        f"{BASE}/fdp-api/schemas/catalog": 2,
+        f"{BASE}/fdp-api/schemas/dataset": 5,
+    }
+
+    report = await migrate_to_modular_profile(
+        profile,
+        repository=store,  # type: ignore[arg-type]
+        adapter=store,  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+    assert len(report.schemas_written) == 2
+
+    # Immutable shape snapshots at the versioned IRIs…
+    assert f"{BASE}/fdp-api/schemas/catalog/2" in store.replaced
+    assert f"{BASE}/fdp-api/schemas/dataset/5" in store.replaced
+    # …and stable + versioned conformance profiles repointed at them.
+    assert f"{BASE}/fdp-api/profiles/catalog" in store.replaced
+    assert f"{BASE}/fdp-api/profiles/catalog/2" in store.replaced
+    assert f"{BASE}/fdp-api/profiles/dataset" in store.replaced
+    assert f"{BASE}/fdp-api/profiles/dataset/5" in store.replaced

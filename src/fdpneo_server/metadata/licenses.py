@@ -69,6 +69,7 @@ FDP_MANAGED_LICENSE: Final = FDP_DEFAULT["ManagedLicense"]
 
 _LICENSE_SHAPE_TTL: Final = """\
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix fdp: <https://w3id.org/fdp/o#> .
@@ -82,7 +83,7 @@ fdp:LicenseDocumentShape
         sh:description "Human-readable license name." ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:datatype xsd:string ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
     ] ;
     sh:property [
         sh:path dct:source ;
@@ -94,7 +95,7 @@ fdp:LicenseDocumentShape
         sh:path dct:description ;
         sh:name "description" ;
         sh:maxCount 1 ;
-        sh:datatype xsd:string ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
     ] .
 """
 

@@ -36,16 +36,18 @@ they are unreferenced and removable via ``DELETE /schemas/{id}``.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import structlog
 from rdflib import URIRef
 from rdflib.compare import isomorphic
-from rdflib.namespace import RDF
+from rdflib.namespace import OWL, RDF
 
+from fdpneo_server.metadata.prof import provision_profile
 from fdpneo_server.metadata.profiles.applier import direct_container_config
-from fdpneo_server.metadata.profiles.iri import IRIExpander, expand_schema_refs
+from fdpneo_server.metadata.profiles.iri import IRIExpander, expand_schema_refs, schema_slug
 from fdpneo_server.metadata.profiles.rd_records import (
     ResourceDefinitionParseError,
     rd_record_slug,
@@ -60,7 +62,11 @@ from fdpneo_server.metadata.profiles.registry import (
 from fdpneo_server.metadata.profiles.validator import validate_profile
 from fdpneo_server.metadata.states import SEED_STATE
 from fdpneo_server.shared.errors import BadRequest
-from fdpneo_server.shared.graphs import resource_definition_graph_uri
+from fdpneo_server.shared.graphs import (
+    meta_graph_uri,
+    resource_definition_graph_uri,
+    schema_version_graph_uri,
+)
 from fdpneo_server.shared.namespaces import LDP
 
 if TYPE_CHECKING:
@@ -143,6 +149,21 @@ async def migrate_to_modular_profile(
         if validator is not None:
             validator.invalidate(iri)
         log.info("modular_schema_written", iri=iri)
+        # Mirror SchemaService.put (ADR-0019 §4): snapshot the just-written
+        # shape at its immutable versioned IRI and (re)provision the 1:1
+        # conformance profile so GET /fdp-api/profiles/{slug} points at the
+        # CURRENT artifact. Without this, a reconciled deployment keeps
+        # advertising the pre-change snapshot and the new versioned IRI never
+        # dereferences. Version None (no meta yet — e.g. a bare test store)
+        # skips the snapshot, exactly like SchemaService.put.
+        slug = schema_slug(loaded.entry.id)
+        version = await _schema_version(adapter, iri)
+        if version is not None:
+            snapshot = str(schema_version_graph_uri(expander.base_url, slug, str(version)))
+            await adapter.replace_graph(
+                snapshot, graph.serialize(format="nt"), mime="application/n-triples"
+            )
+            await provision_profile(adapter, base_url=expander.base_url, slug=slug, version=version)
 
     # 2. Resource definitions — rebuild from the new manifest, skip if identical,
     #    then drop any orphaned RD record (e.g. the renamed root: Repository →
@@ -231,6 +252,28 @@ async def _retype_root(
     await repository.put_graph(repo_iri, graph, subject=None)
     report.root_retyped = repo_iri
     log.info("root_record_retyped", root=repo_iri, new_class=str(new_class))
+
+
+async def _schema_version(adapter: TripleStoreAdapter, iri: str) -> int | None:
+    """The shape's current ``owl:versionInfo`` from its meta graph, or ``None``.
+
+    Same contract as ``SchemaService._version`` — the meta writer bumps the
+    version on every ``put_graph``, so right after a write this is the version
+    the snapshot should be filed under.
+    """
+    body = await adapter.query(
+        f"SELECT ?v WHERE {{ GRAPH <{meta_graph_uri(iri)}> {{ <{iri}> <{OWL.versionInfo}> ?v }} }}",
+        accept="application/sparql-results+json",
+    )
+    payload = json.loads(body)
+    for row in payload.get("results", {}).get("bindings", []):
+        raw = row.get("v", {}).get("value")
+        if raw is not None:
+            try:
+                return int(raw)
+            except ValueError:
+                return None
+    return None
 
 
 async def _identical(repository: MetadataRepository, iri: str, candidate: Graph) -> bool:

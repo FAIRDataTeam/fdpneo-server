@@ -292,3 +292,42 @@ async def test_violations_are_sorted_deterministically() -> None:
     assert not report.conforms
     focus_nodes = [v.focus_node or "" for v in report.violations]
     assert focus_nodes == sorted(focus_nodes)
+
+
+LANG_SHAPE_IRI = "https://example.org/shapes/lang-dataset"
+LANG_SHAPE_TTL = """
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+<https://example.org/shapes/lang-dataset> a sh:NodeShape ;
+    sh:targetClass dcat:Dataset ;
+    sh:property [
+        sh:path dct:title ;
+        sh:minCount 1 ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+    ] .
+"""
+
+
+@pytest.mark.unit
+async def test_sh_or_datatype_accepts_plain_and_lang_tagged_literals() -> None:
+    """The bundled shapes' string-or-langString alternative (sh:or over datatype
+    shapes) must accept both literal forms and still reject other datatypes —
+    sh:or is core SHACL, evaluated per value node inside a property shape."""
+    v = _validator({LANG_SHAPE_IRI: LANG_SHAPE_TTL})
+
+    def data(lit: Literal) -> Graph:
+        g = Graph()
+        s = URIRef(EX + "dl")
+        g.add((s, RDF.type, URIRef("http://www.w3.org/ns/dcat#Dataset")))
+        g.add((s, DCT_TITLE, lit))
+        return g
+
+    plain = await v.validate_against(data(Literal("plain title")), LANG_SHAPE_IRI)
+    assert plain.conforms is True
+    tagged = await v.validate_against(data(Literal("titel met taal", lang="nl")), LANG_SHAPE_IRI)
+    assert tagged.conforms is True
+    wrong = await v.validate_against(data(Literal(3)), LANG_SHAPE_IRI)
+    assert wrong.conforms is False

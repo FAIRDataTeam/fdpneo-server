@@ -5,7 +5,9 @@
 # dcat:accessURL / dcat:downloadURL but v0.2 leaves that to the curator.
 
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dash: <http://datashapes.org/dash#> .
 @prefix dcat: <http://www.w3.org/ns/dcat#> .
 @prefix dct:  <http://purl.org/dc/terms/> .
 @prefix spdx: <http://spdx.org/rdf/terms#> .
@@ -17,13 +19,20 @@ fs:distribution
     sh:targetClass dcat:Distribution ;
     rdfs:label "DCAT Distribution" ;
 
+    # Plain or language-tagged literals; the dash:editor hint keeps the client
+    # form builder rendering the field (see resource.ttl for the rationale).
     sh:property [
         sh:path dct:title ;
         sh:name "title" ;
         sh:minCount 1 ;
-        sh:datatype xsd:string ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        dash:editor dash:TextFieldWithLangEditor ;
     ] ;
-    sh:property [ sh:path dct:description ; sh:datatype xsd:string ] ;
+    sh:property [
+        sh:path dct:description ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        dash:editor dash:TextAreaWithLangEditor ;
+    ] ;
     sh:property [ sh:path dcat:accessURL ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dcat:downloadURL ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dcat:accessService ; sh:nodeKind sh:IRI ] ;

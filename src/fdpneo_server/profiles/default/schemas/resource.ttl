@@ -11,7 +11,9 @@
 # constraints, so existing records keep validating.
 
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dash: <http://datashapes.org/dash#> .
 @prefix dcat: <http://www.w3.org/ns/dcat#> .
 @prefix dct:  <http://purl.org/dc/terms/> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
@@ -27,20 +29,39 @@ fs:resource
     rdfs:label "DCAT Resource (base)" ;
     rdfs:comment "Common DCAT 3 properties shared by every cataloged resource." ;
 
+    # Titles/descriptions/keywords accept a plain string OR a language-tagged
+    # literal ("…"@en) — DCAT-AP and its health profiles use lang tags
+    # routinely, and rdflib types those as rdf:langString, not xsd:string.
+    # The dash:editor hint keeps the client's form builder rendering these
+    # fields (its shape parser needs a direct constraint or editor on the
+    # property shape; it does not descend into sh:or) and lights up its
+    # language-aware editor.
     sh:property [
         sh:path dct:title ;
         sh:name "title" ;
         sh:description "Human-readable name of the resource." ;
         sh:minCount 1 ;
-        sh:datatype xsd:string ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        dash:editor dash:TextFieldWithLangEditor ;
     ] ;
-    sh:property [ sh:path dct:description ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path dct:publisher ; sh:nodeKind sh:IRI ] ;
-    sh:property [ sh:path dct:creator ; sh:nodeKind sh:IRI ] ;
+    sh:property [
+        sh:path dct:description ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        dash:editor dash:TextAreaWithLangEditor ;
+    ] ;
+    # Agents may be referenced by IRI (preferred: ROR, ORCID, a local agent
+    # record) or described inline as a blank node (the DCAT-AP idiom:
+    # [ a foaf:Agent ; foaf:name "…" ]).
+    sh:property [ sh:path dct:publisher ; sh:nodeKind sh:BlankNodeOrIRI ] ;
+    sh:property [ sh:path dct:creator ; sh:nodeKind sh:BlankNodeOrIRI ] ;
     sh:property [ sh:path dcat:contactPoint ] ;
     sh:property [ sh:path dct:issued ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
     sh:property [ sh:path dct:modified ; sh:datatype xsd:dateTime ; sh:maxCount 1 ] ;
-    sh:property [ sh:path dcat:keyword ; sh:datatype xsd:string ] ;
+    sh:property [
+        sh:path dcat:keyword ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        dash:editor dash:TextFieldWithLangEditor ;
+    ] ;
     sh:property [ sh:path dcat:theme ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dct:language ; sh:nodeKind sh:IRI ] ;
     sh:property [ sh:path dct:license ; sh:nodeKind sh:IRI ; sh:maxCount 1 ] ;
