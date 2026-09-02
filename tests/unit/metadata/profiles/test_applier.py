@@ -132,23 +132,23 @@ async def test_apply_writes_schemas_then_offers_then_repository_seed(
     assert iris == [
         "http://localhost:8000/fdp-api/schemas/catalog",
         "http://localhost:8000/fdp-api/policies/system-default",
-        "https://w3id.org/fdp/o#LicenseDocumentShape",
+        "urn:fdp-shape:license-document",
         "http://localhost:8000/fdp-api/licenses/cc0-1.0",
         "http://localhost:8000/fdp-api/licenses/cc-by-4.0",
         "http://localhost:8000/fdp-api/licenses/cc-by-sa-4.0",
-        "https://w3id.org/fdp/o#ResourceDefinitionShape",
+        "urn:fdp-shape:resource-definition",
         "http://localhost:8000/fdp-api/resource-definitions/repository",
         "http://localhost:8000",
     ]
     assert report.total_written == 9
-    assert report.license_shape_iri == "https://w3id.org/fdp/o#LicenseDocumentShape"
+    assert report.license_shape_iri == "urn:fdp-shape:license-document"
     assert report.offers_written == ["http://localhost:8000/fdp-api/policies/system-default"]
     assert report.licenses_written == [
         "http://localhost:8000/fdp-api/licenses/cc0-1.0",
         "http://localhost:8000/fdp-api/licenses/cc-by-4.0",
         "http://localhost:8000/fdp-api/licenses/cc-by-sa-4.0",
     ]
-    assert report.rd_shape_iri == "https://w3id.org/fdp/o#ResourceDefinitionShape"
+    assert report.rd_shape_iri == "urn:fdp-shape:resource-definition"
     assert report.resource_definition_records == [
         "http://localhost:8000/fdp-api/resource-definitions/repository"
     ]
@@ -188,7 +188,7 @@ resourceDefinitions:
 _META_SHAPE_TTL = """\
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
-<https://w3id.org/fdp/o#MetaMetadataShape>
+<urn:fdp-shape:meta-metadata>
     a sh:NodeShape ; sh:targetClass prov:Entity .
 """
 
@@ -213,8 +213,8 @@ async def test_apply_stores_meta_shape_first_so_runtime_can_validate(
     iris = [c[0] for c in repo.put_calls]
     # The meta shape is written first, at its fixed IRI, so the very next meta
     # refresh (and all runtime writes) can validate against it.
-    assert iris[0] == "https://w3id.org/fdp/o#MetaMetadataShape"
-    assert report.meta_shape_iri == "https://w3id.org/fdp/o#MetaMetadataShape"
+    assert iris[0] == "urn:fdp-shape:meta-metadata"
+    assert report.meta_shape_iri == "urn:fdp-shape:meta-metadata"
 
 
 # --- already-initialized refusal ----------------------------------------
@@ -305,11 +305,11 @@ async def test_apply_rolls_back_on_triple_store_failure(
     # Repository seed itself never succeeded so isn't dropped.
     assert repo.delete_calls == [
         "http://localhost:8000/fdp-api/resource-definitions/repository",
-        "https://w3id.org/fdp/o#ResourceDefinitionShape",
+        "urn:fdp-shape:resource-definition",
         "http://localhost:8000/fdp-api/licenses/cc-by-sa-4.0",
         "http://localhost:8000/fdp-api/licenses/cc-by-4.0",
         "http://localhost:8000/fdp-api/licenses/cc0-1.0",
-        "https://w3id.org/fdp/o#LicenseDocumentShape",
+        "urn:fdp-shape:license-document",
         "http://localhost:8000/fdp-api/policies/system-default",
         "http://localhost:8000/fdp-api/schemas/catalog",
     ]
@@ -394,12 +394,38 @@ def test_service_advertisement_omits_search_when_disabled() -> None:
     assert (root, VOID.sparqlEndpoint, URIRef("http://localhost:8000/fdp-api/sparql")) in triples
 
 
+def test_repository_graph_dual_types_a_fairdatapoint_root() -> None:
+    # FDP Index validators (home.fairdatapoint.org) match fdp-o:MetadataService
+    # literally, no subclass inference — the root must assert both types.
+    from rdflib import RDF, URIRef
+
+    from fdpneo_server.metadata.profiles.applier import root_type_iris
+
+    fdp = "https://w3id.org/fdp/fdp-o#FAIRDataPoint"
+    service = "https://w3id.org/fdp/fdp-o#MetadataService"
+    assert root_type_iris(fdp) == (fdp, service)
+    assert root_type_iris("http://www.w3.org/ns/dcat#Catalog") == (
+        "http://www.w3.org/ns/dcat#Catalog",
+    )
+
+    g = _repository_graph(
+        iri="http://localhost:8000",
+        type_iri=fdp,
+        member_relations=[],
+        title="Test FDP",
+        rights_iri=None,
+    )
+    root = URIRef("http://localhost:8000")
+    assert (root, RDF.type, URIRef(fdp)) in g
+    assert (root, RDF.type, URIRef(service)) in g
+
+
 def test_repository_graph_includes_service_advertisement() -> None:
     from rdflib import URIRef
 
     g = _repository_graph(
         iri="http://localhost:8000",
-        type_iri="https://w3id.org/fdp/o#FAIRDataPoint",
+        type_iri="https://w3id.org/fdp/fdp-o#FAIRDataPoint",
         member_relations=["http://www.w3.org/ns/dcat#catalog"],
         title="Test FDP",
         rights_iri=None,
@@ -431,7 +457,7 @@ async def test_ensure_root_service_advertisement_adds_then_idempotent() -> None:
     store = _Store()
     root = "http://localhost:8000"
     seed = Graph()
-    seed.add((URIRef(root), RDF.type, URIRef("https://w3id.org/fdp/o#FAIRDataPoint")))
+    seed.add((URIRef(root), RDF.type, URIRef("https://w3id.org/fdp/fdp-o#FAIRDataPoint")))
     store.graphs[root] = seed
 
     added = await ensure_root_service_advertisement(store, store, base_url=root)  # type: ignore[arg-type]

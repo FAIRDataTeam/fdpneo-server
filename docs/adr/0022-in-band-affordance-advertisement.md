@@ -77,23 +77,23 @@ do speak standard Web Linking for page navigation.
 by the LDP router alongside the existing signposting links:
 
 - `<{record}/meta>` with the extension relation type
-  **`https://w3id.org/fdp/o#hasMetaMetadata`** — the provenance/state
+  **`https://w3id.org/fdp/fdp-o#hasMetaMetadata`** — the provenance/state
   sibling graph. (RFC 8288 §2.1.2 admits absolute-IRI extension
   relations; we deliberately do not overload `describedby`, which
   ADR-0017 reserves for alternate serializations of the record itself.)
 - `<{record}/spec>` (instance) and `<{base}/{urlPrefix}/spec>` (type
   level, the one create-forms need) with
-  **`https://w3id.org/fdp/o#hasSpec`**. `ldp:constrainedBy` continues to
+  **`https://w3id.org/fdp/fdp-o#hasSpec`**. `ldp:constrainedBy` continues to
   carry the shape's *storage IRI*; these rels advertise the negotiated
   *views*.
-- `<{record}/expanded>` with **`https://w3id.org/fdp/o#hasExpandedView`**.
-- `<{record}/state>` with **`https://w3id.org/fdp/o#hasStateTransition`**
+- `<{record}/expanded>` with **`https://w3id.org/fdp/fdp-o#hasExpandedView`**.
+- `<{record}/state>` with **`https://w3id.org/fdp/fdp-o#hasStateTransition`**
   — emitted only for callers whose context could ever transition state
   is *not* attempted (authorization is per-request, PDP-gated); the link
   is advertised unconditionally, and the endpoint answers 401/403 as
   today. Hypermedia advertises the affordance; policy decides.
 - For containers, `<{container}/page/{childPrefix}>` per child link with
-  **`https://w3id.org/fdp/o#hasMemberPage`**.
+  **`https://w3id.org/fdp/fdp-o#hasMemberPage`**.
 
 The exact FDP-O terms above are proposals under our own namespace; if
 the FDP-O working group standardizes equivalents, a later ADR swaps the
@@ -123,7 +123,7 @@ the state lives and what it may become, without consulting OpenAPI.
   `Link: </fdp-api/openapi.json>; rel="service-desc"` and
   `Link: </fdp-api/docs>; rel="service-doc"` (both IANA-registered
   relations), plus an extension link to `/fdp-api/resource-definitions`
-  (**`https://w3id.org/fdp/o#hasResourceDefinitions`**). The ADR-0018
+  (**`https://w3id.org/fdp/fdp-o#hasResourceDefinitions`**). The ADR-0018
   triple-level service advertisement (`void:sparqlEndpoint`,
   `dcat:DataService`) is unchanged.
 

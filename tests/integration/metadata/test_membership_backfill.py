@@ -65,9 +65,9 @@ resourceDefinitions:
 
 REPOSITORY_SHAPE_TTL = """\
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
-@prefix fdp:  <https://w3id.org/fdp/o#> .
+@prefix fdp:  <https://w3id.org/fdp/fdp-o#> .
 @prefix dct:  <http://purl.org/dc/terms/> .
-<https://w3id.org/fdp/o#Repository>
+<https://w3id.org/fdp/fdp-o#Repository>
     a sh:NodeShape ; sh:targetClass fdp:Repository ;
     sh:property [ sh:path dct:title ; sh:minCount 1 ] .
 """
@@ -203,7 +203,7 @@ async def _run() -> None:
 
         # Downgrade it to the pre-15.1 shape: BasicContainer, no membership config.
         downgraded = Graph()
-        downgraded.add((root, RDF.type, URIRef("https://w3id.org/fdp/o#Repository")))
+        downgraded.add((root, RDF.type, URIRef("https://w3id.org/fdp/fdp-o#Repository")))
         downgraded.add((root, RDF.type, LDP.BasicContainer))
         downgraded.add((root, DCT.title, Literal("Root")))
         await adapter.replace_graph(

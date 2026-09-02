@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from fdpneo_server.metadata.profiles.migrate import MigrationReport
     from fdpneo_server.metadata.profiles.migrate_modular import ModularMigrationReport
     from fdpneo_server.metadata.schema_sync import SyncReport
+    from fdpneo_server.metadata.vocab_migration import VocabMigrationReport
     from fdpneo_server.metrics.aggregation import RollupResult
 
 app = typer.Typer(
@@ -59,6 +60,7 @@ schema_app = typer.Typer(help="Schema commands.", no_args_is_help=True)
 search_app = typer.Typer(help="Search commands.", no_args_is_help=True)
 ldp_app = typer.Typer(help="LDP-conformance commands.", no_args_is_help=True)
 pid_app = typer.Typer(help="Persistent-identifier commands.", no_args_is_help=True)
+vocab_app = typer.Typer(help="Vocabulary-migration commands.", no_args_is_help=True)
 backup_app = typer.Typer(help="Backup / restore / migration commands.", no_args_is_help=True)
 index_app = typer.Typer(help="Index / discovery commands.", no_args_is_help=True)
 
@@ -69,6 +71,7 @@ app.add_typer(schema_app, name="schema")
 app.add_typer(search_app, name="search")
 app.add_typer(ldp_app, name="ldp")
 app.add_typer(pid_app, name="pid")
+app.add_typer(vocab_app, name="vocab")
 app.add_typer(backup_app, name="backup")
 app.add_typer(index_app, name="index")
 
@@ -865,6 +868,59 @@ async def _run_pid_verify(iris: list[str]) -> ResolutionReport:
             iris=targets,
             http_client=http_client,
             timeout_seconds=settings.pid.timeout_seconds,
+        )
+
+
+@vocab_app.command("migrate")
+def vocab_migrate(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be rewritten; write nothing."
+    ),
+) -> None:
+    """One-time: rewrite stored FDP vocabulary to the published FDP-O namespace.
+
+    Releases before 0.16 minted terms under ``https://w3id.org/fdp/o#`` (a
+    404 — the FDP Ontology lives at ``https://w3id.org/fdp/fdp-o#``). This
+    rewrites every stored graph and renames the server-owned shape graphs to
+    ``urn:fdp-shape:*`` (ADR-0026). The server also runs this automatically at
+    startup, invalidating the authz cache and rebuilding the search index when
+    anything changed; after a manual CLI run do the same (restart, or
+    ``fdp search reindex``). Idempotent.
+    """
+    try:
+        report = asyncio.run(_run_vocab_migrate(dry_run))
+    except Exception as err:
+        console.print(f"[red]vocab migrate failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if not report.changed:
+        console.print("[green]nothing to migrate[/] — no old-namespace terms in the store")
+        return
+    verb = "would rewrite" if dry_run else "rewrote"
+    console.print(
+        f"[green]{verb}[/] {len(report.rewritten)} graph(s); "
+        f"renamed {len(report.renamed)}; root backfilled: {report.root_backfilled}"
+    )
+    for old, new in report.renamed:
+        console.print(f"  {old} → {new}")
+    if not dry_run:
+        console.print(
+            "[yellow]note:[/] restart the server (or run `fdp search reindex`) so the "
+            "authz cache and search index reflect the rewritten IRIs"
+        )
+
+
+async def _run_vocab_migrate(dry_run: bool) -> VocabMigrationReport:
+    from fdpneo_server.config import get_settings
+    from fdpneo_server.metadata.vocab_migration import migrate_vocabulary
+    from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
+        return await migrate_vocabulary(
+            adapter=adapter,
+            root_iri=settings.resolved_identifier_base,
+            dry_run=dry_run,
         )
 
 

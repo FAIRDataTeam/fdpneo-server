@@ -1,6 +1,6 @@
 [project]
 name = "fdpneo"
-version = "0.15.0"
+version = "0.16.0"
 description = "FAIR Data Point v2 server — a FAIR-aligned metadata repository implementing the FDP specifications."
 readme = "README.md"
 requires-python = ">=3.12"

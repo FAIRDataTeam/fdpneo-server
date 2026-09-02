@@ -72,7 +72,7 @@ def test_prefixes_mapping_is_lowercase_and_immutable() -> None:
 
 @pytest.mark.unit
 def test_fdp_default_is_w3id_namespace() -> None:
-    assert str(FDP_DEFAULT) == "https://w3id.org/fdp/o#"
+    assert str(FDP_DEFAULT) == "https://w3id.org/fdp/fdp-o#"
 
 
 @pytest.mark.unit
@@ -87,7 +87,7 @@ def test_fdp_namespace_reads_from_explicit_settings(make_settings: Any) -> None:
 @pytest.mark.unit
 def test_fdp_namespace_default_value_from_settings(make_settings: Any) -> None:
     settings = make_settings()
-    assert str(fdp_namespace(settings)) == "https://w3id.org/fdp/o#"
+    assert str(fdp_namespace(settings)) == "https://w3id.org/fdp/fdp-o#"
 
 
 @pytest.mark.unit

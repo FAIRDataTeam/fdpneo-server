@@ -41,6 +41,7 @@ from fdpneo_server.metadata.labels import is_safe_iri
 from fdpneo_server.policy.model import Action
 from fdpneo_server.shared.context import RequestContext
 from fdpneo_server.shared.errors import Forbidden
+from fdpneo_server.shared.namespaces import FDP_METADATA_STATE
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -198,7 +199,7 @@ class DashboardService:
             f"{creator_clause}"
             "  OPTIONAL { GRAPH ?g_type { ?iri a ?type } }\n"
             "  OPTIONAL { GRAPH ?g_title { ?iri <http://purl.org/dc/terms/title> ?title } }\n"
-            "  OPTIONAL { GRAPH ?g_state { ?iri <https://w3id.org/fdp/o#metadataState> ?state } }\n"
+            f"  OPTIONAL {{ GRAPH ?g_state {{ ?iri <{FDP_METADATA_STATE}> ?state }} }}\n"
             "} ORDER BY ?iri\n"
             f"LIMIT {int(limit)}\n"
         )
@@ -263,7 +264,7 @@ class DashboardService:
             f"  VALUES ?iri {{ {values_block} }}\n"
             "  OPTIONAL { GRAPH ?g_type { ?iri a ?type } }\n"
             "  OPTIONAL { GRAPH ?g_title { ?iri <http://purl.org/dc/terms/title> ?title } }\n"
-            "  OPTIONAL { GRAPH ?g_state { ?iri <https://w3id.org/fdp/o#metadataState> ?state } }\n"
+            f"  OPTIONAL {{ GRAPH ?g_state {{ ?iri <{FDP_METADATA_STATE}> ?state }} }}\n"
             "}\n"
         )
         items_by_iri = {

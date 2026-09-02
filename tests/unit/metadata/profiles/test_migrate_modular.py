@@ -23,7 +23,7 @@ from fdpneo_server.shared.namespaces import DCT, FDP_RESOURCE_DEFINITION, LDP
 BASE = "http://localhost:8000"
 DCAT = "http://www.w3.org/ns/dcat#"
 NEW_ROOT_CLASS = URIRef(DCAT + "Catalog")
-OLD_ROOT_CLASS = URIRef("https://w3id.org/fdp/o#Repository")
+OLD_ROOT_CLASS = URIRef("https://w3id.org/fdp/fdp-o#Repository")
 NEW_REL = URIRef(DCAT + "dataset")
 OLD_REL = URIRef(DCAT + "catalog")
 RIGHTS = URIRef(f"{BASE}/policies/system-default")

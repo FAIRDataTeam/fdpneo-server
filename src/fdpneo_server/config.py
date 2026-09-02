@@ -665,7 +665,7 @@ class Settings(BaseSettings):
         ),
     )
     fdp_namespace: HttpUrl = Field(
-        default=HttpUrl("https://w3id.org/fdp/o#"),
+        default=HttpUrl("https://w3id.org/fdp/fdp-o#"),
         description=(
             "The IRI for the FDP-specific RDF vocabulary used by this deployment. "
             "Each FDP can publish its own persistent namespace; defaults to the "

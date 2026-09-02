@@ -22,7 +22,7 @@ TGT = "http://localhost:8000"
 
 _ROOT = f"""
 @prefix ldp: <http://www.w3.org/ns/ldp#> .
-@prefix fdp: <https://w3id.org/fdp/o#> .
+@prefix fdp: <https://w3id.org/fdp/fdp-o#> .
 <{SRC}> a fdp:FAIRDataPoint, ldp:Container ; ldp:contains <{SRC}/catalog/c1> .
 """
 _CATALOG = f"""

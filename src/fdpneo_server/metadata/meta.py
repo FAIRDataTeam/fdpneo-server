@@ -51,8 +51,12 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 
-META_SHAPE_IRI = "https://w3id.org/fdp/o#MetaMetadataShape"
-"""IRI of the default meta-metadata SHACL shape."""
+META_SHAPE_IRI = "urn:fdp-shape:meta-metadata"
+"""IRI of the default meta-metadata SHACL shape.
+
+A ``urn:fdp-shape:`` name (matching the ``urn:fdp-schema:`` convention):
+these are server-owned stored artifacts, not vocabulary, so they stay out
+of the FDP Ontology namespace (ADR-0026)."""
 
 FDP_CREATE_OPERATION = FDP_DEFAULT["CreateOperation"]
 FDP_MODIFY_OPERATION = FDP_DEFAULT["ModifyOperation"]

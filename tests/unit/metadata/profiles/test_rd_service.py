@@ -247,7 +247,7 @@ async def test_service_put_validates_against_rd_shape() -> None:
         await service.put(CATALOG)
 
     # Validation ran against the predefined shape and blocked the write.
-    assert validator.calls == ["https://w3id.org/fdp/o#ResourceDefinitionShape"]
+    assert validator.calls == ["urn:fdp-shape:resource-definition"]
     assert store.graphs == {}
 
 
@@ -256,7 +256,7 @@ async def test_service_root_record_iri_uses_name_slug() -> None:
     store = _FakeStore()
     service, _ = _service(store)
     root = ResourceDefinitionRecord(
-        url_prefix="", name="Repository", schema_iri="https://w3id.org/fdp/o#Repository"
+        url_prefix="", name="Repository", schema_iri="https://w3id.org/fdp/fdp-o#Repository"
     )
     assert service.record_iri(root) == _rd_iri("repository")
 

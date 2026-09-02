@@ -12,9 +12,9 @@
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
-@prefix fdp:  <https://w3id.org/fdp/o#> .
+@prefix fdp:  <https://w3id.org/fdp/fdp-o#> .
 
-fdp:MetaMetadataShape
+<urn:fdp-shape:meta-metadata>
     a sh:NodeShape ;
     sh:targetClass prov:Entity ;
     sh:property [

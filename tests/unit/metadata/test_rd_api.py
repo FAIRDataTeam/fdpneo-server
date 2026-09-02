@@ -32,7 +32,7 @@ CATALOG = ResourceDefinitionRecord(
     url_prefix="catalog", name="Catalog", schema_iri=f"{DCAT}Catalog"
 )
 ROOT = ResourceDefinitionRecord(
-    url_prefix="", name="Repository", schema_iri="https://w3id.org/fdp/o#Repository"
+    url_prefix="", name="Repository", schema_iri="https://w3id.org/fdp/fdp-o#Repository"
 )
 
 

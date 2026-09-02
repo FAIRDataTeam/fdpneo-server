@@ -45,18 +45,37 @@ SPDX = Namespace("http://spdx.org/rdf/terms#")
 VOID = Namespace("http://rdfs.org/ns/void#")
 XSD = Namespace("http://www.w3.org/2001/XMLSchema#")
 
-FDP_DEFAULT = Namespace("https://w3id.org/fdp/o#")
+FDP_DEFAULT = Namespace("https://w3id.org/fdp/fdp-o#")
 """Fallback ``fdp:`` namespace when no settings override is configured."""
+
+FDP_LEGACY = Namespace("https://w3id.org/fdp/o#")
+"""The pre-0.16 namespace — a typo for the published FDP Ontology IRI.
+
+``https://w3id.org/fdp/o#`` was never registered on w3id.org (it 404s); the
+FDP Ontology lives at ``https://w3id.org/fdp/fdp-o#``. Kept ONLY so the
+startup vocabulary migration (ADR-0026) can recognise and rewrite stored
+data minted by older releases. Never mint new terms here."""
 
 # --- FDP ontology terms ----------------------------------------------------
 #
-# These are *fixed* vocabulary terms in the published FDP ontology, NOT
-# deployment-configurable. A deployment may rebrand the namespace it mints
-# record/schema IRIs in (``fdp_namespace``), but the ontology terms the FDP
-# itself stamps onto its own machinery records — resource definitions and
-# their child links (ADR-009) — always live at ``https://w3id.org/fdp/o#``,
-# the same way ``META_SHAPE_IRI`` does for meta-metadata. Keeping them here
-# makes the registry the single source of truth for the vocabulary.
+# These are *fixed* vocabulary terms, NOT deployment-configurable. A
+# deployment may rebrand the namespace it mints record/schema IRIs in
+# (``fdp_namespace``), but the terms the FDP itself stamps — the published
+# FDP-O classes/predicates plus FDPneo's lifecycle and resource-definition
+# machinery terms (proposed for FDP-O inclusion, see
+# docs/proposals/fdp-o-additions.md) — always live at the FDP Ontology IRI
+# ``https://w3id.org/fdp/fdp-o#``. Keeping them here makes the registry the
+# single source of truth for the vocabulary.
+
+FDP_FAIRDATAPOINT = FDP_DEFAULT["FAIRDataPoint"]
+"""The FDP root class (published FDP-O term)."""
+
+FDP_METADATA_SERVICE = FDP_DEFAULT["MetadataService"]
+"""Superclass of ``fdp-o:FAIRDataPoint`` (published FDP-O term).
+
+Asserted alongside ``FAIRDataPoint`` on the root record: FDP Index
+validators (e.g. home.fairdatapoint.org) match ``MetadataService``
+literally, with no subclass inference."""
 
 FDP_RESOURCE_DEFINITION = FDP_DEFAULT["ResourceDefinition"]
 """``rdf:type`` of a resource-definition record."""
@@ -167,6 +186,9 @@ __all__ = [
     "FDP_CHILD_TARGET",
     "FDP_CHILD_TITLE",
     "FDP_DEFAULT",
+    "FDP_FAIRDATAPOINT",
+    "FDP_LEGACY",
+    "FDP_METADATA_SERVICE",
     "FDP_NAME",
     "FDP_RELATION_URI",
     "FDP_RESOURCE_DEFINITION",

@@ -114,7 +114,7 @@ async def test_validator_uses_provider_for_validation_decisions() -> None:
 
 @pytest.mark.unit
 async def test_predefined_provider_serves_from_code_without_delegating() -> None:
-    iri = "https://w3id.org/fdp/o#LicenseDocumentShape"
+    iri = "urn:fdp-shape:license-document"
     repo = _FakeRepo()  # store has nothing — simulates an already-applied deployment
     provider = PredefinedShapeProvider(
         predefined={iri: CATALOG_SHAPE_TTL},
@@ -159,7 +159,7 @@ async def test_license_shape_resolves_even_when_unseeded() -> None:
     licence.parse(
         data=(
             "@prefix dct: <http://purl.org/dc/terms/> ."
-            "@prefix fdp: <https://w3id.org/fdp/o#> ."
+            "@prefix fdp: <https://w3id.org/fdp/fdp-o#> ."
             ' <urn:l> a fdp:ManagedLicense ; dct:title "CC BY 4.0" .'
         ),
         format="turtle",

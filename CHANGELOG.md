@@ -5,7 +5,7 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [Unreleased]
+## [0.16.0] — Unreleased
 
 ### Fixed
 
@@ -20,6 +20,34 @@ out explicitly below).
   non-internal record graph in SPARQL, matching REST. SPARQL Update target
   and WHERE-scope resolution got the same determinism fix (ADR-0010 §2
   amended).
+
+### Changed — BREAKING for clients hard-coding the old namespace
+
+- **The FDP vocabulary moves to the published FDP Ontology namespace**
+  (ADR-0026). Every term previously minted under `https://w3id.org/fdp/o#` —
+  a typo that was never registered on w3id.org (it 404s) — now lives at the
+  real FDP-O IRI **`https://w3id.org/fdp/fdp-o#`**: the published terms
+  (`FAIRDataPoint`, `MetadataService`, `Metadata`, `servesMetadata`,
+  `metadataIdentifier`/`Issued`/`Modified`) and FDPneo's lifecycle/machinery
+  terms (`metadataState`, `allowedStateTransition`, `validatedAgainst`, the
+  resource-definition vocabulary, the ADR-0022 affordance link relations),
+  which are drafted as FDP-O additions in `docs/proposals/fdp-o-additions.md`.
+  The four server-owned SHACL shape graphs move to `urn:fdp-shape:*` — they
+  are stored artifacts, not vocabulary. External queries/clients hard-coding
+  the old IRIs must update; the bundled client (≥0.6.5) and MCP sidecar
+  accept both.
+- **Stored data migrates automatically at startup.** An idempotent, in-process
+  vocabulary migration rewrites every old-namespace term across record, meta,
+  machinery, schema and snapshot graphs, renames the shape graphs, then drops
+  the authz cache and rebuilds the search index. A clean store is a fast
+  no-op on every boot. Also available as `fdp vocab migrate [--dry-run]`.
+  This was the direct fix for **home.fairdatapoint.org classifying the FDP
+  as INVALID**: the index requires a subject typed `r3d:Repository` or
+  `fdp-o#MetadataService` (exact match, no inference).
+- **The root record asserts `fdp-o:MetadataService` alongside
+  `fdp-o:FAIRDataPoint`** (provisioning, `migrate-modular` re-type, and the
+  startup migration's backfill), so inference-free FDP Index validators
+  accept the FDP out of the box. Bundled profile version: 0.3.0.
 
 ## [0.15.0] — 2026-09-02
 
