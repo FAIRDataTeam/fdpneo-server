@@ -5,6 +5,33 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [0.15.0] — 2026-09-02
+
+Fixes and features driven by the first real bulk-population of a live
+deployment (fdpneo.semlab-leiden.nl).
+
+### Fixed
+
+- **Language-tagged literals validate.** The bundled shapes constrained
+  `dct:title`/`dct:description`/`dcat:keyword` (and the managed-license
+  title/description) to `xsd:string`, so any `"…"@en` — the normal DCAT-AP /
+  HealthDCAT-AP idiom — failed SHACL on write. They now accept
+  `xsd:string` OR `rdf:langString` via `sh:or`, with `dash:editor
+  *WithLangEditor` hints so the client's form builder renders the fields and
+  lights up its language-aware editors.
+- **Inline blank-node agents validate.** `dct:publisher`/`dct:creator` were
+  `sh:nodeKind sh:IRI` only; the DCAT-AP idiom `[ a foaf:Agent ; foaf:name
+  "…" ]` now validates too (`sh:BlankNodeOrIRI`). IRIs (ROR/ORCID) remain the
+  recommended form.
+- **`fdp profile migrate-modular` now snapshots + re-provisions.** The schema
+  reconciliation wrote updated shapes but skipped `SchemaService.put`'s
+  versioned snapshot and conformance-profile provisioning (ADR-0019 §4), so a
+  migrated deployment kept advertising the pre-change validation artifact at
+  `GET /fdp-api/profiles/{slug}`. It now mirrors the runtime publish path.
+  This is also the documented upgrade command for rolling the relaxed shapes
+  into an existing deployment. Bundled profile version: 0.2.0 (informational —
+  no version gate exists).
+
 ## [0.14.2] — 2026-09-02
 
 ### Fixed

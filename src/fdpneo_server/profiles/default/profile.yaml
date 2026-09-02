@@ -18,7 +18,7 @@ kind: DeploymentProfile
 
 metadata:
   name: default
-  version: 0.1.0
+  version: 0.2.0
   description: Standard FDP profile based on DCAT 3 with FDP extensions.
   authors:
     - name: FDP Contributors

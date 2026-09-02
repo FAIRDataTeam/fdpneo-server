@@ -264,3 +264,23 @@ def test_container_prefer_minimisation(client: TestClient) -> None:
     # The full representation lists the member; the minimal one omits containment.
     assert (root, contains, URIRef(member)) in full_g
     assert (root, contains, URIRef(member)) not in min_g
+
+
+def test_put_accepts_lang_tagged_title_and_blank_node_publisher(client: TestClient) -> None:
+    """DCAT-AP-style records must validate: language-tagged titles (rdf:langString)
+    and inline blank-node agents for dct:publisher are both legal per the
+    relaxed bundled shapes (sh:or string|langString; BlankNodeOrIRI agents)."""
+    iri = f"{BASE_URL}/catalog/lang1"
+    body = (
+        "@prefix dcat: <http://www.w3.org/ns/dcat#> ."
+        "@prefix dct: <http://purl.org/dc/terms/> ."
+        "@prefix foaf: <http://xmlns.com/foaf/0.1/> ."
+        f'<{iri}> a dcat:Catalog ; dct:title "Voorbeeldcatalogus"@nl ; '
+        'dct:publisher [ a foaf:Agent ; foaf:name "Anonieme Organisatie" ] ; '
+        f"dct:isPartOf <{BASE_URL}> ."
+    )
+    created = client.put("/catalog/lang1", content=body, headers={"Content-Type": "text/turtle"})
+    assert created.status_code == 201, created.text
+    served = client.get("/catalog/lang1", headers={"Accept": "text/turtle"}).text
+    assert "@nl" in served
+    assert "Anonieme Organisatie" in served
