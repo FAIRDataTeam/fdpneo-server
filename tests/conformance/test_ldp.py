@@ -284,3 +284,19 @@ def test_put_accepts_lang_tagged_title_and_blank_node_publisher(client: TestClie
     served = client.get("/catalog/lang1", headers={"Accept": "text/turtle"}).text
     assert "@nl" in served
     assert "Anonieme Organisatie" in served
+
+
+def test_create_with_prefer_published_is_honored(client: TestClient) -> None:
+    """ADR-0010 §4 amendment: a creating PUT may ask for PUBLISHED via Prefer;
+    the 201 echoes Preference-Applied and the in-band birth-state header."""
+    iri = f"{BASE_URL}/catalog/born-public"
+    r = client.put(
+        "/catalog/born-public",
+        content=_catalog(iri),
+        headers={"Content-Type": "text/turtle", "Prefer": "publication-state=PUBLISHED"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.headers["FDP-Metadata-State"] == "PUBLISHED"
+    assert r.headers["Preference-Applied"] == "publication-state=PUBLISHED"
+    meta = client.get("/catalog/born-public/meta", headers={"Accept": "text/turtle"})
+    assert "PUBLISHED" in meta.text

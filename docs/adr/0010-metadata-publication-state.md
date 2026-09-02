@@ -39,6 +39,23 @@ Any other transition, and a no-op same-state request, is `409`. "Owner" is not a
 
 **4. New records default to `DRAFT`; bootstrap/profile-seeded records are `PUBLISHED`.** A record created through the LDP layer starts life as `DRAFT` so a curator can work on it before exposing it. Records written by the profile applier — the root Repository container and any seed records — are seeded `PUBLISHED`, because the root must be anonymously readable for the FDP to be usable at all. State is preserved across ordinary content edits: a `PUT`/`PATCH` that changes a record's triples does **not** reset its state — only the transition API changes it (mirroring how `dct:created` and the creator are preserved across modifications).
 
+*Amendment (2026-09, v0.15):* a creating `PUT`/`POST` MAY carry
+`Prefer: publication-state=PUBLISHED` to mint the record already visible.
+This is an authorized shortcut through the same state machine, not a bypass:
+creation already required a PDP `modify` permit on the IRI, and
+`DRAFT → PUBLISHED` is owner-or-admin — the creator *is* the owner — so the
+create-permit subsumes the publish-permit. The default stays `DRAFT`; the
+preference is ignored on updates; `ARCHIVED` is rejected. This differs from
+the `write_imported` "CLI-only, never an HTTP flag" stance deliberately:
+that rule protects *provenance* (server-stamped, un-gameable by clients),
+whereas publication state is client-managed by design — the transition API
+already lets the same caller reach the same state one request later. Every
+201 now also carries an `FDP-Metadata-State` header (and
+`Preference-Applied` when the preference was honored), so API clients see
+the birth state instead of discovering `DRAFT` when the record 404s for
+everyone else. Motivated by bulk API population of a live deployment, where
+each 201 was followed by an invisible record and no signal why.
+
 ## Alternatives considered
 
 **Thread state into `authorize()` / the `authz_index` cache (the literal task wording).** Rejected. It couples an orthogonal, frequently-changing attribute to the policy cache. Either the cache key grows a state column (and every lookup must know the current state first — so you read state anyway), or every transition must invalidate all of a record's cached decisions across all subjects. Both add machinery to get a result the layered gate gives for free, and both create a second place where "is this visible" is decided. The layered approach also keeps the ODRL evaluator a pure function of Offer + context + action, which ADR-0006 relies on.

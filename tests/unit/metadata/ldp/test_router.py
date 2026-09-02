@@ -1303,3 +1303,87 @@ async def test_put_strips_client_profile_conformsto_keeps_external() -> None:
     conforms = set(adapter.graphs[RECORD_IRI].objects(URIRef(RECORD_IRI), DCT.conformsTo))
     # Server profile replaces the client's managed-namespace one; external stays.
     assert conforms == {URIRef(_PROFILE_IRI), URIRef(external)}
+
+
+# --- create-as-published (ADR-0010 §4 amendment) -----------------------------
+
+
+@pytest.mark.unit
+async def test_put_create_with_prefer_published_mints_published() -> None:
+    """`Prefer: publication-state=PUBLISHED` on a creating PUT mints the record
+    visible, echoes Preference-Applied, and states the birth state in-band."""
+    repo, _ = _make_repo()
+    app = _build_app(repo=repo, pdp=FakePDP())
+    body = f'<{RECORD_IRI}> <{DCT.title}> "born public" .'.encode()
+    with TestClient(app) as client:
+        response = client.put(
+            RECORD_PATH,
+            content=body,
+            headers={"content-type": N_TRIPLES, "prefer": "publication-state=PUBLISHED"},
+        )
+
+    assert response.status_code == 201
+    assert response.headers["FDP-Metadata-State"] == "PUBLISHED"
+    assert response.headers["Preference-Applied"] == "publication-state=PUBLISHED"
+    meta = await repo.get_meta(RECORD_IRI)
+    assert (URIRef(RECORD_IRI), FDP_METADATA_STATE, Literal("PUBLISHED")) in meta
+
+
+@pytest.mark.unit
+async def test_put_create_default_stays_draft_and_signals_state() -> None:
+    """Without the preference the ADR-0010 DRAFT default holds — but the 201 now
+    says so in-band instead of leaving API clients to discover it via 404s."""
+    repo, _ = _make_repo()
+    app = _build_app(repo=repo, pdp=FakePDP())
+    body = f'<{RECORD_IRI}> <{DCT.title}> "draft by default" .'.encode()
+    with TestClient(app) as client:
+        response = client.put(RECORD_PATH, content=body, headers={"content-type": N_TRIPLES})
+
+    assert response.status_code == 201
+    assert response.headers["FDP-Metadata-State"] == "DRAFT"
+    assert "Preference-Applied" not in response.headers
+    meta = await repo.get_meta(RECORD_IRI)
+    assert (URIRef(RECORD_IRI), FDP_METADATA_STATE, Literal("DRAFT")) in meta
+
+
+@pytest.mark.unit
+async def test_put_create_with_unknown_publication_state_is_400() -> None:
+    repo, _ = _make_repo()
+    app = _build_app(repo=repo, pdp=FakePDP())
+    body = f'<{RECORD_IRI}> <{DCT.title}> "x" .'.encode()
+    with TestClient(app) as client:
+        response = client.put(
+            RECORD_PATH,
+            content=body,
+            headers={"content-type": N_TRIPLES, "prefer": "publication-state=VISIBLE"},
+        )
+    assert response.status_code == 400
+    assert response.json()["code"] == "fdp.bad_request"
+
+
+@pytest.mark.unit
+async def test_put_update_ignores_publication_state_preference() -> None:
+    """State is managed solely by the transition API once a record exists — an
+    update carrying the preference neither publishes nor errors."""
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)  # meta writer stamps DRAFT
+    current = await repo.get_graph(RECORD_IRI)
+    etag = compute_etag(current)
+
+    app = _build_app(repo=repo, pdp=FakePDP())
+    body = f'<{RECORD_IRI}> <{DCT.title}> "updated" .'.encode()
+    with TestClient(app) as client:
+        response = client.put(
+            RECORD_PATH,
+            content=body,
+            headers={
+                "content-type": N_TRIPLES,
+                "if-match": f'"{etag}"',
+                "prefer": "publication-state=PUBLISHED",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Preference-Applied" not in response.headers
+    meta = await repo.get_meta(RECORD_IRI)
+    assert (URIRef(RECORD_IRI), FDP_METADATA_STATE, Literal("DRAFT")) in meta

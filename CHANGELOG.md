@@ -10,6 +10,17 @@ out explicitly below).
 Fixes and features driven by the first real bulk-population of a live
 deployment (fdpneo.semlab-leiden.nl).
 
+### Added
+
+- **Create-as-published** (ADR-0010 §4 amendment): a creating `PUT`/`POST`
+  may carry `Prefer: publication-state=PUBLISHED` to mint the record visible
+  immediately — an authorized shortcut through the same state machine, since
+  the create's PDP `modify` permit subsumes the owner-side publish permit.
+  The default stays DRAFT; the preference is ignored on updates. Every 201
+  now carries an `FDP-Metadata-State` header (plus `Preference-Applied` when
+  honored), so bulk API loaders see the birth state instead of discovering
+  DRAFT when their records 404 for everyone else.
+
 ### Fixed
 
 - **Language-tagged literals validate.** The bundled shapes constrained

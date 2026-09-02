@@ -61,6 +61,7 @@ from fdpneo_server.metadata.signposting import (
     render_link_header,
     signposting_links,
 )
+from fdpneo_server.metadata.states import DEFAULT_STATE, MetadataState
 from fdpneo_server.policy.model import Action, Outcome
 from fdpneo_server.shared.context import RequestContext
 from fdpneo_server.shared.errors import (
@@ -482,8 +483,15 @@ def build_ldp_router(
         validated_against = await _stamp_conformance(new_graph, iri, registry.shape_for(iri))
         # Stamp this record's own Direct Container config if it's a container type.
         _stamp_container_config(new_graph, iri)
+        # Creation honors Prefer: publication-state=… (ignored on update — the
+        # meta builder preserves the prior state across content edits).
+        initial_state = _requested_initial_state(request) if not resource_exists else DEFAULT_STATE
         etag = await repo.put_graph(
-            iri, new_graph, subject=ctx.subject, validated_against=validated_against
+            iri,
+            new_graph,
+            subject=ctx.subject,
+            initial_state=initial_state,
+            validated_against=validated_against,
         )
         # Maintain the parent's forward containment links from the child's
         # dct:isPartOf (compensates the child write on failure).
@@ -499,6 +507,11 @@ def build_ldp_router(
         headers = _response_headers(etag, registry.is_container(iri))
         if not resource_exists:
             headers["Location"] = iri
+            # Make the birth state visible in-band: API clients kept discovering
+            # the DRAFT default only when the record 404'd for everyone else.
+            headers[_STATE_HEADER] = initial_state.value
+            if initial_state is not DEFAULT_STATE:
+                headers["Preference-Applied"] = f"{_PUBLICATION_STATE_PREF}={initial_state.value}"
             await _publish(
                 RecordCreated(
                     record_iri=iri,
@@ -559,8 +572,13 @@ def build_ldp_router(
             member_graph, member_iri, registry.member_shape(container_iri)
         )
         _stamp_container_config(member_graph, member_iri)
+        initial_state = _requested_initial_state(request)
         etag = await repo.put_graph(
-            member_iri, member_graph, subject=ctx.subject, validated_against=validated_against
+            member_iri,
+            member_graph,
+            subject=ctx.subject,
+            initial_state=initial_state,
+            validated_against=validated_against,
         )
         parent_events = await _maintain_membership(
             child_iri=member_iri,
@@ -582,6 +600,9 @@ def build_ldp_router(
             await _publish(event)
         headers = _response_headers(etag, is_container=False)
         headers["Location"] = member_iri
+        headers[_STATE_HEADER] = initial_state.value
+        if initial_state is not DEFAULT_STATE:
+            headers["Preference-Applied"] = f"{_PUBLICATION_STATE_PREF}={initial_state.value}"
         return Response(status_code=201, headers=headers)
 
     @router.patch("/{path:path}", name="ldp_patch")
@@ -757,6 +778,45 @@ def _parse_body(request: Request, body: bytes, *, base: str) -> Graph:
         return parse_rdf(body, ctype, base=base)
     except Exception as err:  # rdflib raises a variety of parse errors
         raise BadRequest(f"could not parse {ctype} body: {err}") from err
+
+
+_PUBLICATION_STATE_PREF = "publication-state"
+_STATE_HEADER = "FDP-Metadata-State"
+
+
+def _requested_initial_state(request: Request) -> MetadataState:
+    """The publication state a *create* should mint the record in (ADR-0010 §4).
+
+    ``Prefer: publication-state=PUBLISHED`` on a creating PUT/POST asks the
+    server to make the record visible immediately, instead of the DRAFT
+    default that bulk API loaders kept tripping over (201 → record 404s for
+    everyone else). No second authorization pass is needed: the create itself
+    already required a PDP MODIFY permit on this IRI, and the DRAFT→PUBLISHED
+    transition is owner-or-admin — the creator *is* the owner. Callers apply
+    this only on creation; an existing record's state is managed solely via
+    ``POST /fdp-api/{path}/state`` (and the meta builder ignores
+    ``initial_state`` on updates regardless).
+    """
+    for raw in request.headers.getlist("prefer"):
+        for pref in raw.split(","):
+            name, _, value = pref.strip().partition("=")
+            if name.strip().lower() != _PUBLICATION_STATE_PREF:
+                continue
+            cleaned = value.strip().strip('"').upper()
+            try:
+                state = MetadataState(cleaned)
+            except ValueError as err:
+                raise BadRequest(
+                    f"unknown publication-state preference: {value.strip()!r}",
+                    details={"allowed": [MetadataState.DRAFT.value, MetadataState.PUBLISHED.value]},
+                ) from err
+            if state is MetadataState.ARCHIVED:
+                raise BadRequest(
+                    "a record cannot be created ARCHIVED",
+                    details={"allowed": [MetadataState.DRAFT.value, MetadataState.PUBLISHED.value]},
+                )
+            return state
+    return DEFAULT_STATE
 
 
 def _enforce_if_match(request: Request, current: Graph, *, required: bool) -> None:

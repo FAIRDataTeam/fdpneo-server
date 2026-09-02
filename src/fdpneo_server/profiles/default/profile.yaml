@@ -58,7 +58,12 @@ metaMetadataSchema:
   path: schemas/meta-metadata.ttl
 
 # ODRL Offer templates. The system-default Offer is referenced by the
-# Repository's dct:rights so unscoped records inherit it.
+# Repository's dct:rights, and records without their own dct:rights resolve to
+# it via the dct:isPartOf inheritance walk. NOTE: the ODRL offer is only half
+# of read visibility — publication state gates first (ADR-0010): a DRAFT
+# record is 404 to everyone but its owner/admin even when the in-force offer
+# permits anonymous read. LDP-created records start DRAFT unless created with
+# `Prefer: publication-state=PUBLISHED`; publish via POST /fdp-api/{path}/state.
 offers:
   - id: system-default
     path: offers/public-read-steward-modify.ttl
