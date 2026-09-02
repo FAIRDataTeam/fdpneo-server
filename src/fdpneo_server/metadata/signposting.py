@@ -35,7 +35,7 @@ from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
 from fdpneo_server.shared.graphs import record_graph_uri
-from fdpneo_server.shared.namespaces import ADMS, DCT, LDP, OWL, SKOS
+from fdpneo_server.shared.namespaces import ADMS, DCT, FDP_DEFAULT, LDP, OWL, SKOS
 
 # Hosts whose IRIs are recognised persistent-identifier resolvers, plus the
 # ``ark:`` scheme (handled separately). Used to decide whether a client-supplied
@@ -51,11 +51,11 @@ MAX_LINKS = 30
 
 # FDP-O extension relation types for in-band affordance advertisement
 # (ADR-0022 §2). These always live at the published ontology IRI
-# ``https://w3id.org/fdp/o#`` — never the deployment-rebranded ``fdp:`` namespace
-# — so a harvester recognises them regardless of local branding. They are opaque
-# extension rels (RFC 8288 §2.1.2); if the FDP-O WG standardizes equivalents a
-# later ADR swaps the IRIs, a compatible substitution for conforming clients.
-_FDP_O = "https://w3id.org/fdp/o#"
+# ``https://w3id.org/fdp/fdp-o#`` — never the deployment-rebranded ``fdp:``
+# namespace — so a harvester recognises them regardless of local branding. They
+# are opaque extension rels (RFC 8288 §2.1.2), proposed for FDP-O inclusion
+# (docs/proposals/fdp-o-additions.md, ADR-0026).
+_FDP_O = str(FDP_DEFAULT)
 REL_HAS_META_METADATA = _FDP_O + "hasMetaMetadata"
 REL_HAS_SPEC = _FDP_O + "hasSpec"
 REL_HAS_EXPANDED_VIEW = _FDP_O + "hasExpandedView"

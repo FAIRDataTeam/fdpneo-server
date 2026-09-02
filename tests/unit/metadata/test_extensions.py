@@ -46,7 +46,7 @@ from fdpneo_server.shared.errors import register_exception_handlers
 
 BASE_URL = "http://localhost:8000"
 
-REPO_SCHEMA = "https://w3id.org/fdp/o#Repository"
+REPO_SCHEMA = "https://w3id.org/fdp/fdp-o#Repository"
 CATALOG_SCHEMA = "http://www.w3.org/ns/dcat#Catalog"
 DATASET_SCHEMA = "http://www.w3.org/ns/dcat#Dataset"
 DCAT_CATALOG = "http://www.w3.org/ns/dcat#catalog"

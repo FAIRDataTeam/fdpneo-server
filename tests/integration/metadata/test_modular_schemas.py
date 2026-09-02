@@ -36,7 +36,7 @@ from fdpneo_server.shared.namespaces import DCAT, DCT, SH
 DEFAULT_PROFILE = bundled_default_profile()
 OXIGRAPH_PORT = 7878
 BASE_URL = "http://testserver"
-FDP_FAIRDATAPOINT = URIRef("https://w3id.org/fdp/o#FAIRDataPoint")
+FDP_FAIRDATAPOINT = URIRef("https://w3id.org/fdp/fdp-o#FAIRDataPoint")
 
 pytestmark = pytest.mark.integration
 
@@ -215,7 +215,7 @@ def test_root_is_a_fairdatapoint_direct_container(app_env: None) -> None:
         assert (
             root,
             LDP.hasMemberRelation,
-            URIRef("https://w3id.org/fdp/o#servesMetadata"),
+            URIRef("https://w3id.org/fdp/fdp-o#servesMetadata"),
         ) in g
         # The container advertises its type + shape via Link headers.
         link = c.as_anonymous().get("/", headers={"Accept": "text/turtle"}).headers["Link"]

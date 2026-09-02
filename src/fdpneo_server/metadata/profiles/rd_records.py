@@ -53,7 +53,7 @@ from fdpneo_server.shared.namespaces import (
 
 # Fixed IRI of the predefined shape, like META_SHAPE_IRI. Not deployment-
 # configurable — see the FDP-ontology-terms note in shared.namespaces.
-RD_SHAPE_IRI = "https://w3id.org/fdp/o#ResourceDefinitionShape"
+RD_SHAPE_IRI = "urn:fdp-shape:resource-definition"
 
 
 # --- record dataclasses ----------------------------------------------------
@@ -213,9 +213,9 @@ _SHAPE_TTL = """\
 @prefix sh:  <http://www.w3.org/ns/shacl#> .
 @prefix ldp: <http://www.w3.org/ns/ldp#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix fdp: <https://w3id.org/fdp/o#> .
+@prefix fdp: <https://w3id.org/fdp/fdp-o#> .
 
-fdp:ResourceDefinitionShape
+<urn:fdp-shape:resource-definition>
     a sh:NodeShape ;
     sh:targetClass fdp:ResourceDefinition ;
     sh:property [
@@ -246,10 +246,10 @@ fdp:ResourceDefinitionShape
         sh:name "child link" ;
         sh:description "Typed link to a child resource definition." ;
         sh:nodeKind sh:BlankNodeOrIRI ;
-        sh:node fdp:ChildLinkShape ;
+        sh:node <urn:fdp-shape:child-link> ;
     ] .
 
-fdp:ChildLinkShape
+<urn:fdp-shape:child-link>
     a sh:NodeShape ;
     sh:property [
         sh:path fdp:relationUri ;

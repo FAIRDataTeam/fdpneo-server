@@ -73,9 +73,9 @@ resourceDefinitions:
 
 OLD_REPOSITORY_SHAPE = """\
 @prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix fdp: <https://w3id.org/fdp/o#> .
+@prefix fdp: <https://w3id.org/fdp/fdp-o#> .
 @prefix dct: <http://purl.org/dc/terms/> .
-<https://w3id.org/fdp/o#Repository>
+<https://w3id.org/fdp/fdp-o#Repository>
     a sh:NodeShape ; sh:targetClass fdp:Repository ;
     sh:property [ sh:path dct:title ; sh:minCount 1 ] .
 """

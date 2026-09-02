@@ -46,7 +46,7 @@ from rdflib.compare import isomorphic
 from rdflib.namespace import OWL, RDF
 
 from fdpneo_server.metadata.prof import provision_profile
-from fdpneo_server.metadata.profiles.applier import direct_container_config
+from fdpneo_server.metadata.profiles.applier import direct_container_config, root_type_iris
 from fdpneo_server.metadata.profiles.iri import IRIExpander, expand_schema_refs, schema_slug
 from fdpneo_server.metadata.profiles.rd_records import (
     ResourceDefinitionParseError,
@@ -223,6 +223,7 @@ async def _retype_root(
 
     repo_iri = expander.base_url
     new_class = URIRef(expander.schema_iri(root_entry.schema_id))
+    new_types = {URIRef(t) for t in root_type_iris(str(new_class))}
     new_relations = [c.relation_uri for c in root_rd.children]
 
     graph = await repository.get_graph(repo_iri)
@@ -232,7 +233,7 @@ async def _retype_root(
     subject = URIRef(repo_iri)
     domain_types = {t for t in graph.objects(subject, RDF.type) if t not in _LDP_TYPES}
     current_relations = set(graph.objects(subject, LDP.hasMemberRelation))
-    if domain_types == {new_class} and current_relations == {URIRef(r) for r in new_relations}:
+    if domain_types == new_types and current_relations == {URIRef(r) for r in new_relations}:
         report.root_already_current = True
         return
 
@@ -245,7 +246,8 @@ async def _retype_root(
     graph.remove((subject, RDF.type, LDP.Container))
     for predicate in _MEMBERSHIP_PREDICATES:
         graph.remove((subject, predicate, None))
-    graph.add((subject, RDF.type, new_class))
+    for new_type in new_types:
+        graph.add((subject, RDF.type, new_type))
     for triple in direct_container_config(subject, new_relations):
         graph.add(triple)
 

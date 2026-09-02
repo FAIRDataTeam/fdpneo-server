@@ -44,7 +44,7 @@ def _local_name(identifier: str) -> str:
     """The terminal name of a CURIE or absolute IRI.
 
     ``dcat:Catalog`` → ``Catalog``; ``http://www.w3.org/ns/dcat#Catalog`` →
-    ``Catalog``; ``https://w3id.org/fdp/o#Repository`` → ``Repository``.
+    ``Catalog``; ``https://w3id.org/fdp/fdp-o#Repository`` → ``Repository``.
     Fragment (``#``) and path (``/``) win over the CURIE colon so an absolute
     IRI's scheme (``http:``) is never mistaken for a prefix.
     """

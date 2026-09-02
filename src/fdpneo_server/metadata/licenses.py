@@ -64,7 +64,7 @@ _SPARQL_JSON: Final = "application/sparql-results+json"
 # IRI at validation time, so the descriptive contract (a ``dct:title``, an IRI
 # ``dct:source`` if present) is enforced uniformly regardless of whether the
 # document also declares ``dct:LicenseDocument`` / ``odrl:Set`` / etc.
-LICENSE_SHAPE_IRI: Final = "https://w3id.org/fdp/o#LicenseDocumentShape"
+LICENSE_SHAPE_IRI: Final = "urn:fdp-shape:license-document"
 FDP_MANAGED_LICENSE: Final = FDP_DEFAULT["ManagedLicense"]
 
 _LICENSE_SHAPE_TTL: Final = """\
@@ -72,9 +72,9 @@ _LICENSE_SHAPE_TTL: Final = """\
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix fdp: <https://w3id.org/fdp/o#> .
+@prefix fdp: <https://w3id.org/fdp/fdp-o#> .
 
-fdp:LicenseDocumentShape
+<urn:fdp-shape:license-document>
     a sh:NodeShape ;
     sh:targetClass fdp:ManagedLicense ;
     sh:property [

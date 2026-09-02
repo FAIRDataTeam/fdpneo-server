@@ -66,7 +66,15 @@ from fdpneo_server.metadata.profiles.validator import (
 from fdpneo_server.metadata.states import SEED_STATE
 from fdpneo_server.shared.errors import BadRequest, Conflict, FDPError
 from fdpneo_server.shared.graphs import policy_graph_uri, resource_definition_graph_uri
-from fdpneo_server.shared.namespaces import DCAT, DCT, LDP, ODRL, VOID
+from fdpneo_server.shared.namespaces import (
+    DCAT,
+    DCT,
+    FDP_FAIRDATAPOINT,
+    FDP_METADATA_SERVICE,
+    LDP,
+    ODRL,
+    VOID,
+)
 from fdpneo_server.shared.reserved import RESERVED_API_PATH
 
 if TYPE_CHECKING:
@@ -448,6 +456,20 @@ def _find_system_default_offer(
     return None
 
 
+def root_type_iris(type_iri: str) -> tuple[str, ...]:
+    """The full ``rdf:type`` set the root record is stamped with.
+
+    When the root class is ``fdp-o:FAIRDataPoint``, ``fdp-o:MetadataService``
+    is asserted alongside it: FAIRDataPoint ⊑ MetadataService in FDP-O, and
+    FDP Index validators (home.fairdatapoint.org) match ``MetadataService``
+    literally with no subclass inference — without the extra triple the FDP
+    is classified INVALID by the index.
+    """
+    if type_iri == str(FDP_FAIRDATAPOINT):
+        return (type_iri, str(FDP_METADATA_SERVICE))
+    return (type_iri,)
+
+
 def _repository_graph(
     *,
     iri: str,
@@ -475,7 +497,8 @@ def _repository_graph(
     """
     subject = URIRef(iri)
     graph = Graph()
-    graph.add((subject, RDF.type, URIRef(type_iri)))
+    for root_type in root_type_iris(type_iri):
+        graph.add((subject, RDF.type, URIRef(root_type)))
     graph.add((subject, DCT.title, Literal(title)))
     if rights_iri is not None:
         graph.add((subject, DCT.rights, URIRef(rights_iri)))

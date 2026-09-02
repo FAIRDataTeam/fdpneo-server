@@ -457,6 +457,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.search_indexer.start(app.state.event_bus)
     app.state.index_pinger.start(app.state.event_bus)
     await _maybe_auto_bootstrap(app)
+    await _migrate_vocabulary_if_needed(app)
     await _warm_anonymous_authz_cache(app)
     await _verify_store_conformance(app)
 
@@ -1146,6 +1147,53 @@ async def _warm_authz(app: FastAPI, iris: list[str]) -> None:
         targets=len(iris),
         warmed=warmed,
         elapsed_ms=int((time.perf_counter() - start) * 1000),
+    )
+
+
+async def _migrate_vocabulary_if_needed(app: FastAPI) -> None:
+    """Run the one-time FDP vocabulary migration at startup (ADR-0026).
+
+    Rewrites stored graphs still using the pre-0.16 ``https://w3id.org/fdp/o#``
+    namespace to the published FDP Ontology IRI (and the server-owned shape
+    graphs to ``urn:fdp-shape:*``). Runs before the authz warmup and the store
+    conformance check, while every in-process cache (SHACL validator, RD
+    registry) is still cold — so nothing serves stale IRIs afterwards.
+
+    Idempotent: a store with no old-namespace term is a fast no-op. When
+    anything changed, the authz cache is dropped (it references old shape
+    graph URIs) and the search index rebuilt (``type_iri`` rows hold rewritten
+    class IRIs).
+    """
+    from fdpneo_server.metadata.search.reindex import reindex_all
+    from fdpneo_server.metadata.vocab_migration import migrate_vocabulary
+
+    settings = get_settings()
+    try:
+        report = await migrate_vocabulary(
+            adapter=app.state.triplestore,
+            root_iri=settings.resolved_identifier_base,
+        )
+    except Exception as err:  # pragma: no cover - startup resilience
+        # Failing the whole boot on a migration error would take down a
+        # deployment that may be perfectly serviceable (e.g. a fresh store
+        # briefly unreachable); the store conformance check right after will
+        # catch a genuinely broken store. Old-namespace data simply stays put
+        # until the next boot or a manual `fdp vocab migrate`.
+        log.error("vocab_migration_failed", error=repr(err))
+        return
+    if not report.changed:
+        return
+    invalidated = await app.state.pdp.invalidate_all()
+    indexed = await reindex_all(
+        app.state.triplestore,
+        app.state.session_factory,
+        language=settings.search.default_language,
+        system_default_offer_iri=app.state.system_default_offer_iri,
+    )
+    log.info(
+        "vocab_migration_derived_state_rebuilt",
+        authz_rows_invalidated=invalidated,
+        search_rows_indexed=indexed,
     )
 
 

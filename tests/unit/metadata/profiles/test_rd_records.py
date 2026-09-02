@@ -77,7 +77,7 @@ def test_round_trip_root_record() -> None:
     root = ResourceDefinitionRecord(
         url_prefix="",
         name="Repository",
-        schema_iri="https://w3id.org/fdp/o#Repository",
+        schema_iri="https://w3id.org/fdp/fdp-o#Repository",
         children=(
             ChildLinkRecord(
                 relation_uri="http://www.w3.org/ns/dcat#catalog",

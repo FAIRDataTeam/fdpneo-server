@@ -223,7 +223,7 @@ async def test_apply_writes_graphs_and_marker(
     # Repository seed lives at the API root (the configured base_url).
     repo_iri = str(settings.base_url).rstrip("/")
     # The predefined RD shape and the root RD record were written too.
-    rd_shape_iri = "https://w3id.org/fdp/o#ResourceDefinitionShape"
+    rd_shape_iri = "urn:fdp-shape:resource-definition"
     rd_record_iri = f"{repo_iri}/fdp-api/resource-definitions/repository"
     for iri in (schema_iri, offer_iri, repo_iri, rd_shape_iri, rd_record_iri):
         assert await adapter.ask(f"ASK {{ GRAPH <{iri}> {{ ?s ?p ?o }} }}") is True

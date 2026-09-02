@@ -94,18 +94,18 @@ the API description in the RFC 8288 `Link` header, so a generic client reaches
 them by link-following rather than URL-template convention or OpenAPI
 ([ADR-0022](../adr/0022-in-band-affordance-advertisement.md)). These use FAIR
 Signposting Level-1 relations plus FDP-O extension relation IRIs under
-`https://w3id.org/fdp/o#` (provisional, pending FDP-O WG harmonization — being
+`https://w3id.org/fdp/fdp-o#` (provisional, pending FDP-O WG harmonization — being
 opaque extension rels, a later IRI substitution is compatible):
 
 | Relation | Target | Emitted on |
 |---|---|---|
 | `cite-as`, `describedby`, `type`, `license`, `author`, `item`, `collection` | FAIR Signposting Level 1 (ADR-0017) | every record `GET`/`HEAD` |
-| `https://w3id.org/fdp/o#hasMetaMetadata` | `<record>/meta` | every record |
-| `https://w3id.org/fdp/o#hasSpec` | `<record>/spec` (instance) + `<base>/<urlPrefix>/spec` (type) | records of a declared type |
-| `https://w3id.org/fdp/o#hasExpandedView` | `<record>/expanded` | records of a declared type |
-| `https://w3id.org/fdp/o#hasStateTransition` | `<record>/state` | records of a declared type |
-| `https://w3id.org/fdp/o#hasMemberPage` | `<record>/page/{childPrefix}` (per child type) | container records |
-| `service-desc`, `service-doc`, `https://w3id.org/fdp/o#hasResourceDefinitions` | `/fdp-api/openapi.json`, `/fdp-api/docs`, `/fdp-api/resource-definitions` | the root FDP record only |
+| `https://w3id.org/fdp/fdp-o#hasMetaMetadata` | `<record>/meta` | every record |
+| `https://w3id.org/fdp/fdp-o#hasSpec` | `<record>/spec` (instance) + `<base>/<urlPrefix>/spec` (type) | records of a declared type |
+| `https://w3id.org/fdp/fdp-o#hasExpandedView` | `<record>/expanded` | records of a declared type |
+| `https://w3id.org/fdp/fdp-o#hasStateTransition` | `<record>/state` | records of a declared type |
+| `https://w3id.org/fdp/fdp-o#hasMemberPage` | `<record>/page/{childPrefix}` (per child type) | container records |
+| `service-desc`, `service-doc`, `https://w3id.org/fdp/fdp-o#hasResourceDefinitions` | `/fdp-api/openapi.json`, `/fdp-api/docs`, `/fdp-api/resource-definitions` | the root FDP record only |
 
 Affordance/API-description links are advertised **unconditionally** — the link
 names the affordance; the PDP still authorizes each request (a `/state` link on a

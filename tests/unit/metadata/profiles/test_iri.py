@@ -37,7 +37,7 @@ def _expander() -> IRIExpander:
         ("dcat:DataService", "data-service"),  # camelCase → kebab
         ("dcat:Distribution", "distribution"),
         ("http://www.w3.org/ns/dcat#Catalog", "catalog"),  # absolute, fragment
-        ("https://w3id.org/fdp/o#Repository", "repository"),
+        ("https://w3id.org/fdp/fdp-o#Repository", "repository"),
         ("http://example.org/schema/MyType", "my-type"),  # absolute, path
     ],
 )

@@ -28,7 +28,7 @@ def _cache(*items: ResourceDefinition) -> ResourceDefinitionCache:
 _REPO_RD = ResourceDefinition(
     url_prefix="",
     name="Repository",
-    schema_iri="https://w3id.org/fdp/o#Repository",
+    schema_iri="https://w3id.org/fdp/fdp-o#Repository",
     children=(
         ChildLinkInfo(
             relation_uri="http://www.w3.org/ns/dcat#catalog",

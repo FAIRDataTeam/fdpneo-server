@@ -87,7 +87,7 @@ def _shape(class_iri: str, prefixes: str) -> str:
 
 
 REPOSITORY_SHAPE = _shape(
-    "https://w3id.org/fdp/o#Repository", "@prefix fdp: <https://w3id.org/fdp/o#> ."
+    "https://w3id.org/fdp/fdp-o#Repository", "@prefix fdp: <https://w3id.org/fdp/fdp-o#> ."
 )
 CATALOG_SHAPE = _shape(
     "http://www.w3.org/ns/dcat#Catalog", "@prefix dcat: <http://www.w3.org/ns/dcat#> ."
