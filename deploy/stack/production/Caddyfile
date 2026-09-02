@@ -11,7 +11,15 @@
 }
 
 {$PUBLIC_HOST} {
-	encode zstd gzip
+	# Compress ONLY the SPA's hashed static assets. Caddy's encode handler
+	# rewrites ETags on compressed responses ("abc" → "abc-zstd"), and the
+	# FDP's optimistic-concurrency contract round-trips ETags via If-Match —
+	# a rewritten ETag makes every edit fail with "If-Match does not match
+	# the current resource ETag". Assets are content-hashed and never
+	# edited, so they are the one place compression is safe (and the only
+	# place it pays: the JS bundles).
+	@compressible path /assets/*
+	encode @compressible zstd gzip
 
 	header {
 		Strict-Transport-Security "max-age=63072000; includeSubDomains"
@@ -31,6 +39,14 @@
 	# --- the API: everything the server namespaces under /fdp-api ------------
 	handle /fdp-api/* {
 		reverse_proxy server:8000
+	}
+
+	# --- SPA OIDC callback ------------------------------------------------------
+	# The client's redirect_uri is <origin>/auth/callback — an SPA route, NOT a
+	# Keycloak path. It must be matched before the /auth/* Keycloak route or
+	# login never completes. (Found by the semlab-leiden deployment.)
+	handle /auth/callback {
+		reverse_proxy client:80
 	}
 
 	# --- Keycloak under /auth (KC_HTTP_RELATIVE_PATH) -------------------------

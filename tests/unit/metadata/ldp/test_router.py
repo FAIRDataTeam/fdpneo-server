@@ -642,6 +642,48 @@ async def test_put_replace_with_matching_if_match_succeeds() -> None:
 
 
 @pytest.mark.unit
+async def test_put_replace_accepts_proxy_coding_suffixed_if_match() -> None:
+    """A compressing edge rewrites the ETag on the wire ("abc" → "abc-zstd" for
+    Caddy's encode, "abc-gzip" for Apache mod_deflate); the client faithfully
+    round-trips what it saw, so If-Match arrives suffixed. The comparison must
+    tolerate a known coding suffix — seen live: every edit 412'd behind Caddy."""
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+    current = await repo.get_graph(RECORD_IRI)
+    etag = compute_etag(current)
+
+    app = _build_app(repo=repo, pdp=FakePDP())
+    body = f'<{RECORD_IRI}> <{DCT.title}> "updated" .'.encode()
+    with TestClient(app) as client:
+        response = client.put(
+            RECORD_PATH,
+            content=body,
+            headers={"content-type": N_TRIPLES, "if-match": f'"{etag}-zstd"'},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.unit
+async def test_put_replace_with_stale_suffixed_if_match_still_412s() -> None:
+    """Tolerating the coding suffix must not weaken concurrency: a *stale* ETag
+    with a coding suffix is still rejected."""
+    repo, _ = _make_repo()
+    await _seed_record(repo, RECORD_IRI)
+
+    app = _build_app(repo=repo, pdp=FakePDP())
+    body = f'<{RECORD_IRI}> <{DCT.title}> "updated" .'.encode()
+    with TestClient(app) as client:
+        response = client.put(
+            RECORD_PATH,
+            content=body,
+            headers={"content-type": N_TRIPLES, "if-match": '"not-the-etag-gzip"'},
+        )
+
+    assert response.status_code == 412
+
+
+@pytest.mark.unit
 async def test_put_unsupported_content_type_returns_415() -> None:
     repo, _ = _make_repo()
     app = _build_app(repo=repo, pdp=FakePDP())
