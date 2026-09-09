@@ -5,7 +5,7 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [0.17.0] — Unreleased
+## [0.17.0] — 2026-09-09
 
 ### Security
 
