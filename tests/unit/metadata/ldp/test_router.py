@@ -1387,3 +1387,32 @@ async def test_put_update_ignores_publication_state_preference() -> None:
     assert "Preference-Applied" not in response.headers
     meta = await repo.get_meta(RECORD_IRI)
     assert (URIRef(RECORD_IRI), FDP_METADATA_STATE, Literal("DRAFT")) in meta
+
+
+# --- SPARQL-safety edge gate -------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/ldp/catalogs/x%3E",  # decodes to `x>` — used to break out of GRAPH <…>
+        "/ldp/catalogs/x%3C",
+        "/ldp/..%5C..%5C..%5Cvar/log/apache2/access.log",  # the scanner probe that 500'd live
+        "/ldp/catalogs/a%20b",
+        "/ldp/catalogs/x%22",
+    ],
+)
+async def test_path_with_iriref_forbidden_characters_is_404_before_authz(path: str) -> None:
+    # A request path that cannot be a legal IRI must never become an interpolated
+    # graph URI: the router 404s at the canonicalization chokepoint, so neither
+    # the PDP nor the store is consulted (no offer resolution, no CONSTRUCT).
+    repo, adapter = _make_repo()
+    pdp = FakePDP()
+    app = _build_app(repo=repo, pdp=pdp)
+    with TestClient(app) as client:
+        response = client.get(path, headers={"Accept": TURTLE})
+    assert response.status_code == 404
+    assert response.json()["code"] == "fdp.not_found"
+    assert pdp.calls == []
+    assert adapter.update_calls == []

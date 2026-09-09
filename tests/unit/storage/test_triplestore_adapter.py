@@ -10,12 +10,14 @@ import respx
 from pydantic import HttpUrl, SecretStr
 
 from fdpneo_server.config import TripleStoreSettings
+from fdpneo_server.shared.errors import BadRequest, UpstreamError
 from fdpneo_server.storage.triplestore.adapter import (
     SPARQL_JSON,
     SPARQL_QUERY,
     SPARQL_UPDATE,
     TURTLE,
     TripleStoreAdapter,
+    construct_named_graph,
 )
 
 QUERY_URL = "http://triplestore.local/query"
@@ -101,10 +103,40 @@ async def test_clear_all_issues_drop_all(async_client: httpx.AsyncClient) -> Non
 
 @pytest.mark.unit
 @respx.mock
-async def test_query_raises_on_http_error(async_client: httpx.AsyncClient) -> None:
-    respx.post(QUERY_URL).respond(500, text="boom")
-    with pytest.raises(httpx.HTTPStatusError):
+async def test_query_maps_http_error_to_upstream_error(async_client: httpx.AsyncClient) -> None:
+    # A store 4xx/5xx is an upstream failure → structured 502 envelope, never a
+    # bare httpx exception that would surface as an unhandled 500.
+    respx.post(QUERY_URL).respond(400, text="MALFORMED QUERY: <boom")
+    with pytest.raises(UpstreamError) as info:
         await _adapter(_settings(), async_client).query("SELECT * { ?s ?p ?o }")
+    assert info.value.details == {"upstream_status": 400}
+    assert "boom" not in info.value.message  # the store body is not echoed
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_construct_named_graph_rejects_unsafe_iri_before_any_request(
+    async_client: httpx.AsyncClient,
+) -> None:
+    # Defence in depth for the SPARQL-injection surface: a graph URI carrying
+    # an IRIREF-forbidden character never reaches the store.
+    route = respx.post(QUERY_URL).respond(200, text="")
+    adapter = _adapter(_settings(), async_client)
+    for bad in ("http://x/a>b", "http://x/a b", "http://x/..\\..\\etc", 'http://x/"'):
+        with pytest.raises(BadRequest):
+            await construct_named_graph(adapter, bad)
+    assert not route.called
+
+
+@pytest.mark.unit
+@respx.mock
+async def test_drop_graph_sparql_fallback_rejects_unsafe_iri(
+    async_client: httpx.AsyncClient,
+) -> None:
+    route = respx.post(UPDATE_URL).respond(204)
+    with pytest.raises(BadRequest):
+        await _adapter(_settings(with_graph_store=False), async_client).drop_graph("http://x/a>")
+    assert not route.called
 
 
 @pytest.mark.unit

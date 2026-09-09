@@ -43,7 +43,7 @@ from fdpneo_server.identity.deps import current_context
 from fdpneo_server.policy.model import Action, Outcome
 from fdpneo_server.shared.context import RequestContext
 from fdpneo_server.shared.errors import BadRequest
-from fdpneo_server.shared.sparql_safety import sparql_string_literal
+from fdpneo_server.shared.sparql_safety import is_sparql_safe_iri, sparql_string_literal
 
 if TYPE_CHECKING:
     from fdpneo_server.metadata.lifecycle import StateGate
@@ -69,7 +69,6 @@ _SUBCLASS_OF: Final = "http://www.w3.org/2000/01/rdf-schema#subClassOf"
 
 # A conservative absolute-IRI check for the user-supplied class — embedded as
 # ``<...>`` so it must not carry IRI-breaking characters.
-_IRI_RE: Final = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s<>\"{}|\\^`]+$")
 
 
 # --- response models -------------------------------------------------------
@@ -194,7 +193,9 @@ class InstanceLookupService:
 
 
 def _require_iri(value: str) -> str:
-    if not _IRI_RE.match(value):
+    # Absolute http(s) scheme + the shared SPARQL IRIREF safety gate: the
+    # class IRI is interpolated into ``GRAPH ?s { ?s a <cls> }`` below.
+    if not value.startswith(("http://", "https://")) or not is_sparql_safe_iri(value):
         raise BadRequest(
             "`class` must be an absolute http(s) IRI",
             details={"class": value},

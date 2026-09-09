@@ -65,6 +65,7 @@ from pydantic import BaseModel
 
 from fdpneo_server.metadata.settings import AutocompleteSources
 from fdpneo_server.shared.errors import BadRequest
+from fdpneo_server.shared.sparql_safety import is_sparql_safe_iri
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -96,13 +97,6 @@ _LABEL_PREDICATES: Final = (
     "http://xmlns.com/foaf/0.1/name",
     "http://www.w3.org/2006/vcard/ns#fn",
 )
-
-
-# Characters that must NOT appear inside an IRI literal in SPARQL —
-# they would either be syntactically meaningful or break out of the
-# ``<...>`` IRI delimiter. The list mirrors the IRI grammar from
-# SPARQL 1.1 §19.8.
-_FORBIDDEN_IRI_CHARS: Final = frozenset(' \t\n\r<>"{}|^`\\')
 
 
 # --- response model --------------------------------------------------------
@@ -404,17 +398,11 @@ class LabelResolver:
 def is_safe_iri(iri: str) -> bool:
     """Return True iff ``iri`` is a plausible IRI safe to inline into SPARQL.
 
-    The check is conservative: an IRI is rejected if it contains
-    whitespace, the ``<>`` brackets used to delimit IRIs in SPARQL, the
-    quote char, or any C0 control character. These are the same
-    characters disallowed by the SPARQL 1.1 IRI grammar, so a string
-    that fails this check is not a legal IRI anyway.
+    Thin alias over the shared-kernel gate
+    :func:`fdpneo_server.shared.sparql_safety.is_sparql_safe_iri` — one
+    definition of "safe to put inside ``<…>``" for the whole server.
     """
-    if not iri or len(iri) > 2048:
-        return False
-    if any(c in _FORBIDDEN_IRI_CHARS for c in iri):
-        return False
-    return not any(ord(c) < 0x20 for c in iri)
+    return is_sparql_safe_iri(iri)
 
 
 def _build_sparql(iris: Sequence[str]) -> str:

@@ -29,7 +29,8 @@ from typing import TYPE_CHECKING, Self
 import httpx
 from rdflib import Graph
 
-from fdpneo_server.shared.errors import GatewayTimeout
+from fdpneo_server.shared.errors import GatewayTimeout, UpstreamError
+from fdpneo_server.shared.sparql_safety import sparql_iri_ref
 
 if TYPE_CHECKING:
     from fdpneo_server.config import TripleStoreSettings
@@ -123,7 +124,7 @@ class TripleStoreAdapter:
             )
         except httpx.TimeoutException as exc:
             raise GatewayTimeout("the triple store did not respond in time") from exc
-        response.raise_for_status()
+        _raise_for_status(response)
         return response.content
 
     async def query_stream(
@@ -152,7 +153,7 @@ class TripleStoreAdapter:
                 headers={"Accept": accept, "Content-Type": SPARQL_QUERY},
                 params=httpx.QueryParams(params) if params else None,
             ) as response:
-                response.raise_for_status()
+                _raise_for_status(response)
                 async for chunk in response.aiter_bytes():
                     yield chunk
         except httpx.TimeoutException as exc:
@@ -191,7 +192,7 @@ class TripleStoreAdapter:
             )
         except httpx.TimeoutException as exc:
             raise GatewayTimeout("the triple store did not respond in time") from exc
-        response.raise_for_status()
+        _raise_for_status(response)
 
     # --- Graph Store Protocol ----------------------------------------------
 
@@ -211,7 +212,7 @@ class TripleStoreAdapter:
             content=body,
             headers={"Content-Type": mime},
         )
-        response.raise_for_status()
+        _raise_for_status(response)
 
     async def replace_graph(
         self,
@@ -229,7 +230,7 @@ class TripleStoreAdapter:
             content=body,
             headers={"Content-Type": mime},
         )
-        response.raise_for_status()
+        _raise_for_status(response)
 
     async def drop_graph(self, graph_uri: str) -> None:
         """Drop a named graph.
@@ -249,9 +250,9 @@ class TripleStoreAdapter:
             # gets an audit graph) would otherwise 404 the whole delete.
             if response.status_code == 404:
                 return
-            response.raise_for_status()
+            _raise_for_status(response)
             return
-        await self.update(f"DROP SILENT GRAPH <{graph_uri}>")
+        await self.update(f"DROP SILENT GRAPH {sparql_iri_ref(graph_uri)}")
 
     async def clear_all(self) -> None:
         """Remove every triple from every graph (default + all named graphs).
@@ -289,14 +290,20 @@ async def construct_named_graph(adapter: TripleStoreAdapter, graph_uri: str) -> 
 
     Runs ``CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <graph_uri> { ?s ?p ?o } }`` through
     the adapter and parses the result, returning an empty graph when the named graph
-    holds no triples. ``graph_uri`` must be a server-owned graph URI — it is
-    interpolated into the query and must never be caller-supplied input.
+    holds no triples.
+
+    ``graph_uri`` is interpolated into the query, so it passes the shared
+    SPARQL IRIREF gate (:func:`fdpneo_server.shared.sparql_safety.sparql_iri_ref`)
+    first — a value containing ``<``, ``>``, ``"``, ``\\``, whitespace or a control
+    character raises ``BadRequest`` before any request leaves the process. Callers
+    that derive the URI from a request path (the LDP router) already reject such
+    paths at the edge with a 404; this is the defence in depth.
 
     A free function rather than a method so it composes over any object providing
     :meth:`TripleStoreAdapter.query` (test doubles need not reimplement it).
     """
     body = await adapter.query(
-        f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}",
+        f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH {sparql_iri_ref(graph_uri)} {{ ?s ?p ?o }} }}",
         accept=TURTLE,
     )
     graph = Graph()
@@ -333,6 +340,24 @@ def _update_params(
     for graph_uri in using_named_graph_uris:
         params.append(("using-named-graph-uri", graph_uri))
     return tuple(params)
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    """Translate a non-2xx store reply into the FDP error envelope.
+
+    A triple-store 4xx/5xx is an *upstream* failure from the caller's point of
+    view — it must surface as a structured 502 (``fdp.upstream_error``), never
+    as an unhandled ``httpx.HTTPStatusError`` turned bare 500 with a traceback
+    in the log. The store's own status code is kept in ``details`` for
+    operators; its body is not echoed (it may quote the offending query).
+    """
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise UpstreamError(
+            "the triple store rejected the request",
+            details={"upstream_status": exc.response.status_code},
+        ) from exc
 
 
 def _rdflib_format_for(mime: str) -> str:

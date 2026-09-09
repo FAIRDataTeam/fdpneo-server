@@ -79,6 +79,52 @@ def sparql_string_literal(value: str) -> str:
     return json.dumps(value)
 
 
+# Characters that must never appear inside a SPARQL ``<...>`` IRI reference:
+# they are either syntactically meaningful or terminate the delimiter (SPARQL
+# 1.1 §19.8, IRIREF). A string containing any of them is not a legal IRI, so
+# rejecting it loses nothing — and a request-derived IRI that reaches a query
+# unchecked is exactly how ``GET /x%3E`` used to break out of ``GRAPH <…>``.
+FORBIDDEN_IRI_CHARS: frozenset[str] = frozenset(' \t\n\r<>"{}|^`\\')
+
+_MAX_IRI_LENGTH = 2048
+
+
+def is_sparql_safe_iri(iri: str) -> bool:
+    """True iff ``iri`` may be inlined as ``<iri>`` in SPARQL.
+
+    Conservative: rejects the empty string, anything over 2048 characters,
+    the IRIREF-forbidden characters, and C0 control characters.
+    """
+    if not iri or len(iri) > _MAX_IRI_LENGTH:
+        return False
+    if any(c in FORBIDDEN_IRI_CHARS for c in iri):
+        return False
+    return not any(ord(c) < 0x20 for c in iri)
+
+
+def require_sparql_safe_iri(iri: str, *, error: Exception | None = None) -> str:
+    """Return ``iri`` unchanged, or raise ``error`` (default 400) if unsafe.
+
+    The load-bearing edge gate: every request-derived IRI (an LDP record path,
+    an admin-router identifier segment) passes through this before any module
+    embeds it in SPARQL. Pass ``error=NotFound(...)`` where the caller wants
+    the invalid identifier to be indistinguishable from a missing one.
+    """
+    if not is_sparql_safe_iri(iri):
+        raise error if error is not None else BadRequest("not a valid IRI")
+    return iri
+
+
+def sparql_iri_ref(iri: str) -> str:
+    """Render ``iri`` as a SPARQL IRI reference (``<iri>``), validating first.
+
+    The adapter-level defence in depth for the two places that interpolate a
+    graph URI directly (``construct_named_graph``, ``drop_graph``); the edge
+    gate should already have rejected anything this refuses.
+    """
+    return f"<{require_sparql_safe_iri(iri)}>"
+
+
 def walk_compvalues(node: Any) -> Iterator[CompValue]:
     """Yield ``node`` and every nested :class:`CompValue` descendant."""
     if isinstance(node, CompValue):
@@ -94,10 +140,14 @@ def walk_compvalues(node: Any) -> Iterator[CompValue]:
 
 
 __all__ = [
+    "FORBIDDEN_IRI_CHARS",
     "LOAD_REJECTED_MESSAGE",
     "SERVICE_REJECTED_MESSAGE",
     "assert_query_safe",
+    "is_sparql_safe_iri",
     "reject_service",
+    "require_sparql_safe_iri",
+    "sparql_iri_ref",
     "sparql_string_literal",
     "walk_compvalues",
 ]

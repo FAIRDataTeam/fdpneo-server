@@ -216,6 +216,11 @@ class SchemaService:
         _check_slug(schema_id)
         iri = self.iri(schema_id)
         if version is not None:
+            # The snapshot IRI is interpolated into SPARQL downstream; a version
+            # is always the meta writer's integer owl:versionInfo, so anything
+            # else cannot name a snapshot (and must not reach a query).
+            if not version.isdigit():
+                raise NotFound(f"no schema version: {schema_id}/{version}")
             snapshot = schema_version_graph_uri(self._base, schema_id, version)
             graph = await self._repo.get_graph(snapshot)
             if len(graph) == 0:
