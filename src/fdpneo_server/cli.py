@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from fdpneo_server.metadata.schema_sync import SyncReport
     from fdpneo_server.metadata.vocab_migration import VocabMigrationReport
     from fdpneo_server.metrics.aggregation import RollupResult
+    from fdpneo_server.metrics.rebase import ResourceRebaseReport
 
 app = typer.Typer(
     name="fdp",
@@ -637,6 +638,62 @@ async def _run_rollup(
                 discard_after_days=settings.metrics.discard_hourly_after_days,
             )
         return raw_result, daily_result
+    finally:
+        await engine.dispose()
+
+
+@metrics_app.command("rebase-resources")
+def metrics_rebase_resources(
+    from_prefix: str = typer.Option(
+        ..., "--from", help="Prefix the recorded resource IRIs currently start with."
+    ),
+    to_prefix: str = typer.Option(
+        None, "--to", help="Prefix to re-key them onto. Defaults to the identifier base."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Count what would change; write nothing."
+    ),
+) -> None:
+    """One-off: re-key recorded metrics onto the canonical record IRI prefix.
+
+    Servers before 0.17 keyed metrics by the scheme/host the ASGI scope saw
+    (``http://<host>/…`` behind a TLS proxy), so per-record metrics never joined
+    to records minted at ``https://<host>/…``. New events are recorded against
+    the canonical IRI; run this once with ``--from http://<host>`` to fold the
+    history in. Idempotent.
+    """
+    from fdpneo_server.config import get_settings
+
+    settings = get_settings()
+    target = (to_prefix or settings.resolved_identifier_base).rstrip("/")
+    try:
+        report = asyncio.run(_run_metrics_rebase(from_prefix.rstrip("/"), target, dry_run))
+    except Exception as err:
+        console.print(f"[red]rebase failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+
+    if report.total == 0:
+        console.print("[green]nothing to rebase[/] — no metrics rows under the old prefix")
+        return
+    verb = "would re-key" if dry_run else "re-keyed"
+    console.print(
+        f"[green]{verb}[/] raw={report.raw_rows} hourly={report.hourly_rows} "
+        f"daily={report.daily_rows} → {report.new_prefix}"
+    )
+
+
+async def _run_metrics_rebase(old: str, new: str, dry_run: bool) -> ResourceRebaseReport:
+    from fdpneo_server.config import get_settings
+    from fdpneo_server.metrics.rebase import rebase_resource_iris
+    from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+    try:
+        return await rebase_resource_iris(
+            session_factory, old_prefix=old, new_prefix=new, dry_run=dry_run
+        )
     finally:
         await engine.dispose()
 

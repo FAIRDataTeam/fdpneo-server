@@ -115,12 +115,30 @@ port 80 of an RI deployment, a browser gets the UI while `curl` reaches the
 server, and Swagger UI paths are forced to the server; here the split lives at
 the edge so the stock images stay unchanged. Forwarded headers matter: Keycloak
 (`KC_PROXY_HEADERS=xforwarded`) and the server's rate limiter
-(`FDP_RATELIMIT_TRUST_FORWARDED_FOR`) both key on `X-Forwarded-*`.
+(`FDP_RATELIMIT_TRUST_FORWARDED_FOR`) both key on `X-Forwarded-*`, and the
+server process itself only believes `X-Forwarded-Proto`/`X-Forwarded-For` from
+addresses listed in `FORWARDED_ALLOW_IPS` (uvicorn's setting; its default trusts
+only `127.0.0.1`). The bundled compose sets it to `*` because the server port is
+never published; if your nginx runs on the host, `127.0.0.1` (the loopback it
+proxies from) is the right value. Without it the app sees every request as
+plain `http` from the proxy's IP — wrong client IPs in the metrics geography,
+and `http://` URLs in logs.
 
 ## Operations
 
 - **Updates:** `docker compose pull && docker compose up -d` (pin `IMAGE_TAG`
   to a release tag for reproducible deploys).
+- **Metrics rollups** run in-process (`FDP_METRICS_ROLLUP_IN_PROCESS=true`):
+  raw request rows are aggregated to hourly/daily and pruned on a fixed
+  interval, which is also the ADR-0002 privacy boundary (raw rows carry the
+  pseudonymous visitor hash). Running more than one server replica? Unset it
+  and schedule `docker compose exec server fdp metrics rollup` (every ~5 min)
+  instead, so replicas don't race.
+- **Upgrading from a server before 0.17:** recorded metrics were keyed by the
+  URL the container saw (`http://<host>/…`), so per-record metrics never
+  matched the `https://` record IRIs. Re-key the history once:
+  `docker compose exec server fdp metrics rebase-resources --from http://<PUBLIC_HOST> --dry-run`,
+  then without `--dry-run`.
 - **Backups:** the state lives in the `postgres-data` (operational state +
   Keycloak) and `graphdb-data` (the knowledge graph) volumes; `caddy-data`
   holds certificates (re-obtainable, but backing it up avoids ACME rate limits

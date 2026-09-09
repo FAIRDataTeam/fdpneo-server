@@ -105,12 +105,16 @@ def _build(
     *,
     inner: Callable[..., Awaitable[None]] | None = None,
     bus: EventBus | None = None,
+    identifier_base: str | None = None,
+    serving_origins: tuple[str, ...] = (),
 ) -> tuple[RequestObservationMiddleware, _Recorder, EventBus]:
     bus = bus or EventBus()
     recorder = _Recorder(bus)
     mw = RequestObservationMiddleware(
         inner or _echo_app(),  # type: ignore[arg-type]
         bus_provider=lambda: bus,
+        identifier_base=identifier_base,
+        serving_origins=serving_origins,
     )
     return mw, recorder, bus
 
@@ -224,10 +228,44 @@ async def test_status_code_is_captured() -> None:
 
 @pytest.mark.unit
 async def test_resource_iri_is_absolute_url_for_ldp_routes() -> None:
+    # Without an identifier base (embedders, this harness) the raw URL is kept.
     mw, recorder, _ = _build()
     await _drive(mw, _scope(path="/some/record"))
     iri = recorder.events[0].resource_iri or ""
     assert iri == "http://testserver/some/record"
+
+
+@pytest.mark.unit
+async def test_resource_iri_is_canonical_behind_an_untrusted_tls_proxy() -> None:
+    # The scope says http://testserver (Caddy terminated TLS; uvicorn was not
+    # told to trust it) but records are minted at https://…: the event must be
+    # keyed by the canonical IRI or per-record metrics never join.
+    mw, recorder, _ = _build(
+        identifier_base="https://testserver", serving_origins=("http://testserver",)
+    )
+    await _drive(mw, _scope(path="/some/record"))
+    assert recorder.events[0].resource_iri == "https://testserver/some/record"
+
+
+@pytest.mark.unit
+async def test_resource_iri_uses_the_pid_namespace_on_identifier_base_deployments() -> None:
+    mw, recorder, _ = _build(
+        identifier_base="https://w3id.org/myfdp", serving_origins=("http://testserver",)
+    )
+    await _drive(mw, _scope(path="/catalog/x"))
+    assert recorder.events[0].resource_iri == "https://w3id.org/myfdp/catalog/x"
+    await _drive(mw, _scope(path="/"))
+    assert recorder.events[1].resource_iri == "https://w3id.org/myfdp"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("path", ["/fdp-api/readyz", "/fdp-api/info", "/fdp-api/config"])
+async def test_operational_probes_are_skipped(path: str) -> None:
+    # The client polls /readyz every minute per admin tab; probes must not
+    # top the per-resource charts (they did on the live deployment).
+    mw, recorder, _ = _build()
+    await _drive(mw, _scope(path=path))
+    assert recorder.events == []
 
 
 @pytest.mark.unit
