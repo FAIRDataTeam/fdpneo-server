@@ -555,6 +555,11 @@ def create_app(
         RequestObservationMiddleware,
         bus_provider=lambda: app.state.event_bus,
         pending=app.state.metrics_publish_tasks,
+        # Record events against the canonical record IRI (same mapping the LDP
+        # router uses), not the scheme/host the ASGI scope saw — see the
+        # middleware's _resource_iri.
+        identifier_base=settings.resolved_identifier_base,
+        serving_origins=[settings.serving_base],
     )
     # Request limits (audit R-02) — added here so they sit just inside CORS and
     # outside auth: floods and oversize bodies are shed before the JWKS/auth work.

@@ -26,6 +26,39 @@ out explicitly below).
   the adapter now maps it to `fdp.upstream_error` (status in `details`, store
   body not echoed).
 
+### Fixed
+
+- **Per-record metrics join again.** The request observer keyed every event by
+  the scheme/host the ASGI scope saw — `http://<host>/…` behind a
+  TLS-terminating proxy uvicorn was not told to trust, the serving host on a
+  PID-based deployment — while records are minted at their canonical IRI, so
+  `GET /fdp-api/metrics/summary?resource_iri=<record>` was always empty and the
+  dashboard linked `http://` URLs. Events are now recorded against the
+  **canonical record IRI** (`shared.identifiers.canonicalize`, the LDP router's
+  mapping), independent of proxy configuration. Historic rows: `fdp metrics
+  rebase-resources --from http://<host> [--dry-run]` re-keys them (merging
+  aggregate rows that collide).
+- **Operational probes no longer count as content.** `/fdp-api/readyz`,
+  `/info` and `/config` join `/healthz` in the metrics skip list — the client
+  polls `readyz` every minute per admin tab, which had made it the
+  "most-requested resource" on a live deployment.
+- **401s carry an RFC 6750 challenge.** The authentication middleware now sets
+  `WWW-Authenticate: Bearer realm="fdp", error="invalid_token"` (or
+  `invalid_request` for a malformed/unsupported credential), so a client can
+  tell a dead token from missing auth and refresh or drop it instead of
+  retrying forever.
+
+### Changed
+
+- **Bundled compose stacks roll metrics up in-process**
+  (`FDP_METRICS_ROLLUP_IN_PROCESS=true`). The library default stays `false`
+  ("schedule `fdp metrics rollup` externally"), but nothing in the bundled
+  stacks did, so raw rows — which carry the visitor hash — were never
+  aggregated or pruned (ADR-0002's short-lived-raw boundary did not hold on
+  any bundled deployment). The production stack also sets
+  `FORWARDED_ALLOW_IPS=*` so the server trusts Caddy's `X-Forwarded-*` (its
+  port is never published).
+
 ## [0.16.1] — 2026-09-02
 
 ### Fixed

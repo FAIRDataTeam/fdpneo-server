@@ -57,6 +57,15 @@ _ALLOWED_ALGS: Final = ("RS256", "RS384", "RS512", "ES256", "ES384")
 # middleware re-records it. A *change* records immediately regardless.
 _PRINCIPAL_REFRESH_SECONDS: Final = 300.0
 
+# RFC 6750 §3 challenge headers for the two rejection classes: a request that
+# is not even a well-formed Bearer credential (``invalid_request``) versus a
+# credential the server could parse but not accept — expired, bad signature,
+# wrong audience, unknown API key (``invalid_token``). Lets a client tell "I
+# never sent auth" (a bare 401 from ``require_auth``) from "my token is dead"
+# and act accordingly (refresh or drop it) instead of retrying forever.
+_INVALID_REQUEST: Final = {"WWW-Authenticate": 'Bearer realm="fdp", error="invalid_request"'}
+_INVALID_TOKEN: Final = {"WWW-Authenticate": 'Bearer realm="fdp", error="invalid_token"'}
+
 
 class ApiKeyAuthenticator(Protocol):
     """Resolves a ``fdpk_`` bearer token to a context, or ``None`` if invalid."""
@@ -121,10 +130,10 @@ class AuthenticationMiddleware:
 
         scheme, _, raw_token = header.partition(" ")
         if scheme.lower() != "bearer":
-            raise Unauthenticated("unsupported authorization scheme")
+            raise Unauthenticated("unsupported authorization scheme", headers=_INVALID_REQUEST)
         token = raw_token.strip()
         if not token:
-            raise Unauthenticated("empty bearer token")
+            raise Unauthenticated("empty bearer token", headers=_INVALID_REQUEST)
 
         # Dispatch by prefix (ADR-0011 §3): an ``fdpk_`` bearer is an API key,
         # resolved against Postgres; anything else is validated as a JWT. This
@@ -136,19 +145,21 @@ class AuthenticationMiddleware:
         try:
             unverified = jwt.get_unverified_header(token)
         except InvalidTokenError as exc:
-            raise Unauthenticated("malformed bearer token") from exc
+            raise Unauthenticated("malformed bearer token", headers=_INVALID_REQUEST) from exc
 
         alg = unverified.get("alg")
         kid = unverified.get("kid")
         if alg not in _ALLOWED_ALGS:
-            raise Unauthenticated(f"disallowed signing algorithm: {alg!r}")
+            raise Unauthenticated(f"disallowed signing algorithm: {alg!r}", headers=_INVALID_TOKEN)
         if not isinstance(kid, str):
-            raise Unauthenticated("token header missing 'kid'")
+            raise Unauthenticated("token header missing 'kid'", headers=_INVALID_TOKEN)
 
         try:
             pyjwk = await self._jwks_client_provider().get_signing_key(kid)
         except JWKSError as exc:
-            raise Unauthenticated("could not resolve token signing key") from exc
+            raise Unauthenticated(
+                "could not resolve token signing key", headers=_INVALID_TOKEN
+            ) from exc
 
         try:
             payload: dict[str, Any] = jwt.decode(
@@ -161,7 +172,7 @@ class AuthenticationMiddleware:
                 leeway=30,
             )
         except InvalidTokenError as exc:
-            raise Unauthenticated("invalid bearer token") from exc
+            raise Unauthenticated("invalid bearer token", headers=_INVALID_TOKEN) from exc
 
         subject = f"{self._issuer}#{payload['sub']}"
         roles = frozenset(_get_nested_claim(payload, self._oidc.roles_claim))
@@ -179,10 +190,10 @@ class AuthenticationMiddleware:
         """Resolve an ``fdpk_`` token, or 401 if the feature is off / token invalid."""
         provider = self._api_key_authenticator_provider
         if provider is None:
-            raise Unauthenticated("API key authentication is not enabled")
+            raise Unauthenticated("API key authentication is not enabled", headers=_INVALID_TOKEN)
         ctx = await provider().authenticate(token, trace_id=trace_id)
         if ctx is None:
-            raise Unauthenticated("invalid API key")
+            raise Unauthenticated("invalid API key", headers=_INVALID_TOKEN)
         return ctx
 
     async def _maybe_record_principal(self, ctx: RequestContext) -> None:
@@ -262,6 +273,10 @@ async def _send_envelope(send: Send, exc: Unauthenticated, trace_id: str) -> Non
         "headers": [
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode("ascii")),
+            *(
+                (name.lower().encode("latin-1"), value.encode("latin-1"))
+                for name, value in exc.headers.items()
+            ),
         ],
     }
     await send(start)

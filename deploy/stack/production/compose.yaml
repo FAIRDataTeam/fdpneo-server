@@ -171,6 +171,15 @@ services:
       # Behind the TLS proxy: key rate limits on the real client IP.
       FDP_RATELIMIT_ENABLED: "true"
       FDP_RATELIMIT_TRUST_FORWARDED_FOR: "true"
+      # Trust Caddy's X-Forwarded-Proto/For so the app sees the real scheme and
+      # client IP (uvicorn honours this natively; its default only trusts
+      # 127.0.0.1, and Caddy is another container). Safe here because the
+      # server port is never published — Caddy is the only ingress.
+      FORWARDED_ALLOW_IPS: "*"
+      # Single replica: roll metrics up in-process (raw → hourly → daily) so
+      # the dashboard populates and short-lived raw rows are pruned (ADR-0002).
+      # Multi-replica deployments unset this and schedule `fdp metrics rollup`.
+      FDP_METRICS_ROLLUP_IN_PROCESS: "true"
       # External label resolution (ADR-0012 extension); see stack README.
       FDP_REMOTE_LABELS_ENABLED: ${FDP_REMOTE_LABELS_ENABLED:-true}
       FDP_REMOTE_LABELS_ALLOWED_HOSTS: ${FDP_REMOTE_LABELS_ALLOWED_HOSTS:-doi.org,api.crossref.org,data.crossref.org,data.datacite.org,orcid.org,pub.orcid.org}

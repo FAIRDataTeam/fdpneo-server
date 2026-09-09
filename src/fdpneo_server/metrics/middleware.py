@@ -24,7 +24,10 @@ observer goes on the app *after* the auth middleware.
 
 We do not emit events for:
 
-* the liveness probe (``/healthz``),
+* the operational probes and bootstrap surface (``/healthz``, ``/readyz``,
+  ``/info``, ``/config``) — the client polls ``/readyz`` every minute per
+  admin tab and fetches ``/info``/``/config`` on every load, so counting
+  them drowns real content in the per-resource charts,
 * the OpenAPI documentation tree (``/openapi.json``, ``/docs``,
   ``/redoc``),
 * the metrics dashboard itself (``/metrics/*``) — would create a
@@ -45,10 +48,11 @@ import structlog
 
 from fdpneo_server.metrics.events import MetricEventType, RequestObserved
 from fdpneo_server.shared.context import get_current
+from fdpneo_server.shared.identifiers import canonicalize
 from fdpneo_server.shared.reserved import RESERVED_API_PATH
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -59,7 +63,16 @@ log = structlog.get_logger(__name__)
 
 _SKIP_PREFIXES: Final = tuple(
     f"{RESERVED_API_PATH}{suffix}"
-    for suffix in ("/healthz", "/metrics", "/openapi.json", "/docs", "/redoc")
+    for suffix in (
+        "/healthz",
+        "/readyz",
+        "/info",
+        "/config",
+        "/metrics",
+        "/openapi.json",
+        "/docs",
+        "/redoc",
+    )
 )
 _SPARQL_PATH: Final = f"{RESERVED_API_PATH}/sparql"
 _DATA_PREFIX: Final = f"{RESERVED_API_PATH}/data/"
@@ -74,9 +87,19 @@ class RequestObservationMiddleware:
         *,
         bus_provider: Callable[[], EventBus | None],
         pending: set[asyncio.Task[None]] | None = None,
+        identifier_base: str | None = None,
+        serving_origins: Sequence[str] = (),
     ) -> None:
         self._app = app
         self._bus_provider = bus_provider
+        # The canonical root records are minted under (``resolved_identifier_base``)
+        # plus the origins requests may arrive on. When set, the recorded
+        # ``resource_iri`` is the record's canonical IRI — the key the dashboard
+        # and the client's per-record panel filter by — instead of whatever
+        # scheme/host the ASGI scope happened to see (plain ``http`` behind a
+        # TLS-terminating proxy, the serving host on a PID-based deployment).
+        self._identifier_base = identifier_base.rstrip("/") if identifier_base else None
+        self._serving_origins = tuple(o.rstrip("/") for o in serving_origins)
         # Strong refs to in-flight fire-and-forget publish tasks. Serves two
         # purposes: a GC guard (RUF006), and — when the composition root passes
         # a shared set — the drain point the lifespan awaits on shutdown, so an
@@ -108,7 +131,15 @@ class RequestObservationMiddleware:
             await self._app(scope, receive, _wrapped_send)
         finally:
             elapsed_ms = max(0, int((time.perf_counter() - start) * 1000))
-            event = _build_event(scope, method, path, captured_status, elapsed_ms)
+            event = _build_event(
+                scope,
+                method,
+                path,
+                captured_status,
+                elapsed_ms,
+                identifier_base=self._identifier_base,
+                serving_origins=self._serving_origins,
+            )
             bus = self._bus_provider()
             if bus is not None and event is not None:
                 # Fire-and-forget: never block the response on metrics
@@ -157,6 +188,9 @@ def _build_event(
     path: str,
     status_code: int,
     latency_ms: int,
+    *,
+    identifier_base: str | None = None,
+    serving_origins: Sequence[str] = (),
 ) -> RequestObserved | None:
     event_type = _event_type_for(method, path)
     if event_type is None:
@@ -167,7 +201,9 @@ def _build_event(
     timestamp = ctx.request_timestamp if ctx is not None else datetime.now(UTC)
     ip = _client_ip(scope)
     ua = _header(scope, b"user-agent")
-    resource_iri = _resource_iri(scope, event_type, path)
+    resource_iri = _resource_iri(
+        scope, event_type, path, identifier_base=identifier_base, serving_origins=serving_origins
+    )
 
     return RequestObserved(
         timestamp=timestamp,
@@ -182,12 +218,28 @@ def _build_event(
     )
 
 
-def _resource_iri(scope: Scope, event_type: MetricEventType, path: str) -> str | None:
-    """Compose the resource IRI from the request URL.
+def _resource_iri(
+    scope: Scope,
+    event_type: MetricEventType,
+    path: str,
+    *,
+    identifier_base: str | None,
+    serving_origins: Sequence[str],
+) -> str | None:
+    """Compose the resource IRI the event is recorded against.
 
     For ``SPARQL_QUERY`` at ``/sparql`` we record no resource — the
-    query targets the dataset projection, not a specific record. For
-    everything else the IRI is the absolute URL.
+    query targets the dataset projection, not a specific record.
+
+    With an ``identifier_base`` the IRI is the request's **canonical record
+    IRI** (:func:`fdpneo_server.shared.identifiers.canonicalize`): identifier
+    base + base-relative path, exactly what the LDP router mints and what the
+    dashboard filters by. This is independent of the scope's scheme/host —
+    which is plain ``http`` behind a TLS-terminating proxy that uvicorn is not
+    told to trust, and the serving host rather than the PID namespace on a
+    PID-based deployment; both used to make per-record metrics silently
+    never join. Without a base (unit tests, embedders) the absolute request
+    URL is recorded as before.
     """
     if event_type is MetricEventType.SPARQL_QUERY and path == _SPARQL_PATH:
         return None
@@ -198,9 +250,10 @@ def _resource_iri(scope: Scope, event_type: MetricEventType, path: str) -> str |
         if isinstance(server, (tuple, list)) and len(server) >= 2:
             host_name, port = server[0], server[1]
             host = f"{host_name}:{port}" if port else str(host_name)
-    if host is None:
-        return path
-    return f"{scheme}://{host}{path}"
+    url = path if host is None else f"{scheme}://{host}{path}"
+    if identifier_base is None:
+        return url
+    return canonicalize(url, identifier_base=identifier_base, serving_origins=serving_origins)
 
 
 def _client_ip(scope: Scope) -> str | None:

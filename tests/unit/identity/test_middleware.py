@@ -100,6 +100,9 @@ def test_expired_token_is_rejected(client: TestClient, idp: IdPFixture) -> None:
     response = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
     assert response.json()["code"] == "fdp.unauthenticated"
+    # RFC 6750 §3: a parseable-but-dead credential is `invalid_token`, so a
+    # client can tell "refresh/drop my token" from "I never sent one".
+    assert response.headers["www-authenticate"] == 'Bearer realm="fdp", error="invalid_token"'
 
 
 @pytest.mark.unit
@@ -157,6 +160,7 @@ def test_basic_authorization_scheme_is_rejected(client: TestClient) -> None:
     response = client.get("/whoami", headers={"Authorization": "Basic dXNlcjpwYXNz"})
     assert response.status_code == 401
     assert response.json()["code"] == "fdp.unauthenticated"
+    assert response.headers["www-authenticate"] == 'Bearer realm="fdp", error="invalid_request"'
 
 
 @pytest.mark.unit

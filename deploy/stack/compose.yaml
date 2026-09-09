@@ -131,6 +131,9 @@ services:
       # origin, so `npm run dev` can also hit this stack's API without a CORS reject.
       FDP_CORS_ALLOW_ORIGINS: http://${PUBLIC_HOST:-localhost}:${CLIENT_PORT:-5173},http://127.0.0.1:5173
       FDP_CORS_ALLOW_CREDENTIALS: "true"
+      # Single replica: roll metrics up in-process so the dashboard populates
+      # and short-lived raw rows are pruned (ADR-0002).
+      FDP_METRICS_ROLLUP_IN_PROCESS: "true"
       # Enable the /fdp-api/users IdP-admin facade (confidential service account).
       FDP_IDP_ADMIN_CLIENT_ID: ${FDP_IDP_ADMIN_CLIENT_ID:-fdp-server}
       FDP_IDP_ADMIN_CLIENT_SECRET: ${FDP_IDP_ADMIN_CLIENT_SECRET:-fdp-server-dev-secret}

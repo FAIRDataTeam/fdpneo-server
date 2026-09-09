@@ -38,6 +38,11 @@ binds a public port. App ↔ store ↔ DB traffic stays on a private network.
       IRIs; for a public deployment set `IDENTIFIER_BASE` to a persistent PID
       namespace (e.g. a W3ID prefix) so identifiers survive a host move
       (ADR-0014). Both must be `https://` in production.
+- [ ] `FORWARDED_ALLOW_IPS` names the proxy (uvicorn trusts `X-Forwarded-Proto`/
+      `-For` only from those addresses; default `127.0.0.1`). Set it to the
+      proxy's address/CIDR — or `*` **only** when the app port is unreachable
+      except through the proxy, as in the bundled production compose. Never
+      `*` on a directly published port: a client could spoof its IP/scheme.
 - [ ] TLS (or mTLS) on app→Postgres and app→GraphDB links (e.g. `?ssl=require`).
 - [ ] Internal CA or ACME certs; automate renewal.
 
