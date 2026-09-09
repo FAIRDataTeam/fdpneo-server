@@ -89,6 +89,7 @@ from fdpneo_server.shared.negotiation import (
     select_media_type,
     serialize,
 )
+from fdpneo_server.shared.sparql_safety import require_sparql_safe_iri
 
 if TYPE_CHECKING:
     from fdpneo_server.metadata.containment import ContainmentManager
@@ -206,11 +207,22 @@ def build_ldp_router(
     _serving = [o.rstrip("/") for o in (serving_origins or [])]
 
     def _canonical_iri(request: Request) -> str:
-        """The request's canonical, identifier-base-rooted record IRI."""
+        """The request's canonical, identifier-base-rooted record IRI.
+
+        The single chokepoint where a request path becomes an IRI that the
+        metadata module will embed in SPARQL (``GRAPH <…>``), so it is also
+        the SPARQL-safety edge gate: a path carrying an IRIREF-forbidden
+        character (``<``, ``>``, ``"``, ``\\``, whitespace, …) can never name
+        a record, so it is a plain 404 — the store is never touched and the
+        raw value never reaches a query.
+        """
         raw = _request_url(request)
-        if _id_base is None:
-            return raw
-        return canonicalize(raw, identifier_base=_id_base, serving_origins=_serving)
+        iri = (
+            raw
+            if _id_base is None
+            else canonicalize(raw, identifier_base=_id_base, serving_origins=_serving)
+        )
+        return require_sparql_safe_iri(iri, error=NotFound("resource not found"))
 
     def _reconcile(graph: Graph, canonical_iri: str) -> Graph:
         """Apply the dual identifier model when a PID base is configured."""

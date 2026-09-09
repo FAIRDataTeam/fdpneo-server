@@ -110,7 +110,7 @@ uv run pyright
 - **Error envelope is structured.** Every error returned over HTTP includes a stable code, a human-readable message, and a docs URL. See `shared/errors.py`.
 - **Logging is structured.** Use `structlog` with bound request context. Don't `print`, don't use the stdlib `logging` formatter directly.
 - **Tests follow the pyramid.** Most tests are unit (fast, no I/O). Integration tests use testcontainers-launched GraphDB/Fuseki/Oxigraph and Postgres. Don't add slow tests to the unit suite.
-- **SPARQL strings are parsed, never interpolated.** Use RDFLib's algebra to build queries; never f-string a URI or literal into a query. Same rule for SQL — always parameterized.
+- **SPARQL strings are parsed, never interpolated.** Use RDFLib's algebra to build queries; never f-string a URI or literal into a query. Same rule for SQL — always parameterized. Where a server-owned IRI must be embedded as `<…>` (graph names in the adapter's CONSTRUCT/DROP helpers, record IRIs derived from a request path), it passes `shared.sparql_safety.require_sparql_safe_iri` / `sparql_iri_ref` first — the LDP router's `_canonical_iri` is the edge gate (a path carrying an IRIREF-forbidden character is a 404), and the adapter validates again before sending. Caller-supplied literals go through `sparql_string_literal`.
 - **Imports follow ruff's isort defaults.** Stdlib first, then third-party, then first-party. The shared kernel is the only first-party module any context can import.
 
 ## RDF and namespaces

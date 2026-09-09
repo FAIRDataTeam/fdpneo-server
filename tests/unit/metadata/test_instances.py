@@ -232,3 +232,12 @@ def test_router_sets_page_headers_and_accepts_class_alias() -> None:
 @pytest.mark.unit
 def test_router_requires_class_param() -> None:
     assert _client(_FakeService()).get("/instances").status_code == 422
+
+
+@pytest.mark.unit
+async def test_class_iri_with_iriref_forbidden_char_rejected() -> None:
+    # The class IRI is interpolated into `?s a <cls>`; a `>` would break out.
+    with pytest.raises(BadRequest, match="absolute http"):
+        await _service(_FakeAdapter()).instances(
+            class_iri="http://x/Type> } } #", q=None, limit=20, offset=0, ctx=_anon()
+        )

@@ -5,7 +5,28 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
-## [0.16.1] — Unreleased
+## [0.17.0] — Unreleased
+
+### Security
+
+- **Request-derived IRIs can no longer reach SPARQL unchecked.** A record path
+  became a graph IRI that was f-stringed into `GRAPH <…>` (the adapter's
+  `construct_named_graph`/`drop_graph`, the state/version lookups) — so
+  `GET /x%3E` broke out of the IRI delimiter and reached the store as malformed
+  SPARQL (observed live as a 500 on a scanner's `..\..\var/log/apache2/access.log`
+  probe). The LDP router's canonicalization chokepoint now rejects any path
+  carrying a SPARQL IRIREF-forbidden character (`<>"{}|^\``, whitespace,
+  controls) with a plain 404 before authorization or the store is touched; the
+  adapter validates graph IRIs again before interpolating (`shared.sparql_safety`
+  `require_sparql_safe_iri` / `sparql_iri_ref`, now the single definition also
+  used by `/labels` and `/instances`); schema snapshot versions must be
+  integers.
+- **Triple-store errors are a structured 502, not a bare 500.** A store 4xx/5xx
+  surfaced as an unhandled `httpx.HTTPStatusError` with a traceback in the log;
+  the adapter now maps it to `fdp.upstream_error` (status in `details`, store
+  body not echoed).
+
+## [0.16.1] — 2026-09-02
 
 ### Fixed
 
