@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -36,10 +36,12 @@ from sqlalchemy import select
 from fdpneo_server import __version__
 from fdpneo_server.metadata.audit import RecordAuditRow
 from fdpneo_server.shared.graphs import is_profile_graph_uri
+from fdpneo_server.storage.postgres.migrations import current_revision
+from fdpneo_server.storage.postgres.state_backup import dump_state_tables
 from fdpneo_server.storage.triplestore.adapter import SPARQL_JSON, construct_named_graph
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
     from fdpneo_server.storage.triplestore import TripleStoreAdapter
 
@@ -47,6 +49,14 @@ log = structlog.get_logger(__name__)
 
 DUMP_FORMAT_VERSION = "1"
 """Bumped only on a breaking change to the on-disk archive layout."""
+
+FULL_DUMP_FORMAT_VERSION = "2"
+"""A full dump (ADR-0029): version 1's layout plus ``postgres/<table>.jsonl``."""
+
+SUPPORTED_DUMP_FORMATS = frozenset({DUMP_FORMAT_VERSION, FULL_DUMP_FORMAT_VERSION})
+
+SCOPE_STORE = "store"
+SCOPE_FULL = "full"
 
 # The data-model version records whether the ADR-0019 record/schema binding is
 # present, so `restore` can migrate a pre-binding dump forward (task 18.3).
@@ -68,6 +78,8 @@ class DumpResult:
     audit_rows: int
     data_model_version: str
     files: dict[str, str]  # filename -> sha256 hex
+    scope: str = SCOPE_STORE
+    state_rows: dict[str, int] = field(default_factory=dict[str, int])
 
 
 async def dump_store(
@@ -77,12 +89,18 @@ async def dump_store(
     identifier_base: str,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
     include_audit: bool = True,
+    full_engine: AsyncEngine | None = None,
 ) -> DumpResult:
     """Dump every named graph to ``out_dir`` as an ADR-0016 archive.
 
     ``session_factory`` enables the optional ``audit.jsonl`` export of the Postgres
     ``record_audit`` rows; omit it (or ``include_audit=False``) to dump the triple
     store only.
+
+    ``full_engine`` makes it a *full* dump (ADR-0029, format version 2): every
+    Postgres state table is exported under ``postgres/`` (``record_audit`` among
+    them, so ``audit.jsonl`` is not written) and the manifest records the
+    database's Alembic revision, which the restore migrates through.
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -110,13 +128,25 @@ async def dump_store(
     files = {RECORDS_FILE: hasher.hexdigest()}
 
     audit_rows = 0
-    if include_audit and session_factory is not None:
+    postgres: dict[str, dict[str, object]] = {}
+    alembic_revision: str | None = None
+    if full_engine is not None:
+        alembic_revision = await current_revision(full_engine)
+        if alembic_revision is None:
+            raise RuntimeError("the database has no Alembic revision; run `fdp db migrate`")
+        tables = await dump_state_tables(full_engine, out)
+        postgres = {
+            name: {"file": t.file, "rows": t.rows, "sha256": t.sha256} for name, t in tables.items()
+        }
+        audit_rows = tables["record_audit"].rows if "record_audit" in tables else 0
+    elif include_audit and session_factory is not None:
         audit_rows, audit_hash = await _dump_audit(session_factory, out / AUDIT_FILE)
         files[AUDIT_FILE] = audit_hash
 
     data_model = DATA_MODEL_ADR0019 if has_profiles else DATA_MODEL_LEGACY
-    manifest = {
-        "dump_format_version": DUMP_FORMAT_VERSION,
+    full = full_engine is not None
+    manifest: dict[str, object] = {
+        "dump_format_version": FULL_DUMP_FORMAT_VERSION if full else DUMP_FORMAT_VERSION,
         "identifier_base": identifier_base,
         "application_version": __version__,
         "data_model_version": data_model,
@@ -126,6 +156,10 @@ async def dump_store(
         "created_at": datetime.now(UTC).isoformat(),
         "files": files,
     }
+    if full:
+        manifest["scope"] = SCOPE_FULL
+        manifest["alembic_revision"] = alembic_revision
+        manifest["postgres"] = postgres
     (out / MANIFEST_FILE).write_bytes(
         json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")
     )
@@ -136,6 +170,7 @@ async def dump_store(
         quads=quad_count,
         audit_rows=audit_rows,
         data_model=data_model,
+        scope=SCOPE_FULL if full else SCOPE_STORE,
     )
     return DumpResult(
         out_dir=out,
@@ -144,6 +179,8 @@ async def dump_store(
         audit_rows=audit_rows,
         data_model_version=data_model,
         files=files,
+        scope=SCOPE_FULL if full else SCOPE_STORE,
+        state_rows={name: int(str(entry["rows"])) for name, entry in postgres.items()},
     )
 
 
@@ -220,8 +257,12 @@ __all__ = [
     "DATA_MODEL_ADR0019",
     "DATA_MODEL_LEGACY",
     "DUMP_FORMAT_VERSION",
+    "FULL_DUMP_FORMAT_VERSION",
     "MANIFEST_FILE",
     "RECORDS_FILE",
+    "SCOPE_FULL",
+    "SCOPE_STORE",
+    "SUPPORTED_DUMP_FORMATS",
     "DumpResult",
     "dump_store",
 ]

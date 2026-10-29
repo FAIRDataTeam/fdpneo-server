@@ -101,3 +101,15 @@ Any archive that contains credentials is encrypted with a passphrase. That cover
 - Each new Postgres table needs a classification: state, derived, or excluded. A unit test fails when a table is missing from the classification, so it cannot be forgotten.
 - Losing the passphrase means losing the backup. The tooling says so at dump time.
 - `backup.sh` stops the server for the duration of the dump. That is minutes for typical deployments, and the HTTP path avoids the full stop by refusing writes instead.
+
+## Implementation notes
+
+These refinements emerged while building and testing the decision. None of them changes it.
+
+- **Evaluation-stack Keycloak volume.** In dev mode, Keycloak keeps its H2 database inside the container and locks it while running, so no one-off container could export it. The evaluation stack now mounts a `keycloak-data` volume. Both stacks then use the same procedure: stop Keycloak, export with a one-off container, start it again.
+- **HTTP restore and schema revisions.** A full restore over HTTP refuses an archive whose schema revision differs from the database's, because the schema must not move under a running server. The CLI, with the server stopped, migrates freely.
+- **`--merge` and Postgres state.** `--merge` is refused for full archives, because Postgres state cannot be merged row by row. `--overwrite` replaces it instead.
+- **Bundle layout.** The stack bundle is an encrypted tar holding `bundle.json`, the unencrypted application archive `app.zip`, the Keycloak export and the configuration. The outer encryption authenticates all of it.
+- **Domain changes.** When the identifier base changes, `restore.sh` uses `fdp backup import --rebase`, rewrites the old host in the exported realm's URLs, and re-keys metrics with `fdp metrics rebase-resources`.
+- **Master realm.** Only the FDP realm is exported. Keycloak's master-realm bootstrap admin is recreated from the deployment's environment on the new host.
+

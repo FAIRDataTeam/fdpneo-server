@@ -71,6 +71,49 @@ fdp backup import --from https://old-fdp.example.org
   `dct:identifier`, ADR-0017 — never `owl:sameAs`), then binds the imported
   records to *this* deployment's profiles and reindexes.
 
+## Full-deployment backup (ADR-0029)
+
+`--full` adds everything FDPneo keeps in Postgres, so a deployment can move to
+another host with the same state:
+
+```bash
+fdp backup dump --full ./fdp-full.fdpbk          # prompts for a passphrase (twice)
+fdp backup dump --full ./fdp-full.zip --no-encrypt
+fdp backup verify ./fdp-full.fdpbk                # passphrase, checksums, row counts
+fdp backup restore ./fdp-full.fdpbk               # into an empty deployment
+```
+
+- **What it adds.** One JSON-lines file per Postgres *state* table under
+  `postgres/`: `runtime_settings`, `api_keys`, `search_saved_queries`,
+  `index_targets`, `profile_applied`, `subject_principal`, `record_audit`,
+  `metrics_hourly`, `metrics_daily`. The manifest (format version `2`) records
+  the Alembic revision plus a row count and SHA-256 per file.
+- **What it leaves out.** Derived tables (`authz_index`, `metadata_search`,
+  `metadata_external_labels`) are rebuilt on restore. `metrics_raw` never
+  travels (ADR-0002); the dump first rolls completed hours into
+  `metrics_hourly`. Every table is classified in
+  `storage/postgres/state_backup.py`, and a unit test fails when a new table is
+  not.
+- **Encryption.** A full dump holds credentials (API-key hashes), so it is
+  sealed with a passphrase unless `--no-encrypt` is given: scrypt key
+  derivation and chunked AES-256-GCM, format `FDPNEO-ENC1`. The passphrase
+  comes from a prompt or `--passphrase-file FILE` (`-` reads stdin), never from
+  the command line. `fdp backup seal|unseal` expose the format for any file.
+- **Restore.** Stop the server first. The state tables must be empty, unless
+  `--overwrite`. The restore moves the schema to the archive's own revision,
+  loads the rows there, migrates to head, clears the derived tables, restores
+  the triple store and reindexes. An archive from a *newer* server is refused.
+  `--merge` does not apply to Postgres state. `fdp backup import --rebase
+  ARCHIVE` adopts a full archive under a new identifier base.
+
+### Moving a bundled stack
+
+`deploy/stack/backup.sh` and `restore.sh` wrap the whole move for the compose
+stacks. They add what the server cannot reach: the Keycloak realm *with users*
+(Keycloak's own export, which keeps user IDs, so token subjects and API-key
+ownership survive) and the deployment configuration (`.env`, compose
+overrides). See the stack READMEs.
+
 ## Admin HTTP API (for the web client)
 
 Besides the CLI, dump and restore are exposed over **admin-only, job-based HTTP
@@ -79,10 +122,16 @@ They require the `admin` role and drive the same code paths as the CLI.
 
 | Method + path | Purpose |
 |---|---|
-| `POST /fdp-api/admin/backup/dump` | Start a dump → `202` + a job. Query: `no_audit`. |
-| `POST /fdp-api/admin/backup/restore` | Start a restore from an uploaded `.zip` (multipart `archive`) → `202` + a job. Query: `merge`, `overwrite`, `no_audit`, `dry_run`. |
+| `POST /fdp-api/admin/backup/dump` | Start a dump → `202` + a job. Query: `no_audit`, `scope` (`store` or `full`). A full dump needs `{"passphrase": "…"}` (12+ characters) in the body and is always encrypted. |
+| `POST /fdp-api/admin/backup/restore` | Start a restore from an uploaded `.zip` or encrypted `.fdpbk` (multipart `archive`, plus `passphrase` for an encrypted one) → `202` + a job. Query: `merge`, `overwrite`, `no_audit`, `dry_run`. |
 | `GET /fdp-api/admin/backup/jobs/{id}` | Poll job status (`QUEUED`/`RUNNING`/`SUCCEEDED`/`FAILED`) + the result summary. |
 | `GET /fdp-api/admin/backup/jobs/{id}/archive` | Download a finished dump's `.zip`. |
+
+While a full dump or full restore runs over HTTP, the server refuses writes
+with `503` and `Retry-After`; reads, SPARQL queries and search continue. A full
+restore over HTTP also requires the archive's schema revision to match the
+database's, because the schema must not move under a running server; use the
+CLI with the server stopped otherwise.
 
 Jobs run in-process and their status is held in memory — **single-worker
 deployments** in v1 (a persistent job store is a later scaling step). Restore

@@ -998,9 +998,23 @@ async def _run_pid_rebase(from_base: str, to_base: str, dry_run: bool) -> Rebase
 
 @backup_app.command("dump")
 def backup_dump(
-    path: Path = typer.Argument(..., file_okay=False),
+    path: Path = typer.Argument(..., help="Output directory, or the archive file with --full."),
     no_audit: bool = typer.Option(
         False, "--no-audit", help="Skip exporting the Postgres record_audit rows."
+    ),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Full deployment backup (ADR-0029): add the Postgres state tables and write "
+        "one archive file, encrypted unless --no-encrypt.",
+    ),
+    no_encrypt: bool = typer.Option(
+        False, "--no-encrypt", help="With --full: write a plain .zip (it holds credentials!)."
+    ),
+    passphrase_file: Path | None = typer.Option(
+        None,
+        "--passphrase-file",
+        help="Read the passphrase from this file ('-' = first line of stdin) instead of prompting.",
     ),
 ) -> None:
     """Dump every named graph (+ manifest, + audit) to a directory (ADR-0016 §2).
@@ -1009,34 +1023,73 @@ def backup_dump(
     provenance, the ADR-0019 record-schema binding, and audit graphs survive
     byte-for-byte. Writes ``records.nq``, ``manifest.json`` and (unless
     ``--no-audit``) ``audit.jsonl``. Whole-store only in v1.
+
+    With ``--full`` (ADR-0029) the archive also carries the Postgres state —
+    settings, API keys, saved searches, index targets, applied profiles, subject
+    roles, audit trail and metrics history — and is written as one file, sealed
+    with a passphrase unless ``--no-encrypt``.
     """
+    if not full:
+        if no_encrypt or passphrase_file is not None:
+            console.print("[red]--no-encrypt / --passphrase-file only apply with --full[/]")
+            raise typer.Exit(code=1)
+        try:
+            result = asyncio.run(_run_dump(path, include_audit=not no_audit))
+        except Exception as err:
+            console.print(f"[red]dump failed:[/] {err}")
+            raise typer.Exit(code=1) from err
+        console.print(
+            f"[green]dumped[/] {result.graph_count} graph(s), {result.quad_count} quad(s), "
+            f"{result.audit_rows} audit row(s) → {result.out_dir} "
+            f"(data model: {result.data_model_version})"
+        )
+        return
+
+    if path.is_dir():
+        console.print(f"[red]{path} is a directory; --full writes one archive file[/]")
+        raise typer.Exit(code=1)
+    passphrase = None if no_encrypt else _read_passphrase(passphrase_file, confirm=True)
     try:
-        result = asyncio.run(_run_dump(path, include_audit=not no_audit))
+        result = asyncio.run(_run_full_dump(path, passphrase=passphrase))
     except Exception as err:
         console.print(f"[red]dump failed:[/] {err}")
         raise typer.Exit(code=1) from err
-
+    rows = sum(result.state_rows.values())
     console.print(
-        f"[green]dumped[/] {result.graph_count} graph(s), {result.quad_count} quad(s), "
-        f"{result.audit_rows} audit row(s) → {result.out_dir} "
-        f"(data model: {result.data_model_version})"
+        f"[green]full backup[/] {result.graph_count} graph(s), {result.quad_count} quad(s), "
+        f"{rows} Postgres row(s) in {len(result.state_rows)} table(s) → {path} "
+        f"({'encrypted' if passphrase else '[yellow]NOT encrypted[/]'})"
     )
+    if passphrase:
+        console.print(
+            "[yellow]keep the passphrase safe: without it the backup cannot be restored[/]"
+        )
 
 
 @backup_app.command("restore")
 def backup_restore(
-    path: Path = typer.Argument(..., exists=True, file_okay=False),
+    path: Path = typer.Argument(
+        ..., exists=True, help="A dump directory, a .zip archive, or a sealed archive."
+    ),
     merge: bool = typer.Option(
         False, "--merge", help="Into a non-empty store: skip graphs that already exist."
     ),
     overwrite: bool = typer.Option(
-        False, "--overwrite", help="Into a non-empty store: replace existing graphs."
+        False,
+        "--overwrite",
+        help="Into a non-empty store: replace existing graphs (and, for a full archive, "
+        "the Postgres state).",
     ),
     no_audit: bool = typer.Option(
         False, "--no-audit", help="Skip inserting the dump's audit.jsonl rows."
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Report what would change; write nothing."
+    ),
+    passphrase_file: Path | None = typer.Option(
+        None,
+        "--passphrase-file",
+        help="Passphrase of a sealed archive, from this file ('-' = stdin); prompts otherwise.",
     ),
 ) -> None:
     """Faithfully restore a dump into the triple store (ADR-0016 §3).
@@ -1045,14 +1098,26 @@ def backup_restore(
     mismatch (use `fdp backup import --rebase`) or a non-empty store (unless
     --merge/--overwrite). Afterwards it inserts audit rows, migrates a pre-ADR-0019
     dump forward, and reindexes search.
+
+    A full archive (ADR-0029) also restores the Postgres state: the schema is moved
+    to the archive's revision, the rows loaded, then migrated to head. Stop the
+    server first; a full restore needs empty state tables unless --overwrite.
     """
     if merge and overwrite:
         console.print("[red]--merge and --overwrite are mutually exclusive[/]")
         raise typer.Exit(code=1)
+    from fdpneo_server.metadata.backup.seal import is_sealed
+
+    passphrase = _read_passphrase(passphrase_file, confirm=False) if is_sealed(path) else None
     try:
-        result, audit_rows, profiles, indexed = asyncio.run(
+        result, audit_rows, profiles, indexed, state_rows = asyncio.run(
             _run_restore(
-                path, merge=merge, overwrite=overwrite, include_audit=not no_audit, dry_run=dry_run
+                path,
+                merge=merge,
+                overwrite=overwrite,
+                include_audit=not no_audit,
+                dry_run=dry_run,
+                passphrase=passphrase,
             )
         )
     except Exception as err:
@@ -1064,6 +1129,12 @@ def backup_restore(
         f"[green]{verb}[/] {result.graphs_loaded} graph(s), {result.quad_count} quad(s) "
         f"(skipped {result.graphs_skipped}) from {path}"
     )
+    if state_rows:
+        console.print(
+            f"  {'would load' if result.dry_run else 'loaded'} "
+            f"{sum(state_rows.values())} Postgres row(s): "
+            + ", ".join(f"{name}={rows}" for name, rows in sorted(state_rows.items()))
+        )
     if not result.dry_run:
         if result.needs_migration:
             console.print(
@@ -1073,27 +1144,34 @@ def backup_restore(
 
 
 async def _run_restore(
-    in_dir: Path,
+    archive: Path,
     *,
     merge: bool,
     overwrite: bool,
     include_audit: bool,
     dry_run: bool,
     rebase: bool = False,
-) -> tuple[RestoreResult, int, int, int]:
+    passphrase: str | None = None,
+) -> tuple[RestoreResult, int, int, int, dict[str, int]]:
     """Load a dump, then (unless dry-run) insert audit, migrate, and reindex.
 
-    Returns (restore result, audit rows inserted, profiles provisioned, records indexed).
+    Returns (restore result, audit rows inserted, profiles provisioned, records
+    indexed, Postgres state rows loaded).
     """
+    import shutil
+    import tempfile
+
     from fdpneo_server.config import get_settings
-    from fdpneo_server.metadata.backup import orchestrate_restore
+    from fdpneo_server.metadata.backup import open_archive, orchestrate_restore
     from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
     from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 
     settings = get_settings()
     engine = build_engine(settings)
     session_factory = build_session_factory(engine)
+    work = Path(tempfile.mkdtemp(prefix="fdp-restore-"))
     try:
+        in_dir = await open_archive(archive, work / "archive", passphrase=passphrase)
         async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
             outcome = await orchestrate_restore(
                 adapter,
@@ -1105,20 +1183,113 @@ async def _run_restore(
                 include_audit=include_audit,
                 dry_run=dry_run,
                 rebase=rebase,
+                engine=engine,
             )
         return (
             outcome.result,
             outcome.audit_rows,
             outcome.profiles_provisioned,
             outcome.records_indexed,
+            outcome.state_rows,
         )
     finally:
+        shutil.rmtree(work, ignore_errors=True)
         await engine.dispose()
+
+
+@backup_app.command("seal")
+def backup_seal(
+    source: Path = typer.Argument(..., exists=True, dir_okay=False),
+    dest: Path = typer.Argument(..., dir_okay=False),
+    passphrase_file: Path | None = typer.Option(
+        None, "--passphrase-file", help="Read the passphrase from this file ('-' = stdin)."
+    ),
+) -> None:
+    """Encrypt any file with a passphrase (FDPNEO-ENC1, ADR-0029 §5)."""
+    from fdpneo_server.metadata.backup.seal import SealError, seal_file
+
+    passphrase = _read_passphrase(passphrase_file, confirm=True)
+    try:
+        seal_file(source, dest, passphrase)
+    except SealError as err:
+        console.print(f"[red]seal failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+    console.print(f"[green]sealed[/] {source} → {dest}")
+
+
+@backup_app.command("unseal")
+def backup_unseal(
+    source: Path = typer.Argument(..., exists=True, dir_okay=False),
+    dest: Path = typer.Argument(..., dir_okay=False),
+    passphrase_file: Path | None = typer.Option(
+        None, "--passphrase-file", help="Read the passphrase from this file ('-' = stdin)."
+    ),
+) -> None:
+    """Decrypt a sealed file. Nothing is written unless every chunk authenticates."""
+    from fdpneo_server.metadata.backup.seal import SealError, unseal_file
+
+    passphrase = _read_passphrase(passphrase_file, confirm=False)
+    try:
+        unseal_file(source, dest, passphrase)
+    except SealError as err:
+        console.print(f"[red]unseal failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+    console.print(f"[green]unsealed[/] {source} → {dest}")
+
+
+@backup_app.command("verify")
+def backup_verify(
+    archive: Path = typer.Argument(..., exists=True),
+    passphrase_file: Path | None = typer.Option(
+        None, "--passphrase-file", help="Passphrase of a sealed archive ('-' = stdin)."
+    ),
+) -> None:
+    """Check a backup without restoring it: passphrase, checksums, manifest.
+
+    Accepts a dump directory, a .zip, a sealed archive, or a sealed stack bundle
+    (``deploy/stack/backup.sh``), whose inner application archive is checked too.
+    """
+    from fdpneo_server.metadata.backup.seal import SealError, is_sealed
+    from fdpneo_server.metadata.backup.verify import VerifyError, verify_archive
+
+    passphrase = _read_passphrase(passphrase_file, confirm=False) if is_sealed(archive) else None
+    try:
+        report = verify_archive(archive, passphrase=passphrase)
+    except (SealError, VerifyError) as err:
+        console.print(f"[red]verify failed:[/] {err}")
+        raise typer.Exit(code=1) from err
+    for line in report:
+        console.print(f"  {line}")
+    console.print("[green]archive OK[/]")
+
+
+def _read_passphrase(source: Path | None, *, confirm: bool) -> str:
+    """The passphrase from a file, stdin ('-'), or an interactive prompt — never argv."""
+    import sys
+
+    from fdpneo_server.metadata.backup.seal import SealError, validate_passphrase
+
+    if source is None:
+        passphrase = typer.prompt("Passphrase", hide_input=True, confirmation_prompt=confirm)
+    elif str(source) == "-":
+        passphrase = sys.stdin.readline().rstrip("\r\n")
+    else:
+        passphrase = (
+            source.read_text(encoding="utf-8").splitlines()[0] if source.stat().st_size else ""
+        )
+    try:
+        validate_passphrase(passphrase)
+    except SealError as err:
+        console.print(f"[red]{err}[/]")
+        raise typer.Exit(code=1) from err
+    return passphrase
 
 
 @backup_app.command("import")
 def backup_import(
-    path: Path | None = typer.Argument(None, file_okay=False),
+    path: Path | None = typer.Argument(
+        None, help="With --rebase: a dump directory, .zip, or sealed (full) archive."
+    ),
     from_url: str = typer.Option(
         None,
         "--from",
@@ -1140,6 +1311,11 @@ def backup_import(
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Report what would change; write nothing."
+    ),
+    passphrase_file: Path | None = typer.Option(
+        None,
+        "--passphrase-file",
+        help="Passphrase of a sealed archive, from this file ('-' = stdin); prompts otherwise.",
     ),
 ) -> None:
     """Import records into this FDP, adopting them under this deployment's base (ADR-0016 §4).
@@ -1166,8 +1342,14 @@ def backup_import(
     if merge and overwrite:
         console.print("[red]--merge and --overwrite are mutually exclusive[/]")
         raise typer.Exit(code=1)
+    if not path.exists():
+        console.print(f"[red]{path} does not exist[/]")
+        raise typer.Exit(code=1)
+    from fdpneo_server.metadata.backup.seal import is_sealed
+
+    passphrase = _read_passphrase(passphrase_file, confirm=False) if is_sealed(path) else None
     try:
-        result, audit_rows, profiles, indexed = asyncio.run(
+        result, audit_rows, profiles, indexed, _state_rows = asyncio.run(
             _run_restore(
                 path,
                 merge=merge,
@@ -1175,6 +1357,7 @@ def backup_import(
                 include_audit=not no_audit,
                 dry_run=dry_run,
                 rebase=True,
+                passphrase=passphrase,
             )
         )
     except Exception as err:
@@ -1288,6 +1471,47 @@ async def _run_dump(out_dir: Path, *, include_audit: bool) -> DumpResult:
                 include_audit=include_audit,
             )
     finally:
+        await engine.dispose()
+
+
+async def _run_full_dump(dest: Path, *, passphrase: str | None) -> DumpResult:
+    """Full backup (ADR-0029): roll up metrics, dump store + Postgres state, zip, seal."""
+    import shutil
+    import tempfile
+
+    from fdpneo_server.config import get_settings
+    from fdpneo_server.metadata.backup import dump_to_archive
+    from fdpneo_server.metrics.aggregation import roll_up_raw_to_hourly
+    from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
+    from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
+
+    settings = get_settings()
+    engine = build_engine(settings)
+    session_factory = build_session_factory(engine)
+
+    async def _rollup() -> None:
+        await roll_up_raw_to_hourly(
+            session_factory,
+            aggregate_after_seconds=settings.metrics.aggregate_to_hourly_after_seconds,
+        )
+
+    work = Path(tempfile.mkdtemp(prefix="fdp-dump-"))
+    try:
+        async with TripleStoreAdapter.from_settings(settings.require_triplestore()) as adapter:
+            result, archive = await dump_to_archive(
+                adapter,
+                identifier_base=settings.resolved_identifier_base,
+                work_dir=work,
+                session_factory=session_factory,
+                full_engine=engine,
+                passphrase=passphrase,
+                before_dump=_rollup,
+            )
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(archive), str(dest))
+        return result
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
         await engine.dispose()
 
 

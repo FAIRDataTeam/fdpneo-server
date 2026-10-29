@@ -31,7 +31,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Inject the DSN at runtime so neither alembic.ini nor env-supplied URL is required.
-config.set_main_option("sqlalchemy.url", str(MigrationSettings().postgres_dsn))  # type: ignore[call-arg]  # pydantic-settings fills from env
+# A programmatic caller (``storage.postgres.migrations``, used by full-backup
+# restore) passes its DSN through ``config.attributes["dsn"]`` instead.
+_dsn = config.attributes.get("dsn") or str(MigrationSettings().postgres_dsn)  # type: ignore[call-arg]  # pydantic-settings fills from env
+config.set_main_option("sqlalchemy.url", str(_dsn).replace("%", "%%"))
 
 # Populate Base.metadata with every ORM model before reading it for migrations.
 register_all_models()
