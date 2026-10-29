@@ -7,6 +7,40 @@ out explicitly below).
 
 ## [Unreleased]
 
+### Added
+
+- **Full-deployment backup and restore (ADR-0029).**
+  - `fdp backup dump --full` adds the Postgres state to the archive: runtime
+    settings, API keys, saved searches, index targets, applied profiles,
+    subject roles, the audit trail and metrics history. The archive is
+    encrypted with a passphrase by default (scrypt and AES-256-GCM, format
+    `FDPNEO-ENC1`).
+  - `fdp backup restore` moves the schema to the archive's revision, loads the
+    rows, and migrates to head.
+  - Raw metrics are never included (ADR-0002), and derived tables are rebuilt.
+  - The new `fdp backup seal`, `unseal` and `verify` commands encrypt,
+    decrypt, and check an archive without restoring it.
+  - `fdp backup import --rebase` now also takes `.zip` and encrypted archives.
+- **Moving a bundled stack.** `deploy/stack/backup.sh` writes one encrypted
+  bundle: the full archive, the Keycloak realm with its users, and `.env`.
+  `restore.sh` recreates the deployment on another host. Keycloak's export
+  keeps user IDs, so token subjects and API keys stay valid. A new host name
+  is handled: records are rebased, realm URLs follow, and metrics are
+  re-keyed.
+- **Full backups over HTTP.** `POST /fdp-api/admin/backup/dump?scope=full`
+  needs a passphrase and always produces an encrypted archive. Restore accepts
+  an encrypted upload with a `passphrase` form field. Writes get `503` with
+  `Retry-After` while a full backup or restore runs over HTTP, and reads
+  continue.
+
+### Changed
+
+- **The evaluation stack keeps Keycloak's data in a `keycloak-data` volume.**
+  Users created at runtime now survive a container recreation, and the backup
+  script can export them.
+- Failed backup jobs report expected failures, such as a wrong passphrase or
+  a non-empty target, as plain messages.
+
 ## [0.19.0] — 2026-10-29
 
 ### Changed
