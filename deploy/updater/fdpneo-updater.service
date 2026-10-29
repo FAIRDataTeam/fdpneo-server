@@ -17,6 +17,9 @@
 #   BACKUP_COMMAND=../backup.sh        # run from STACK_DIR; the archive path is appended
 #   BACKUP_DIR=/srv/fdpneo/backups
 #   BACKUP_PASSPHRASE_FILE=/etc/fdpneo-backup.passphrase
+#
+# The host also needs `cosign` on the PATH: the agent verifies each release
+# image's Sigstore signature before applying it.
 
 [Unit]
 Description=FDPneo host updater agent

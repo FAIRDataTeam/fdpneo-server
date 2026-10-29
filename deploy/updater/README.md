@@ -36,7 +36,11 @@ agent is connected. For each request, it runs these steps:
    The agent trusts the server only for *which* allowed release to apply. It
    never runs an arbitrary image.
 2. **Pulls the image by tag** and pins the digest it received, as
-   `X.Y.Z@sha256:…`.
+   `X.Y.Z@sha256:…`. It then **verifies the image's signature** with
+   `cosign`. The image must have been signed by the release workflow of
+   FDPneo's GitHub repository for exactly that tag. An unsigned or wrongly
+   signed image is refused before anything changes. Releases before server
+   0.21.0 and client 0.9.1 are not signed, so apply those by hand.
 3. **Takes a full encrypted backup** with the stack's `backup.sh`. If the
    backup fails, nothing changes.
 4. **Applies the update.** It writes `SERVER_IMAGE_TAG` or `CLIENT_IMAGE_TAG`
@@ -90,6 +94,7 @@ agent is connected. For each request, it runs these steps:
    # UPDATER_POLL_SECONDS=60
    # UPDATER_READY_TIMEOUT=300
    # UPDATER_SKIP_BACKUP=true                    # not recommended
+   # UPDATER_VERIFY_SIGNATURES=false             # only for unsigned mirrors
    ```
 
    A different backup command (`UPDATER_BACKUP_COMMAND`) must accept the
@@ -115,8 +120,8 @@ agent is connected. For each request, it runs these steps:
 
 Use `fdpneo-updater.service` if you prefer not to run a privileged container.
 The unit file explains the installation. The agent is a single
-standard-library Python script, so the host needs Python 3.11 or later and
-the Docker CLI with the Compose plugin.
+standard-library Python script, so the host needs Python 3.11 or later, the
+Docker CLI with the Compose plugin, and `cosign` for the signature check.
 
 ## Disable it
 
