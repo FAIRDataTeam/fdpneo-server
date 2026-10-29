@@ -84,6 +84,11 @@ services:
       # Lenient hostname (start-dev) → the token issuer follows the request URL,
       # so browser and server agree as long as both use PUBLIC_HOST:KEYCLOAK_PORT.
     volumes:
+      # Keycloak's own data (dev-file H2: realm, users, sessions) survives
+      # container recreation, and deploy/stack/backup.sh can export it from a
+      # one-off container (ADR-0029). Without it, users created at runtime were
+      # lost whenever the container was recreated.
+      - keycloak-data:/opt/keycloak/data
       - ../keycloak/realm-fdp-dev.json:/opt/keycloak/data/import/realm-fdp-dev.json:ro
     ports:
       - "${KEYCLOAK_PORT:-8081}:8080"
@@ -218,3 +223,4 @@ services:
 volumes:
   postgres-data:
   graphdb-data:
+  keycloak-data:

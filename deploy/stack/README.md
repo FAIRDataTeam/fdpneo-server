@@ -128,6 +128,26 @@ if those host ports are taken.
 > [`production/`](production/README.md) instead — one HTTPS origin for client,
 > API, and Keycloak, which eliminates the CORS configuration entirely.
 
+## Backing up and moving the stack
+
+`./backup.sh` writes one encrypted bundle (`.fdpbk`) with everything needed to
+recreate this deployment: the knowledge graph, the Postgres state (settings,
+API keys, saved searches, audit trail, metrics history), the Keycloak realm
+with its users, and `.env` if you have one. The server and Keycloak stop for
+the moment of the dump and start again. On the target, a fresh checkout of the
+same release, run `./restore.sh BUNDLE.fdpbk`. It refuses a stack that already
+has data unless `FORCE=1`. Set `BACKUP_PASSPHRASE_FILE` to avoid the prompt.
+
+```bash
+./backup.sh                           # → fdpneo-backup-<timestamp>.fdpbk
+docker compose down -v                # only when testing a restore on the same machine!
+./restore.sh fdpneo-backup-<timestamp>.fdpbk
+```
+
+Keycloak keeps its data in the `keycloak-data` volume, so users created at
+runtime also survive a container recreation. Before, they lived only inside
+the container.
+
 ## Upgrading an existing stack to server 0.19
 
 Server 0.19 moves the stack to PostgreSQL 18 and Keycloak 26. After pulling,

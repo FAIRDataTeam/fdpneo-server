@@ -156,7 +156,18 @@ and `http://` URLs in logs.
   matched the `https://` record IRIs. Re-key the history once:
   `docker compose exec server fdp metrics rebase-resources --from http://<PUBLIC_HOST> --dry-run`,
   then without `--dry-run`.
-- **Backups:** the state lives in the `postgres-data` (operational state +
+- **Backups and moving to another host (ADR-0029):** `../backup.sh` writes
+  one encrypted bundle with everything needed to recreate this deployment: the
+  knowledge graph, the Postgres state (settings, API keys, saved searches,
+  audit trail, metrics history), the Keycloak realm with its users, and `.env`.
+  It stops the server and Keycloak for the few minutes the dump and export
+  take. On the new host, check out the same compose files and run
+  `../restore.sh BUNDLE.fdpbk`. It asks for the passphrase, lets you change
+  `PUBLIC_HOST`, restores into empty volumes, and starts the stack. A new host
+  name is handled for you: records are rebased, the realm's URLs follow, and
+  metrics are re-keyed. Point DNS at the new host before Caddy requests
+  certificates. Keep the passphrase: without it the bundle cannot be opened.
+  The state otherwise lives in the `postgres-data` (operational state +
   Keycloak) and `graphdb-data` (the knowledge graph) volumes; `caddy-data`
   holds certificates (re-obtainable, but backing it up avoids ACME rate limits
   on rebuilds).
