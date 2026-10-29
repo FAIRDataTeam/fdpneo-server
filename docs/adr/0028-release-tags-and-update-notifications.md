@@ -19,7 +19,7 @@ The versions themselves are already known at runtime. The server reports its ver
 
 ### 1. Every release publishes version-tagged images
 
-A `v*` tag in either repository builds and pushes the image with three tags: the full version (`0.19.0`), the minor line (`0.19`) and `latest`. The existing `main` and SHA tags stay. The production `.env.example` tells operators to pin `IMAGE_TAG` to a full version.
+A `v*` tag in either repository builds and pushes the image with three tags: the full version (`0.19.0`), the minor line (`0.19`) and `latest`. The existing `main` and SHA tags stay. The production `.env.example` defaults to `latest` and tells operators to pin each component to a full version. Server and client versions differ, so the compose files take `SERVER_IMAGE_TAG` and `CLIENT_IMAGE_TAG`, each falling back to `IMAGE_TAG`.
 
 ### 2. Every release carries machine-readable upgrade metadata
 
@@ -65,7 +65,7 @@ The client compares the server's running version, from `/fdp-api/info`, and its 
 - A **security** release gets a prominent banner that comes back on each session until the deployment is updated.
 - A release with **manual steps** says so and links its upgrade notes.
 - A client release whose `requires.server` is not met says that the server must be upgraded first.
-- Dismissal is remembered per component and version in local storage.
+- Dismissal lasts for the browser session and is held in memory, because the client keeps no browser storage (client CLAUDE.md). A dismissed notice returns after a reload, which suits security releases in particular.
 
 Instance settings gain an *Updates* panel. It shows the current and latest versions, the last check time, the toggle for `updates.check`, and a "check now" button.
 
