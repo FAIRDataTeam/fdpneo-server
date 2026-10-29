@@ -7,6 +7,13 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-29
+
+Upgrade from 0.19.x. The two new migrations (`0011`, `0012`) run
+automatically on start. The evaluation stack's Keycloak now keeps its data
+in a `keycloak-data` volume, so users created at runtime survive a
+recreated container from now on.
+
 ### Added
 
 - **Update notifications (ADR-0028).** Once a day, the server asks the GitHub
