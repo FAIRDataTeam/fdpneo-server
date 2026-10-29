@@ -107,6 +107,10 @@ host-gateway`) so the OIDC issuer URL is identical for browser and server.
 2. The server entrypoint runs `fdp db migrate`.
 3. The app lifespan auto-applies the bundled default profile (`FDP_PROFILE_AUTO_APPLY=true`)
    and runs the named-graph isolation self-test.
+4. Access control starts in **open** mode (`FDP_ACCESS_CONTROL_MODE=open`): every
+   record is publicly readable and `admin`/`steward` may write, with no ODRL
+   evaluation. Set it to `odrl` — or flip *Access control* under Instance
+   settings as an admin — to enforce per-record ODRL policies.
 
 ## Deploying on another host
 

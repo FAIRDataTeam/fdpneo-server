@@ -16,7 +16,7 @@ import time
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import structlog
@@ -94,7 +94,13 @@ from fdpneo_server.metadata.search.saved import (
     build_saved_queries_router,
 )
 from fdpneo_server.metadata.search.service import SearchService
-from fdpneo_server.metadata.settings import SettingsRepository, build_settings_router
+from fdpneo_server.metadata.settings import (
+    AccessControl,
+    CachedSettingReader,
+    SettingsRepository,
+    build_settings_router,
+    set_registered_default,
+)
 from fdpneo_server.metadata.shacl import ShaclValidator
 from fdpneo_server.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
 from fdpneo_server.metadata.signposting import REL_HAS_RESOURCE_DEFINITIONS, Link
@@ -105,6 +111,7 @@ from fdpneo_server.metrics.pipeline import MetricsPipeline
 from fdpneo_server.metrics.salt import SaltRotator
 from fdpneo_server.metrics.scheduler import MetricsRollupScheduler
 from fdpneo_server.operational import build_info_router, build_readiness_router
+from fdpneo_server.policy.mode import AccessControlConfig, AccessMode
 from fdpneo_server.policy.model import Action
 from fdpneo_server.policy.parser import parse_offer
 from fdpneo_server.policy.resolver import GraphBackedOfferResolver
@@ -224,9 +231,26 @@ def _build_shared_state(
         app.state.metadata_repository,
         system_default_provider=lambda: app.state.system_default_offer_iri,
     )
+    #
+    # The access-control mode (ADR-0027) is read per call from the
+    # ``access.control`` runtime setting. The reader is attached below, once
+    # the settings repository exists; the provider resolves it lazily so the
+    # PDP can be built first.
+    app.state.access_control_reader = None
+
+    async def _access_control() -> AccessControlConfig:
+        reader = app.state.access_control_reader
+        if reader is None:  # pragma: no cover - only before composition completes
+            return AccessControlConfig(mode=AccessMode(settings.access_control.mode))
+        value = cast("AccessControl", await reader())
+        return AccessControlConfig(
+            mode=AccessMode(value.mode), writer_roles=frozenset(value.writer_roles)
+        )
+
     app.state.pdp = RequestScopedPDP(
         session_factory=app.state.session_factory,
         offer_resolver=app.state.offer_resolver,
+        access_control_provider=_access_control,
     )
 
     # Publication-state lifecycle (Phase 12 / ADR-0010). The reader fronts the
@@ -371,6 +395,21 @@ def _build_shared_state(
     # updates are visible without restart. Built before the label resolver and
     # autocomplete service, which both read from it.
     app.state.settings_repository = SettingsRepository(session_factory=app.state.session_factory)
+
+    # Access-control mode (ADR-0027): FDP_ACCESS_CONTROL_MODE seeds the value
+    # ``access.control`` reverts to; the admin's runtime override wins over it.
+    # A mode switch invalidates derived state the old mode produced — the
+    # authorization index (ODRL → open leaves rows that open never reads but
+    # open → ODRL must not trust) and the search index's ``anon_read`` flags.
+    set_registered_default("access.control", AccessControl(mode=settings.access_control.mode))
+    app.state.access_control_reader = CachedSettingReader(
+        app.state.settings_repository, "access.control"
+    )
+
+    def _on_access_control_changed(_key: str) -> None:
+        asyncio.get_running_loop().create_task(_rebuild_authz_derived_state(app))
+
+    app.state.settings_repository.subscribe("access.control", _on_access_control_changed)
 
     # Label resolver: knowledge-graph labels (per-(iri, lang) TTL cache), a
     # settings-backed inline source (6.1a) for vocabulary labels the graph
@@ -1152,6 +1191,34 @@ async def _warm_authz(app: FastAPI, iris: list[str]) -> None:
         targets=len(iris),
         warmed=warmed,
         elapsed_ms=int((time.perf_counter() - start) * 1000),
+    )
+
+
+async def _rebuild_authz_derived_state(app: FastAPI) -> None:
+    """Drop the authz cache and rebuild the search index after a mode switch (ADR-0027).
+
+    Both are derived from policy decisions made under the *previous* mode.
+    Runs as a background task off the settings write so the admin's PUT
+    returns immediately; failures are logged, never raised.
+    """
+    from fdpneo_server.metadata.search.reindex import reindex_all
+
+    settings = get_settings()
+    try:
+        invalidated = await app.state.pdp.invalidate_all()
+        indexed = await reindex_all(
+            app.state.triplestore,
+            app.state.session_factory,
+            language=settings.search.default_language,
+            system_default_offer_iri=app.state.system_default_offer_iri,
+        )
+    except Exception as err:
+        log.error("access_control_mode_rebuild_failed", error=repr(err))
+        return
+    log.info(
+        "access_control_mode_changed",
+        authz_rows_invalidated=invalidated,
+        search_rows_indexed=indexed,
     )
 
 

@@ -35,6 +35,10 @@ _TEST_ENV = {
     "FDP_TRIPLESTORE_UPDATE_ENDPOINT": "http://triplestore.local/update",
     "FDP_OIDC_ISSUER": "http://idp.local/realms/fdp",
     "FDP_OIDC_AUDIENCE": "fdp",
+    # The product default is open access (ADR-0027); the suite pins the ODRL
+    # engine so every policy-denial assertion keeps its meaning. Open-mode
+    # behaviour has its own tests (tests/unit/policy/test_mode.py et al.).
+    "FDP_ACCESS_CONTROL_MODE": "odrl",
 }
 for _key, _value in _TEST_ENV.items():
     os.environ.setdefault(_key, _value)

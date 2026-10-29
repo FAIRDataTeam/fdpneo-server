@@ -272,6 +272,8 @@ Access conditions on metadata records and schemas are expressed in W3C ODRL. The
 
 See [ADR-006](../adr/0006-odrl-profile-permission-prohibition.md) for the rationale on the profile scope.
 
+**The ODRL engine is opt-in.** A deployment starts in *open* access mode ([ADR-0027](../adr/0027-open-access-default-odrl-opt-in.md)): every record is readable by everyone, `admin` and `steward` may write, and nothing in this section is evaluated — the PDP answers from a pure role check before it touches the Offer resolver or the authorization index (§9.4). `FDP_ACCESS_CONTROL_MODE=odrl`, or the `access.control` runtime setting, switches the full engine on; the PEPs (§9, the LDP router, the data provider) are unchanged either way because they only ever see `authorize(subject, action, resource)`. Publication state (ADR-0010) gates visibility in both modes.
+
 ### 8.1 The FDP ODRL profile
 
 **Supported policy types:** `odrl:Offer` and `odrl:Agreement`. Other policy types (`odrl:Set`, `odrl:Policy`, `odrl:Privacy`, `odrl:Request`, `odrl:Ticket`, `odrl:Assertion`) are not used.

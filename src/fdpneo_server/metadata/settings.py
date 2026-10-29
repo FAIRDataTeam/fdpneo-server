@@ -13,6 +13,12 @@ Keys currently registered:
   search UI exposes. The data shape is here so admins can stage the
   config; nothing consumes it yet (Phase 7 search itself is not
   shipped).
+* ``access.control`` — the access-control mode (ADR-0027): ``open`` (every
+  record publicly readable, writer roles may write, no ODRL evaluation) or
+  ``odrl`` (the full policy engine). The registered default is seeded from
+  ``FDP_ACCESS_CONTROL_MODE`` at composition time
+  (:func:`set_registered_default`); the PDP reads the effective value per
+  call through a :class:`CachedSettingReader`.
 
 Auth model:
 
@@ -33,6 +39,9 @@ common operator need without another schema migration.
 
 from __future__ import annotations
 
+import time
+from collections import defaultdict
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, cast
 
@@ -111,6 +120,18 @@ class SearchFilters(BaseModel):
     """Top-level value for the ``search.filters`` key."""
 
     filters: list[SearchFilter] = Field(default_factory=list)
+
+
+class AccessControl(BaseModel):
+    """Top-level value for the ``access.control`` key (ADR-0027).
+
+    ``mode`` selects the engine behind every authorization decision;
+    ``writer_roles`` only matters in ``open`` mode — the realm roles that
+    may modify, delete and distribute. Read is always public in open mode.
+    """
+
+    mode: Literal["open", "odrl"] = "open"
+    writer_roles: list[str] = Field(default_factory=lambda: ["admin", "steward"], min_length=1)
 
 
 # --- defaults ------------------------------------------------------------
@@ -232,10 +253,32 @@ def _registry() -> dict[str, _RegisteredKey]:
             model_class=SearchFilters,
             default=SearchFilters(),
         ),
+        "access.control": _RegisteredKey(
+            model_class=AccessControl,
+            default=AccessControl(),
+        ),
     }
 
 
 SETTINGS_REGISTRY: Final = _registry()
+
+
+def set_registered_default(key: str, default: BaseModel) -> None:
+    """Replace the registered default for ``key`` (composition-time only).
+
+    Lets a deployment environment variable seed the value a key reverts to
+    on ``DELETE /settings/{key}`` — e.g. ``FDP_ACCESS_CONTROL_MODE`` for
+    ``access.control``. The runtime override, when present, still wins.
+    """
+    registered = SETTINGS_REGISTRY.get(key)
+    if registered is None:
+        raise KeyError(f"unknown settings key: {key}")
+    if not isinstance(default, registered.model_class):
+        raise TypeError(
+            f"default for {key} must be {registered.model_class.__name__}, "
+            f"got {type(default).__name__}"
+        )
+    registered.default = default
 
 
 # --- storage --------------------------------------------------------------
@@ -292,6 +335,20 @@ class SettingsRepository:
 
     def __init__(self, *, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+        self._listeners: defaultdict[str, list[Callable[[str], None]]] = defaultdict(list)
+
+    def subscribe(self, key: str, listener: Callable[[str], None]) -> None:
+        """Call ``listener(key)`` after every write, delete or clear touching ``key``.
+
+        In-process only (a multi-replica deployment relies on the
+        :class:`CachedSettingReader` TTL for the other replicas). Listeners
+        run synchronously after the commit; they must not raise.
+        """
+        self._listeners[key].append(listener)
+
+    def _notify(self, key: str) -> None:
+        for listener in self._listeners.get(key, ()):
+            listener(key)
 
     @property
     def session_factory(self) -> async_sessionmaker[AsyncSession]:
@@ -389,6 +446,7 @@ class SettingsRepository:
                 row.updated_at = now
             await session.commit()
         log.info("settings_updated", key=key, subject=subject)
+        self._notify(key)
 
     async def delete(self, key: str) -> bool:
         """Remove the override for ``key`` so the default takes over again.
@@ -410,6 +468,7 @@ class SettingsRepository:
         removed = (result.rowcount or 0) > 0
         if removed:
             log.info("settings_deleted", key=key)
+            self._notify(key)
         return removed
 
     async def clear_all(self, *, subject: str | None = None) -> int:
@@ -423,12 +482,59 @@ class SettingsRepository:
             await session.commit()
         removed = result.rowcount or 0
         log.info("settings_cleared_all", removed=removed, subject=subject)
+        for key in list(self._listeners):
+            self._notify(key)
         return removed
 
     @staticmethod
     async def _fetch(session: AsyncSession, key: str) -> RuntimeSettingRow | None:
         stmt = select(RuntimeSettingRow).where(RuntimeSettingRow.key == key)
         return (await session.execute(stmt)).scalar_one_or_none()
+
+
+class CachedSettingReader:
+    """Hot-path reader for one key: effective value, memoized for ``ttl_seconds``.
+
+    Built for callers that consult a setting on every request (the PDP reads
+    ``access.control`` per authorization). The in-process copy is dropped
+    immediately when this repository writes the key (via :meth:`SettingsRepository.subscribe`)
+    and otherwise expires after ``ttl_seconds`` so other replicas converge.
+    """
+
+    def __init__(
+        self,
+        repository: SettingsRepository,
+        key: str,
+        *,
+        ttl_seconds: float = 5.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if key not in SETTINGS_REGISTRY:
+            raise KeyError(f"unknown settings key: {key}")
+        self._repository = repository
+        self._key = key
+        self._ttl = ttl_seconds
+        self._clock = clock
+        self._value: BaseModel | None = None
+        self._loaded_at: float | None = None
+        repository.subscribe(key, lambda _key: self.invalidate())
+
+    def invalidate(self) -> None:
+        self._value = None
+        self._loaded_at = None
+
+    async def __call__(self) -> BaseModel:
+        now = self._clock()
+        if (
+            self._value is not None
+            and self._loaded_at is not None
+            and now - self._loaded_at < self._ttl
+        ):
+            return self._value
+        value = await self._repository.read_with_default(self._key)
+        self._value = value
+        self._loaded_at = now
+        return value
 
 
 # --- response models ------------------------------------------------------
@@ -537,9 +643,11 @@ def build_settings_router(*, repository: SettingsRepository) -> APIRouter:
 
 __all__ = [
     "SETTINGS_REGISTRY",
+    "AccessControl",
     "AutocompleteItem",
     "AutocompleteSource",
     "AutocompleteSources",
+    "CachedSettingReader",
     "RuntimeSettingRow",
     "SearchFilter",
     "SearchFilters",
@@ -547,4 +655,5 @@ __all__ = [
     "SettingsResponse",
     "SettingsValueResponse",
     "build_settings_router",
+    "set_registered_default",
 ]

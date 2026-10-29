@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from fdpneo_server.policy.cache import ANONYMOUS_SUBJECT_KEY, compute_subject_key
+from fdpneo_server.policy.mode import OPEN_ACCESS, AccessControlConfig, AccessMode
 from fdpneo_server.policy.model import (
     Action,
     ConstraintOperator,
@@ -338,3 +339,95 @@ async def test_cache_miss_after_invalidation_recomputes() -> None:
     decision = await pdp.authorize(ctx, Action.READ, RESOURCE)
     assert decision.outcome is Outcome.PERMIT
     assert resolver.calls == [RESOURCE]  # resolved again
+
+
+# --- open access mode (ADR-0027) --------------------------------------------
+
+
+def _open_pdp(*, config: AccessControlConfig = OPEN_ACCESS) -> tuple[PDP, FakeCache, FakeResolver]:
+    cache = FakeCache()
+    resolver = FakeResolver(by_resource={})  # would DENY everything if consulted
+    pdp = PDP(cache=cache, offer_resolver=resolver, access_control=config)  # type: ignore[arg-type]
+    return pdp, cache, resolver
+
+
+@pytest.mark.unit
+async def test_open_mode_permits_anonymous_read_without_resolver_or_cache() -> None:
+    pdp, cache, resolver = _open_pdp()
+    decision = await pdp.authorize(_ctx(subject=None), Action.READ, RESOURCE)
+    assert decision.outcome is Outcome.PERMIT
+    assert resolver.calls == []
+    assert cache.rows == {}
+
+
+@pytest.mark.unit
+async def test_open_mode_ignores_cached_deny_from_odrl_period() -> None:
+    """Rows left by an earlier ODRL period must not leak into open decisions."""
+    pdp, cache, _ = _open_pdp()
+    await cache.upsert(
+        subject_key=ANONYMOUS_SUBJECT_KEY,
+        action="read",
+        graph_uri=RESOURCE,
+        decision="deny",
+        policy_version=None,
+    )
+    decision = await pdp.authorize(_ctx(subject=None), Action.READ, RESOURCE)
+    assert decision.outcome is Outcome.PERMIT
+
+
+@pytest.mark.unit
+async def test_open_mode_write_requires_writer_role() -> None:
+    pdp, _, _ = _open_pdp()
+    denied = await pdp.authorize(_ctx(subject=ALICE), Action.MODIFY, RESOURCE)
+    assert denied.outcome is Outcome.DENY
+    permitted = await pdp.authorize(
+        _ctx(subject=ALICE, roles=frozenset({"steward"})), Action.MODIFY, RESOURCE
+    )
+    assert permitted.outcome is Outcome.PERMIT
+    anon = await pdp.authorize(_ctx(subject=None), Action.DELETE, RESOURCE)
+    assert anon.outcome is Outcome.DENY
+
+
+@pytest.mark.unit
+async def test_open_mode_honours_configured_writer_roles() -> None:
+    config = AccessControlConfig(mode=AccessMode.OPEN, writer_roles=frozenset({"curator"}))
+    pdp, _, _ = _open_pdp(config=config)
+    steward = await pdp.authorize(
+        _ctx(subject=ALICE, roles=frozenset({"steward"})), Action.MODIFY, RESOURCE
+    )
+    assert steward.outcome is Outcome.DENY
+    curator = await pdp.authorize(
+        _ctx(subject=ALICE, roles=frozenset({"curator"})), Action.MODIFY, RESOURCE
+    )
+    assert curator.outcome is Outcome.PERMIT
+
+
+@pytest.mark.unit
+async def test_open_mode_authorize_many_is_complete_and_strips_internal_graphs() -> None:
+    pdp, cache, resolver = _open_pdp()
+    candidates = {RESOURCE, "https://example.org/records/2", f"{RESOURCE}/meta"}
+    permitted = await pdp.authorize_many(_ctx(subject=None), Action.READ, candidates)
+    assert permitted == {RESOURCE, "https://example.org/records/2"}
+    assert resolver.calls == []
+    assert cache.rows == {}
+    none = await pdp.authorize_many(_ctx(subject=ALICE), Action.MODIFY, candidates)
+    assert none == set()
+
+
+@pytest.mark.unit
+async def test_open_mode_authorized_graphs_is_empty() -> None:
+    pdp, cache, _ = _open_pdp()
+    await cache.upsert(
+        subject_key=compute_subject_key(_ctx(subject=ALICE)),
+        action="read",
+        graph_uri=RESOURCE,
+        decision="permit",
+        policy_version=None,
+    )
+    assert await pdp.authorized_graphs(_ctx(subject=ALICE), Action.READ) == set()
+
+
+@pytest.mark.unit
+async def test_odrl_mode_is_the_bare_default() -> None:
+    pdp, _, _ = _pdp()
+    assert pdp.access_control.mode is AccessMode.ODRL
