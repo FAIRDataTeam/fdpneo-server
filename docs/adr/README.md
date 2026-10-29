@@ -33,6 +33,9 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0023](0023-downstream-composition-seams.md) | Downstream composition seams on `create_app` | Accepted |
 | [0024](0024-mcp-opt-in-write-tools.md) | Opt-in write tools in the MCP sidecar (`fdp-mcp`) | Accepted |
 | [0027](0027-open-access-default-odrl-opt-in.md) | Open access by default, ODRL evaluation opt-in | Accepted |
+| [0028](0028-release-tags-and-update-notifications.md) | Version-tagged releases and update notifications | Proposed |
+| [0029](0029-full-deployment-backup.md) | Full-deployment backup for moving and restoring an instance | Proposed |
+| [0030](0030-optional-host-updater.md) | Optional, pull-based host updater | Proposed |
 
 ## Format
 
