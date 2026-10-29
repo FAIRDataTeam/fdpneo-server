@@ -86,10 +86,11 @@ fdp backup restore ./fdp-full.fdpbk               # into an empty deployment
 - **What it adds.** One JSON-lines file per Postgres *state* table under
   `postgres/`: `runtime_settings`, `api_keys`, `search_saved_queries`,
   `index_targets`, `profile_applied`, `subject_principal`, `record_audit`,
-  `metrics_hourly`, `metrics_daily`. The manifest (format version `2`) records
+  `metrics_hourly`, `metrics_daily`, `update_request`. The manifest (format version `2`) records
   the Alembic revision plus a row count and SHA-256 per file.
 - **What it leaves out.** Derived tables (`authz_index`, `metadata_search`,
-  `metadata_external_labels`) are rebuilt on restore. `metrics_raw` never
+  `metadata_external_labels`, `release_check`, `updater_agent`) are rebuilt on
+  restore or by the next update check or agent poll. `metrics_raw` never
   travels (ADR-0002); the dump first rolls completed hours into
   `metrics_hourly`. Every table is classified in
   `storage/postgres/state_backup.py`, and a unit test fails when a new table is

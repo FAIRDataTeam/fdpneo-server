@@ -62,6 +62,8 @@ STATE_TABLES: Final[tuple[str, ...]] = (
     "record_audit",
     "metrics_hourly",
     "metrics_daily",
+    # ADR-0030: the history of requested updates and their outcomes.
+    "update_request",
 )
 DERIVED_TABLES: Final[tuple[str, ...]] = (
     "authz_index",
@@ -69,6 +71,8 @@ DERIVED_TABLES: Final[tuple[str, ...]] = (
     "metadata_external_labels",
     # ADR-0028 release-check cache; the next update check rebuilds it.
     "release_check",
+    # ADR-0030 agent heartbeat; the agent's next poll rewrites it.
+    "updater_agent",
 )
 EXCLUDED_TABLES: Final[tuple[str, ...]] = ("metrics_raw",)
 
