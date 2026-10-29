@@ -89,7 +89,7 @@
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.client.audience": "fdp",
+            "included.custom.audience": "fdp",
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
