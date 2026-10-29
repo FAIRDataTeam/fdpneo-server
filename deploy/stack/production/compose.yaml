@@ -134,7 +134,7 @@ services:
 
   # --- application tier ---------------------------------------------------------
   server:
-    image: ghcr.io/fairdatateam/fdpneo-server:${IMAGE_TAG:-main}
+    image: ghcr.io/fairdatateam/fdpneo-server:${SERVER_IMAGE_TAG:-${IMAGE_TAG:-main}}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -190,7 +190,7 @@ services:
       FDP_INDEX_PING_TARGETS: ${FDP_INDEX_PING_TARGETS:-}
 
   client:
-    image: ghcr.io/fairdatateam/fdpneo-client:${IMAGE_TAG:-main}
+    image: ghcr.io/fairdatateam/fdpneo-client:${CLIENT_IMAGE_TAG:-${IMAGE_TAG:-main}}
     restart: unless-stopped
     depends_on:
       server:
