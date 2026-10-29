@@ -7,6 +7,58 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-29
+
+### Changed
+
+- **Bundled stacks run current service versions.**
+
+  | Service | Before | Now |
+  |---|---|---|
+  | PostgreSQL | 16 | 18 |
+  | Keycloak | 25.0 | 26.8 |
+  | GraphDB | 10.7.0 | 10.8.14 |
+  | Caddy | 2.8 | 2.11 |
+  | curl helper | 8.10.1 | 8.23.0 |
+
+  The integration and conformance suites run against the same versions.
+  GraphDB stays on 10.x because GraphDB 11 refuses every query until a
+  license file is installed, which the zero-config stacks cannot ship.
+- **The server image runs Python 3.15.** Python 3.15 is now a supported
+  version, and CI tests 3.12, 3.14 and 3.15.
+- **CI runs the integration suite.** A new `pytest (integration)` job runs
+  the testcontainers-backed suite against real GraphDB, PostgreSQL and
+  Keycloak containers on every PR. It is not yet a required check.
+- **Keycloak bootstrap admin variables.** The compose files now pass
+  `KC_BOOTSTRAP_ADMIN_USERNAME` and `KC_BOOTSTRAP_ADMIN_PASSWORD`, which
+  replace the deprecated `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`. The
+  `.env` keys keep their names, so existing `.env` files work unchanged.
+- The image's GeoIP fallback month is 2026-10. DB-IP removes old months, so
+  local builds of the previous default failed with a 404.
+
+### Fixed
+
+- **Realm audience mapper works on Keycloak 26.** Both realm files declared
+  the `fdp` audience as `included.client.audience`, which names a client,
+  and the realm has no client called `fdp`. Keycloak 25 emitted the audience
+  anyway. Keycloak 26 does not, so every token was rejected. The realms now
+  use `included.custom.audience`.
+
+### Upgrading
+
+Upgrading an existing stack takes two one-off, idempotent scripts, run from
+the stack directory. The stack READMEs give the exact commands.
+
+- **`upgrade-postgres-18.sh`.** PostgreSQL 18 cannot open a 16 data
+  directory, and the official image moved its volume to
+  `/var/lib/postgresql`. Until migrated, the container refuses to start with
+  "old database(s) found". It does not start empty. The script dumps with
+  `postgres:16`, keeps a full copy of the old volume, restores into 18, and
+  verifies the database list.
+- **`fix-keycloak-audience.sh`.** An existing realm is never re-imported, so
+  it keeps the old audience mapper. The script updates it through the
+  Keycloak admin CLI.
+
 ## [0.18.0] — 2026-10-29
 
 ### Changed
