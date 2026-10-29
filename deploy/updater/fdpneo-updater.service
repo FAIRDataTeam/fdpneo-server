@@ -14,7 +14,8 @@
 #   CLIENT_URL=http://localhost:5173
 #   FDP_UPDATER_KEY=fdpk_...           # an updater-scoped API key
 #   STACK_DIR=/srv/fdpneo/deploy/stack/production
-#   BACKUP_COMMAND=../backup.sh        # run from STACK_DIR; prints the archive path
+#   BACKUP_COMMAND=../backup.sh        # run from STACK_DIR; the archive path is appended
+#   BACKUP_DIR=/srv/fdpneo/backups
 #   BACKUP_PASSPHRASE_FILE=/etc/fdpneo-backup.passphrase
 
 [Unit]

@@ -190,6 +190,8 @@ class Config:
     client_repo: str
     client_url: str
     backup_command: str | None
+    backup_dir: Path
+    backup_keep: int
     poll_seconds: float
     ready_timeout: float
 
@@ -221,6 +223,12 @@ class Config:
                 "BACKUP_COMMAND is required (ADR-0030 takes a full backup before every update); "
                 "set UPDATER_SKIP_BACKUP=true to run without one, which is not recommended"
             )
+        passphrase_file = environ.get("BACKUP_PASSPHRASE_FILE", "").strip()
+        if backup and not (passphrase_file and Path(passphrase_file).is_file()):
+            raise SystemExit(
+                "BACKUP_PASSPHRASE_FILE must name a readable file: the backup is encrypted and "
+                "the agent has no terminal to prompt on (put it under FDPNEO_ROOT, mode 0600)"
+            )
         return Config(
             server_url=environ.get("FDP_URL", "http://server:8000").rstrip("/"),
             api_key=key,
@@ -230,6 +238,8 @@ class Config:
             client_repo=environ.get("CLIENT_REPO", "FAIRDataTeam/fdpneo-client"),
             client_url=environ.get("CLIENT_URL", "http://client:80").rstrip("/"),
             backup_command=backup or None,
+            backup_dir=Path(environ.get("BACKUP_DIR") or f"{stack_dir}/backups"),
+            backup_keep=max(1, int(environ.get("BACKUP_KEEP") or "3")),
             poll_seconds=float(environ.get("POLL_SECONDS") or "60"),
             ready_timeout=float(environ.get("READY_TIMEOUT") or "300"),
         )
@@ -417,22 +427,46 @@ class Agent:
             self.sleep(5)
         return False
 
-    def backup(self) -> str | None:
+    def backup(self, component: str, version: str) -> str | None:
+        """Run the backup command with an archive path in ``backup_dir``; return that path.
+
+        The command runs from the stack directory with the archive path
+        appended as its last argument (``backup.sh`` takes it that way).
+        ``TMPDIR`` points inside ``backup_dir``: helper containers started by
+        the script bind-mount its work directory, and only paths under the
+        host-path mounts resolve on the host.
+        """
         if self.config.backup_command is None:
             log.warning("UPDATER_SKIP_BACKUP=true: updating without a backup")
             return None
-        result = self.stack.runner(
-            [
-                "sh",
-                "-c",
-                f"cd {shlex.quote(str(self.config.stack_dir))} && {self.config.backup_command}",
-            ]
+        backup_dir = self.config.backup_dir
+        work = backup_dir / ".tmp"
+        work.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        archive = backup_dir / f"fdpneo-before-{component}-{version}-{stamp}.fdpbk"
+        command = (
+            f"cd {shlex.quote(str(self.config.stack_dir))} && "
+            f"TMPDIR={shlex.quote(str(work))} {self.config.backup_command} "
+            f"{shlex.quote(str(archive))}"
         )
+        result = self.stack.runner(["sh", "-c", command])
         if result.returncode != 0:
             raise RuntimeError(f"backup failed: {(result.stderr or result.stdout).strip()[-500:]}")
-        # The backup command prints the archive's path on its last line.
-        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        return lines[-1] if lines else None
+        if not archive.exists():
+            raise RuntimeError(f"the backup command did not create {archive}")
+        self._prune_backups()
+        return str(archive)
+
+    def _prune_backups(self) -> None:
+        """Keep the newest ``backup_keep`` pre-update archives this agent made."""
+        mine = sorted(
+            self.config.backup_dir.glob("fdpneo-before-*.fdpbk"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for old in mine[self.config.backup_keep :]:
+            log.info("removing old pre-update backup %s", old)
+            old.unlink(missing_ok=True)
 
     # one request
 
@@ -466,7 +500,7 @@ class Agent:
 
         # 3: backup; abort without changes if it fails.
         try:
-            backup_location = self.backup()
+            backup_location = self.backup(component, target)
         except Exception as exc:
             self.report(request_id, "failed", f"no update without a backup: {exc}")
             return "failed"

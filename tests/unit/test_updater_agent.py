@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -72,7 +74,9 @@ class FakeDocker:
             if self.fail_up and self.ups == 1:
                 code = 1
         elif cmd[:2] == ["sh", "-c"]:
-            out = "creating backup\n/backups/fdpneo-20261029.fdpneo\n"
+            archive = shlex.split(cmd[2])[-1]
+            Path(archive).write_text("sealed")
+            out = "creating backup\n"
         return subprocess.CompletedProcess(cmd, code, out, "")
 
 
@@ -125,6 +129,8 @@ class FakeServer:
 def _config(tmp_path: Path) -> Any:
     (tmp_path / "compose.yaml").write_text("services: {}\n")
     (tmp_path / ".env").write_text("# stack\nPOSTGRES_USER=fdp\nSERVER_IMAGE_TAG=0.20.0\n")
+    passphrase = tmp_path / "backup.pass"
+    passphrase.write_text("correct horse")
     return upd.Config.from_env(
         {
             "FDP_UPDATER_KEY": "fdpk_test",
@@ -132,6 +138,7 @@ def _config(tmp_path: Path) -> Any:
             "FDP_URL": SERVER_URL,
             "GITHUB_API": GITHUB,
             "BACKUP_COMMAND": "./backup.sh",
+            "BACKUP_PASSPHRASE_FILE": str(passphrase),
             "READY_TIMEOUT": "30",
         }
     )
@@ -214,11 +221,20 @@ def test_env_editing_keeps_other_lines(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_config_requires_a_key_a_stack_and_a_backup(tmp_path: Path) -> None:
     (tmp_path / "compose.yaml").write_text("services: {}\n")
-    base = {"FDP_UPDATER_KEY": "fdpk_x", "STACK_DIR": str(tmp_path), "BACKUP_COMMAND": "./b.sh"}
+    secret = tmp_path / "pass"
+    secret.write_text("x")
+    base = {
+        "FDP_UPDATER_KEY": "fdpk_x",
+        "STACK_DIR": str(tmp_path),
+        "BACKUP_COMMAND": "./b.sh",
+        "BACKUP_PASSPHRASE_FILE": str(secret),
+    }
     with pytest.raises(SystemExit, match="FDP_UPDATER_KEY"):
         upd.Config.from_env({**base, "FDP_UPDATER_KEY": "eyJhbGciOi"})
     with pytest.raises(SystemExit, match="STACK_DIR"):
         upd.Config.from_env({**base, "STACK_DIR": str(tmp_path / "missing")})
+    with pytest.raises(SystemExit, match="BACKUP_PASSPHRASE_FILE"):
+        upd.Config.from_env({**base, "BACKUP_PASSPHRASE_FILE": str(tmp_path / "nope")})
     with pytest.raises(SystemExit, match="BACKUP_COMMAND"):
         upd.Config.from_env({k: v for k, v in base.items() if k != "BACKUP_COMMAND"})
     no_backup = upd.Config.from_env({**base, "UPDATER_SKIP_BACKUP": "true"})
@@ -238,7 +254,9 @@ def test_successful_server_update_pins_the_digest(tmp_path: Path) -> None:
     tag = upd.read_env_value(config.env_file, "SERVER_IMAGE_TAG")
     assert tag == f"0.21.0@sha256:{'a' * 64}"
     assert server.reports[-1]["status"] == "succeeded"
-    assert server.reports[-1]["backup_location"] == "/backups/fdpneo-20261029.fdpneo"
+    location = server.reports[-1]["backup_location"]
+    assert location.startswith(str(tmp_path / "backups" / "fdpneo-before-server-0.21.0-"))
+    assert Path(location).exists()
     pulls = [c for c in docker.calls if c[:2] == ["docker", "pull"]]
     assert pulls == [["docker", "pull", "ghcr.io/fairdatateam/fdpneo-server:0.21.0"]]
     ups = [c for c in docker.calls if "up" in c]
@@ -278,7 +296,7 @@ def test_unready_update_after_a_migration_needs_attention(tmp_path: Path) -> Non
     assert docker.ups == 1  # no rollback attempted onto a migrated schema
     report = server.reports[-1]
     assert "0012_updater -> 0013_future" in report["message"]
-    assert report["backup_location"] == "/backups/fdpneo-20261029.fdpneo"
+    assert report["backup_location"].endswith(".fdpbk")
 
 
 @pytest.mark.unit
@@ -297,3 +315,21 @@ def test_failed_backup_aborts_before_any_change(tmp_path: Path) -> None:
     assert "no update without a backup" in server.reports[-1]["message"]
     assert upd.read_env_value(config.env_file, "SERVER_IMAGE_TAG") == "0.20.0"
     assert docker.ups == 0
+
+
+@pytest.mark.unit
+def test_old_pre_update_backups_are_pruned(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    for i in range(4):
+        old = backups / f"fdpneo-before-server-0.1.{i}-2026.fdpbk"
+        old.write_text("x")
+        os.utime(old, (1_000 + i, 1_000 + i))
+    (backups / "operator-made.fdpbk").write_text("keep me")
+    server = FakeServer(metadata=_meta("0.21.0"), info_version="0.21.0")
+    assert _agent(config, FakeDocker(), server).handle(REQUEST, "0.20.0") == "succeeded"
+    mine = sorted(p.name for p in backups.glob("fdpneo-before-*.fdpbk"))
+    assert len(mine) == 3  # BACKUP_KEEP default
+    assert "fdpneo-before-server-0.1.0-2026.fdpbk" not in mine
+    assert (backups / "operator-made.fdpbk").exists()

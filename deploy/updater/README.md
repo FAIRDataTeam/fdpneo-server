@@ -37,8 +37,8 @@ agent is connected. For each request, it runs these steps:
    never runs an arbitrary image.
 2. **Pulls the image by tag** and pins the digest it received, as
    `X.Y.Z@sha256:…`.
-3. **Takes a full backup** with your backup command. If the backup fails,
-   nothing changes.
+3. **Takes a full encrypted backup** with the stack's `backup.sh`. If the
+   backup fails, nothing changes.
 4. **Applies the update.** It writes `SERVER_IMAGE_TAG` or `CLIENT_IMAGE_TAG`
    in the stack's `.env`, then recreates only that service.
 5. **Waits for readiness.** The server must report the new version on
@@ -63,26 +63,39 @@ agent is connected. For each request, it runs these steps:
    client, tick **Updater token**, and generate it. The token carries only the
    `updater` role. The server refuses it everywhere except the agent
    endpoints, and it stops working if you lose the admin role.
-2. **Provide a backup command.** It runs from the stack directory, must exit
-   non-zero on failure, and must print the backup archive's path on its last
-   line. Use the stack's backup script (ADR-0029) with a passphrase file.
+2. **Prepare the pre-update backup.** Before every update, the agent runs
+   the stack's `backup.sh` (ADR-0029). That script writes an encrypted
+   bundle with the full application state, the Keycloak realm with its
+   users, and `.env`. The agent chooses the archive path itself, under
+   `backups/` in the checkout, and keeps the newest three. It needs the
+   bundle's passphrase in a file it can read:
+
+   ```bash
+   install -m 0600 /dev/null /srv/fdpneo/.backup.pass
+   $EDITOR /srv/fdpneo/.backup.pass   # one line: the passphrase
+   ```
+
+   Keep this passphrase somewhere safe as well. Without it, the backups
+   cannot be restored.
 3. **Add the settings to the stack's `.env`:**
 
    ```bash
    FDPNEO_ROOT=/srv/fdpneo                       # absolute path of this checkout
    FDP_UPDATER_KEY=fdpk_…                        # the updater token
-   UPDATER_BACKUP_COMMAND=../backup.sh --passphrase-file /srv/fdpneo/backup.pass
+   UPDATER_BACKUP_PASSPHRASE_FILE=/srv/fdpneo/.backup.pass
    # Optional:
+   # UPDATER_BACKUP_DIR=/srv/fdpneo/backups      # must lie under FDPNEO_ROOT
+   # UPDATER_BACKUP_KEEP=3
    # DOCKER_SOCKET=/run/user/1000/docker.sock    # rootless Docker
    # UPDATER_POLL_SECONDS=60
    # UPDATER_READY_TIMEOUT=300
    # UPDATER_SKIP_BACKUP=true                    # not recommended
    ```
 
-   The command shown is the production stack's. In the evaluation stack the
-   script sits in the stack directory itself, so the command starts with
-   `./backup.sh`. Releases are pinned per component with `SERVER_IMAGE_TAG`
-   and `CLIENT_IMAGE_TAG`. The agent manages these two lines from now on.
+   A different backup command (`UPDATER_BACKUP_COMMAND`) must accept the
+   archive path as its last argument, exit non-zero on failure, and create
+   that file. Releases are pinned per component with `SERVER_IMAGE_TAG` and
+   `CLIENT_IMAGE_TAG`. The agent manages these two lines from now on.
 4. **Start the agent with its profile:**
 
    ```bash

@@ -249,7 +249,11 @@ services:
       CLIENT_URL: http://client:80
       FDP_UPDATER_KEY: ${FDP_UPDATER_KEY:-}
       STACK_DIR: ${FDPNEO_ROOT:-/fdpneo-root-not-set}/deploy/stack/production
-      BACKUP_COMMAND: ${UPDATER_BACKUP_COMMAND:-}
+      BACKUP_COMMAND: ${UPDATER_BACKUP_COMMAND:-../backup.sh}
+      # Pre-update archives (the newest BACKUP_KEEP are kept). Must lie under
+      # FDPNEO_ROOT, the host-path mount, so helper containers can see them.
+      BACKUP_DIR: ${UPDATER_BACKUP_DIR:-${FDPNEO_ROOT:-/fdpneo-root-not-set}/backups}
+      BACKUP_KEEP: ${UPDATER_BACKUP_KEEP:-3}
       BACKUP_PASSPHRASE_FILE: ${UPDATER_BACKUP_PASSPHRASE_FILE:-}
       UPDATER_SKIP_BACKUP: ${UPDATER_SKIP_BACKUP:-false}
       GITHUB_API: ${UPDATER_GITHUB_API:-https://api.github.com}
