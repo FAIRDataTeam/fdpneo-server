@@ -7,6 +7,8 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-29
+
 ### Changed
 
 - **Access control defaults to open access; ODRL is opt-in (ADR-0027).** A
