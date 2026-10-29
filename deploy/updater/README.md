@@ -40,7 +40,7 @@ agent is connected. For each request, it runs these steps:
    `cosign`. The image must have been signed by the release workflow of
    FDPneo's GitHub repository for exactly that tag. An unsigned or wrongly
    signed image is refused before anything changes. Releases before server
-   0.21.0 and client 0.9.1 are not signed, so apply those by hand.
+   0.21.1 and client 0.9.2 are not signed, so apply those by hand.
 3. **Takes a full encrypted backup** with the stack's `backup.sh`. If the
    backup fails, nothing changes.
 4. **Applies the update.** It writes `SERVER_IMAGE_TAG` or `CLIENT_IMAGE_TAG`
