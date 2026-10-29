@@ -20,7 +20,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Annotated, Any, Final
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal
 
 import structlog
 from fastapi import APIRouter, Depends
@@ -46,6 +46,11 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 _ADMIN_ROLE: Final = "admin"
+UPDATER_SCOPE: Final = "updater"
+UPDATER_ROLE: Final = "updater"
+"""The only role an ``updater``-scoped key carries (ADR-0030)."""
+UPDATER_AGENT_PATH_PREFIX: Final = "/fdp-api/admin/updates/agent/"
+"""A context holding only the updater role may call nothing else (ADR-0030)."""
 TOKEN_PREFIX: Final = "fdpk_"  # noqa: S105 (a public, non-secret prefix marker)
 """Every API-key token starts with this; the middleware dispatches on it."""
 
@@ -98,6 +103,9 @@ class ApiKeyRow(Base):
     expires_at: Mapped[datetime | None] = mapped_column(AwareDateTime(), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(AwareDateTime(), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(AwareDateTime(), nullable=True)
+    # ``None`` for an ordinary key (the owner's live roles). ``"updater"`` for a
+    # restricted key that carries only the ``updater`` role (ADR-0030).
+    scope: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 # --- repository ------------------------------------------------------------
@@ -169,6 +177,13 @@ class ApiKeyCreateRequest(BaseModel):
 
     label: str = Field(min_length=1, max_length=256)
     expires_at: datetime | None = None
+    scope: Literal["updater"] | None = Field(
+        default=None,
+        description=(
+            "Restrict the key. 'updater' (admins only) carries just the updater role "
+            "for the host updater agent (ADR-0030)."
+        ),
+    )
 
 
 class ApiKeyInfo(BaseModel):
@@ -184,6 +199,7 @@ class ApiKeyInfo(BaseModel):
     last_used_at: datetime | None
     revoked_at: datetime | None
     active: bool
+    scope: str | None = None
 
 
 class ApiKeyCreated(ApiKeyInfo):
@@ -226,11 +242,24 @@ class ApiKeyService:
         return self._settings.enabled
 
     async def mint(
-        self, ctx: RequestContext, *, label: str, expires_at: datetime | None
+        self,
+        ctx: RequestContext,
+        *,
+        label: str,
+        expires_at: datetime | None,
+        scope: str | None = None,
     ) -> MintResult:
-        """Issue a key for ``ctx``'s subject, snapshotting its roles/groups."""
+        """Issue a key for ``ctx``'s subject, snapshotting its roles/groups.
+
+        ``scope="updater"`` mints a restricted key for the host updater agent
+        (ADR-0030): admins only, and it carries just the ``updater`` role.
+        """
         if ctx.subject is None:  # defensive; the router requires auth
             raise Forbidden("authentication required to mint an API key")
+        if scope is not None and scope != UPDATER_SCOPE:
+            raise BadRequest(f"unknown API key scope: {scope}")
+        if scope == UPDATER_SCOPE and _ADMIN_ROLE not in ctx.roles:
+            raise Forbidden("only administrators may mint an updater key")
         now = self._clock()
         expires_at = self._validate_expiry(expires_at, now=now)
         active = await self._repo.count_active_for_owner(ctx.subject)
@@ -240,8 +269,8 @@ class ApiKeyService:
                 details={"max_per_user": self._settings.max_per_user},
             )
         token = generate_token()
-        roles = sorted(ctx.roles)
-        groups = sorted(ctx.groups)
+        roles = [UPDATER_ROLE] if scope == UPDATER_SCOPE else sorted(ctx.roles)
+        groups = [] if scope == UPDATER_SCOPE else sorted(ctx.groups)
         row = ApiKeyRow(
             id=str(uuid.uuid4()),
             owner_subject=ctx.subject,
@@ -254,12 +283,13 @@ class ApiKeyService:
             expires_at=expires_at,
             last_used_at=None,
             revoked_at=None,
+            scope=scope,
         )
         await self._repo.add(row)
         # Minting carries a fresh JWT, so seed the principal record now — the
         # key reflects the owner's current roles from its very first use.
         await self._safe_record_principal(ctx)
-        log.info("api_key_minted", key_id=row.id, subject=ctx.subject, label=label)
+        log.info("api_key_minted", key_id=row.id, subject=ctx.subject, label=label, scope=scope)
         return MintResult(token=token, info=self._view(row, now=now))
 
     async def list_for(self, ctx: RequestContext) -> list[ApiKeyInfo]:
@@ -302,6 +332,14 @@ class ApiKeyService:
         if row.expires_at is not None and row.expires_at <= now:
             return None
         roles, groups = await self._resolve_principal(row)
+        if row.scope == UPDATER_SCOPE:
+            # A restricted key acts only as the updater, and only while the
+            # admin who minted it is still an admin.
+            if _ADMIN_ROLE not in roles:
+                return None
+            roles, groups = frozenset({UPDATER_ROLE}), frozenset()
+        elif row.scope is not None:
+            return None  # unknown scope: fail closed
         await self._maybe_touch(row, now=now)
         return RequestContext(
             subject=row.owner_subject,
@@ -364,6 +402,7 @@ class ApiKeyService:
             last_used_at=row.last_used_at,
             revoked_at=row.revoked_at,
             active=active,
+            scope=row.scope,
         )
 
 
@@ -393,7 +432,9 @@ def build_api_keys_router(*, service: ApiKeyService) -> APIRouter:
     ) -> ApiKeyCreated:
         """Mint a key. The plaintext token is in the response **once** — store it now."""
         _require_enabled()
-        result = await service.mint(ctx, label=body.label, expires_at=body.expires_at)
+        result = await service.mint(
+            ctx, label=body.label, expires_at=body.expires_at, scope=body.scope
+        )
         return ApiKeyCreated(key=result.token, **result.info.model_dump())
 
     @router.get("/me/api-keys", response_model=ApiKeyList, name="api_key_list")
@@ -416,6 +457,9 @@ def build_api_keys_router(*, service: ApiKeyService) -> APIRouter:
 
 __all__ = [
     "TOKEN_PREFIX",
+    "UPDATER_AGENT_PATH_PREFIX",
+    "UPDATER_ROLE",
+    "UPDATER_SCOPE",
     "ApiKeyCreateRequest",
     "ApiKeyCreated",
     "ApiKeyInfo",

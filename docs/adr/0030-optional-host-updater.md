@@ -33,18 +33,21 @@ The design is pull-based. The server only records intent:
    - `manual_steps` must be false.
    - `min_upgrade_from` must be satisfied.
    - A client target's `requires.server` must hold.
-2. The updater polls `GET /fdp-api/admin/updates/requests/pending` about once a minute. It uses an API key with a dedicated `updater` role, which can only read, claim and report on update requests.
+2. The updater polls `POST /fdp-api/admin/updates/agent/next` about once a minute. The poll doubles as a heartbeat, and the client offers updates only while an agent was seen within the last five minutes.
+   - **Updater-scoped key.** The agent authenticates with an updater-scoped API key, which only an admin can mint. The key carries only the `updater` role, and it stops working when its owner loses the admin role.
+   - **Confinement.** The authentication middleware refuses this key everywhere except `/fdp-api/admin/updates/agent/*`. It therefore cannot reach subject-scoped endpoints, such as minting a full key for its owner.
 3. The updater **re-validates independently**. It fetches the release and its `fdpneo-release.json` from GitHub itself, and only accepts images from the configured registry and repository. A compromised server can at most request an official, non-manual release. It cannot make the updater run an arbitrary image.
 
 ### 3. What the updater does
 
 For a claimed request, the updater runs these steps:
 
-1. Takes a full encrypted backup (ADR-0029) with a passphrase from its own configuration, keeping the last *n* backups.
-2. Verifies the target image. In v1 it pins the digest from the registry. Signature verification with Sigstore follows once release images are signed.
-3. Writes the new `IMAGE_TAG` into `.env`, pulls the server and/or client image, and recreates only those services.
-4. Waits for `/fdp-api/readyz` and for `/fdp-api/info` to report the target version, with a five-minute timeout.
-5. Reports success or failure, with a log excerpt, back to the server. The client shows the outcome in the *Updates* panel.
+1. Re-validates the release against GitHub, as described in §2.
+2. Pulls the target image by tag and pins the digest it received, writing `X.Y.Z@sha256:…`. Every later restart then runs exactly the image that was checked. Signature verification with Sigstore follows once release images are signed.
+3. Takes a full backup (ADR-0029) by running the operator's backup command, which prints the archive's location. If the backup fails, the update is abandoned before anything changes.
+4. Writes `SERVER_IMAGE_TAG` or `CLIENT_IMAGE_TAG` into the stack's `.env` and recreates only that service. It runs `docker compose` with the stack directory as project directory, so compose override files and `COMPOSE_FILE` apply exactly as they do for the operator.
+5. Waits for `/fdp-api/readyz` and for `/fdp-api/info` to report the target version, with a configurable timeout of five minutes by default.
+6. Reports success or failure back to the server, retrying while the server restarts. The client shows the outcome in the *Updates* panel.
 
 On failure:
 

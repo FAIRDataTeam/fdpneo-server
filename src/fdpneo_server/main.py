@@ -132,6 +132,7 @@ from fdpneo_server.shared.write_freeze import WriteFreeze, WriteFreezeMiddleware
 from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
 from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 from fdpneo_server.storage.triplestore.conformance import verify_named_graph_isolation
+from fdpneo_server.update_requests import UpdateRequestService, build_update_requests_router
 from fdpneo_server.updates import GitHubReleaseSource, UpdateChecker, build_updates_router
 
 log = structlog.get_logger(__name__)
@@ -427,6 +428,12 @@ def _build_shared_state(
         session_factory=app.state.session_factory,
         source=GitHubReleaseSource(http_client=http_client, api_base=settings.updates.github_api),
         enabled_provider=_update_check_enabled,
+    )
+    # Host updater (ADR-0030): admins request, the optional agent applies.
+    app.state.update_request_service = UpdateRequestService(
+        session_factory=app.state.session_factory,
+        checker=app.state.update_checker,
+        running_version=__version__,
     )
 
     # Label resolver: knowledge-graph labels (per-(iri, lang) TTL cache), a
@@ -843,6 +850,10 @@ def create_app(
     # Update notifications (ADR-0028) at /fdp-api/admin/updates — admin-only.
     app.include_router(
         build_updates_router(checker=app.state.update_checker), prefix=RESERVED_API_PATH
+    )
+    app.include_router(
+        build_update_requests_router(service=app.state.update_request_service),
+        prefix=RESERVED_API_PATH,
     )
     # PROF conformance profiles (ADR-0019) — read-only at /fdp-api/profiles.
     # Profiles are the dct:conformsTo target for records; they are provisioned

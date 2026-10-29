@@ -134,7 +134,7 @@ services:
 
   # --- application tier ---------------------------------------------------------
   server:
-    image: ghcr.io/fairdatateam/fdpneo-server:${SERVER_IMAGE_TAG:-${IMAGE_TAG:-main}}
+    image: ${SERVER_IMAGE:-ghcr.io/fairdatateam/fdpneo-server}:${SERVER_IMAGE_TAG:-${IMAGE_TAG:-main}}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -190,7 +190,7 @@ services:
       FDP_INDEX_PING_TARGETS: ${FDP_INDEX_PING_TARGETS:-}
 
   client:
-    image: ghcr.io/fairdatateam/fdpneo-client:${CLIENT_IMAGE_TAG:-${IMAGE_TAG:-main}}
+    image: ${CLIENT_IMAGE:-ghcr.io/fairdatateam/fdpneo-client}:${CLIENT_IMAGE_TAG:-${IMAGE_TAG:-main}}
     restart: unless-stopped
     depends_on:
       server:
@@ -229,6 +229,37 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+
+  # Optional host updater (ADR-0030): applies server/client updates that an
+  # administrator requests in the web client. Off unless started with
+  # `--profile updater`. It controls the Docker daemon through the mounted
+  # socket, which is root-equivalent on a standard Docker host; see
+  # deploy/updater/README.md before enabling it.
+  updater:
+    profiles: ["updater"]
+    build:
+      context: ../../updater
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      FDP_URL: http://server:8000
+      CLIENT_URL: http://client:80
+      FDP_UPDATER_KEY: ${FDP_UPDATER_KEY:-}
+      STACK_DIR: ${FDPNEO_ROOT:-/fdpneo-root-not-set}/deploy/stack/production
+      BACKUP_COMMAND: ${UPDATER_BACKUP_COMMAND:-}
+      BACKUP_PASSPHRASE_FILE: ${UPDATER_BACKUP_PASSPHRASE_FILE:-}
+      UPDATER_SKIP_BACKUP: ${UPDATER_SKIP_BACKUP:-false}
+      GITHUB_API: ${UPDATER_GITHUB_API:-https://api.github.com}
+      POLL_SECONDS: ${UPDATER_POLL_SECONDS:-60}
+      READY_TIMEOUT: ${UPDATER_READY_TIMEOUT:-300}
+    volumes:
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      # The checkout is mounted at its host path, so `docker compose` inside
+      # the container resolves the same files and bind-mount paths as on the host.
+      - ${FDPNEO_ROOT:-/fdpneo-root-not-set}:${FDPNEO_ROOT:-/fdpneo-root-not-set}
 
 volumes:
   postgres-data:

@@ -35,6 +35,7 @@ _MODEL_MODULES: tuple[str, ...] = (
     "fdpneo_server.metadata.settings",
     "fdpneo_server.metrics.repository",
     "fdpneo_server.policy.cache",
+    "fdpneo_server.update_requests",
     "fdpneo_server.updates",
 )
 
