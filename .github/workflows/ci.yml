@@ -53,22 +53,37 @@ jobs:
     name: pytest (unit + contract, py${{ matrix.python }})
     runs-on: ubuntu-latest
     # The floor (3.12) is the library contract downstream consumers resolve
-    # against; 3.14 is what the shipped image runs. Test both ends; the
-    # versions between get no dedicated job.
+    # against; 3.15 is what the shipped image runs. 3.14 stays in the matrix
+    # because "py3.14" is a required check in the main-protection ruleset
+    # (see the note at the top); drop it only together with a ruleset update.
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12", "3.14"]
+        python: ["3.12", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev --python ${{ matrix.python }}
-      # Unit + contract are fast and need no services. The testcontainers-backed
-      # integration suite (GraphDB/Fuseki/Postgres) can be added as a separate
-      # job with Docker services when desired.
+      # Unit + contract are fast and need no services; the testcontainers-backed
+      # integration suite runs in its own job below.
       - run: uv run pytest tests/unit tests/contract
+
+  integration:
+    # Not (yet) a required check: it pulls GraphDB, PostgreSQL and Keycloak
+    # images and takes several minutes. GitHub's ubuntu runners ship Docker,
+    # which testcontainers uses directly.
+    name: pytest (integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run pytest tests/integration
 
   conformance:
     name: pytest (LDP conformance)
