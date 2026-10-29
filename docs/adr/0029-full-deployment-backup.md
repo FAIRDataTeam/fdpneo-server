@@ -1,6 +1,6 @@
 # ADR-0029: Full-deployment backup for moving and restoring an instance
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-29
 **Extends:** [ADR-0016](0016-backup-restore-migration.md)
 

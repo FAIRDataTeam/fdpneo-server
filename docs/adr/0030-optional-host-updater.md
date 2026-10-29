@@ -1,6 +1,6 @@
 # ADR-0030: Optional, pull-based host updater
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-29
 **Depends on:** [ADR-0028](0028-release-tags-and-update-notifications.md), [ADR-0029](0029-full-deployment-backup.md)
 

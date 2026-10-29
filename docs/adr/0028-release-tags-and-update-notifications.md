@@ -1,6 +1,6 @@
 # ADR-0028: Version-tagged releases and update notifications
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-29
 
 ## Context
