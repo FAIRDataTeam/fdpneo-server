@@ -293,8 +293,8 @@ def test_cannot_delete_last_admin() -> None:
 @pytest.mark.parametrize("method", ["get", "patch", "delete"])
 def test_non_uuid_id_rejected_before_upstream(method: str) -> None:
     client = _client(_seed(), ctx=_admin())
-    kwargs = {"json": {"roles": ["steward"]}} if method == "patch" else {}
-    resp = client.request(method.upper(), "/users/not-a-uuid", **kwargs)
+    body = {"roles": ["steward"]} if method == "patch" else None
+    resp = client.request(method.upper(), "/users/not-a-uuid", json=body)
     assert resp.status_code == 400
     assert resp.json()["code"] == "fdp.bad_request"
 
