@@ -46,7 +46,7 @@ For a claimed request, the updater runs these steps:
 2. Pulls the target image by tag and pins the digest it received, writing `X.Y.Z@sha256:…`. Every later restart then runs exactly the image that was checked.
    - **Signature check.** Before going further, it verifies that digest's Sigstore signature with `cosign` (ADR-0028 §1). The certificate identity must be exactly `https://github.com/<repo>/.github/workflows/release.yml@refs/tags/v<version>`, so neither another workflow nor another tag of the same repository can stand in for the release.
    - **No signature.** An unsigned or wrongly signed image is refused before the backup, with nothing changed.
-   - **Opt-out.** `UPDATER_VERIFY_SIGNATURES=false` is an explicit opt-out for mirrors that re-push images without signatures. Releases before server 0.21.0 and client 0.9.1 are unsigned, so they are applied by hand.
+   - **Opt-out.** `UPDATER_VERIFY_SIGNATURES=false` is an explicit opt-out for mirrors that re-push images without signatures. Releases before server 0.21.1 and client 0.9.2 are unsigned, so they are applied by hand.
 3. Takes a full backup (ADR-0029) by running the operator's backup command, which prints the archive's location. If the backup fails, the update is abandoned before anything changes.
 4. Writes `SERVER_IMAGE_TAG` or `CLIENT_IMAGE_TAG` into the stack's `.env` and recreates only that service. It runs `docker compose` with the stack directory as project directory, so compose override files and `COMPOSE_FILE` apply exactly as they do for the operator.
 5. Waits for `/fdp-api/readyz` and for `/fdp-api/info` to report the target version, with a configurable timeout of five minutes by default.

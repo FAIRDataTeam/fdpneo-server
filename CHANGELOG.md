@@ -7,6 +7,16 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.21.1] — 2026-10-29
+
+### Fixed
+
+- **The first signed, multi-architecture images are published.** The 0.21.0
+  release reached PyPI, but its image builds failed, because image
+  references must be lowercase and the organisation name is not. 0.21.1
+  publishes what 0.21.0 describes: signed `linux/amd64` and `linux/arm64`
+  images. There are no code changes.
+
 ## [0.21.0] — 2026-10-29
 
 Upgrade from 0.19.x or 0.20.x. There are no migrations. Hosts running the
