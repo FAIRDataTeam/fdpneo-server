@@ -73,6 +73,7 @@ def test_registry_seeded_with_expected_keys() -> None:
         "access.control",
         "forms.autocomplete-sources",
         "search.filters",
+        "updates.check",
     }
 
 
@@ -210,7 +211,12 @@ async def test_get_settings_returns_all_keys_with_defaults(
     repo = SettingsRepository(session_factory=session_factory)
     app = _build_app(repo)
     body = TestClient(app).get("/settings").json()
-    assert set(body["values"]) == {"access.control", "forms.autocomplete-sources", "search.filters"}
+    assert set(body["values"]) == {
+        "access.control",
+        "forms.autocomplete-sources",
+        "search.filters",
+        "updates.check",
+    }
 
 
 @pytest.mark.unit

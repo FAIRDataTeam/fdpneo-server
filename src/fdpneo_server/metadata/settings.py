@@ -134,6 +134,16 @@ class AccessControl(BaseModel):
     writer_roles: list[str] = Field(default_factory=lambda: ["admin", "steward"], min_length=1)
 
 
+class UpdateCheck(BaseModel):
+    """Top-level value for the ``updates.check`` key (ADR-0028).
+
+    Lets an administrator switch the daily release check off (or back on)
+    without a restart. It cannot override ``FDP_UPDATES_CHECK_ENABLED=false``.
+    """
+
+    enabled: bool = True
+
+
 # --- defaults ------------------------------------------------------------
 
 
@@ -256,6 +266,10 @@ def _registry() -> dict[str, _RegisteredKey]:
         "access.control": _RegisteredKey(
             model_class=AccessControl,
             default=AccessControl(),
+        ),
+        "updates.check": _RegisteredKey(
+            model_class=UpdateCheck,
+            default=UpdateCheck(),
         ),
     }
 
@@ -654,6 +668,7 @@ __all__ = [
     "SettingsRepository",
     "SettingsResponse",
     "SettingsValueResponse",
+    "UpdateCheck",
     "build_settings_router",
     "set_registered_default",
 ]

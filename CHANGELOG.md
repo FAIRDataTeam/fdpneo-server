@@ -40,6 +40,36 @@ out explicitly below).
   script can export them.
 - Failed backup jobs report expected failures, such as a wrong passphrase or
   a non-empty target, as plain messages.
+- **Update notifications (ADR-0028).** Once a day, the server asks the GitHub
+  Releases API whether a newer FDPneo server or client exists. It caches the
+  answer in a new `release_check` table, created by migration `0011`.
+  - **Admin endpoints.** `GET /fdp-api/admin/updates` returns the cached
+    answer. `POST /fdp-api/admin/updates/check` refreshes it, at most once a
+    minute. Both are admin-only.
+  - **Switching it off.** `FDP_UPDATES_CHECK_ENABLED=false` turns the check
+    off completely. The `updates.check` runtime setting lets an admin switch
+    it off without a restart.
+  - **What leaves the host.** Nothing about the deployment is sent. GitHub
+    sees the server's IP address and a `fdpneo-server/<version>` User-Agent.
+- **Version-tagged releases.** A `v*` tag now does four things:
+  - It checks that the tag, the package version and `release.json` agree.
+  - It publishes the image as `X.Y.Z`, `X.Y` and `latest`.
+  - It creates the GitHub release, with the CHANGELOG section as notes.
+  - It attaches `release.json` as `fdpneo-release.json`.
+
+  `release.json` states the minimum version to upgrade from, whether manual
+  steps are needed, and whether the release fixes a vulnerability. The update
+  check reads it.
+- **Per-component image tags.** The compose stacks accept `SERVER_IMAGE_TAG`
+  and `CLIENT_IMAGE_TAG`, each falling back to `IMAGE_TAG`, so server and
+  client can be pinned to their own releases. The production `.env.example`
+  now defaults to `latest` instead of `main`.
+
+### Changed
+
+- **The integration CI job no longer runs on pull requests.** It runs after
+  a merge to main and on manual dispatch, to save CI hours. Run it locally
+  before pushing with `uv run pytest tests/integration`, which needs Docker.
 
 ## [0.19.0] — 2026-10-29
 

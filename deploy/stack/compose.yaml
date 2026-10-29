@@ -102,7 +102,7 @@ services:
 
   # --- application tier -----------------------------------------------------
   server:
-    image: ghcr.io/fairdatateam/fdpneo-server:${IMAGE_TAG:-main}
+    image: ghcr.io/fairdatateam/fdpneo-server:${SERVER_IMAGE_TAG:-${IMAGE_TAG:-main}}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -164,7 +164,7 @@ services:
       - "${SERVER_PORT:-8000}:8000"
 
   client:
-    image: ghcr.io/fairdatateam/fdpneo-client:${IMAGE_TAG:-main}
+    image: ghcr.io/fairdatateam/fdpneo-client:${CLIENT_IMAGE_TAG:-${IMAGE_TAG:-main}}
     build:
       context: ../../../client
       dockerfile: Dockerfile
