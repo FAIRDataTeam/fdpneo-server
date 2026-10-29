@@ -98,6 +98,7 @@ from fdpneo_server.metadata.settings import (
     AccessControl,
     CachedSettingReader,
     SettingsRepository,
+    UpdateCheck,
     build_settings_router,
     set_registered_default,
 )
@@ -130,6 +131,7 @@ from fdpneo_server.shared.security_headers import SecurityHeadersMiddleware
 from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
 from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 from fdpneo_server.storage.triplestore.conformance import verify_named_graph_isolation
+from fdpneo_server.updates import GitHubReleaseSource, UpdateChecker, build_updates_router
 
 log = structlog.get_logger(__name__)
 
@@ -411,6 +413,21 @@ def _build_shared_state(
 
     app.state.settings_repository.subscribe("access.control", _on_access_control_changed)
 
+    # Update notifications (ADR-0028): a daily release check against GitHub,
+    # cached in Postgres, served to administrators. FDP_UPDATES_CHECK_ENABLED is
+    # the hard switch; the ``updates.check`` setting is the admin's runtime one.
+    update_check_reader = CachedSettingReader(app.state.settings_repository, "updates.check")
+
+    async def _update_check_enabled() -> bool:
+        return cast("UpdateCheck", await update_check_reader()).enabled
+
+    app.state.update_checker = UpdateChecker(
+        settings=settings.updates,
+        session_factory=app.state.session_factory,
+        source=GitHubReleaseSource(http_client=http_client, api_base=settings.updates.github_api),
+        enabled_provider=_update_check_enabled,
+    )
+
     # Label resolver: knowledge-graph labels (per-(iri, lang) TTL cache), a
     # settings-backed inline source (6.1a) for vocabulary labels the graph
     # doesn't describe, and a third external source (Phase 21) that dereferences
@@ -495,6 +512,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.audit_log.start(app.state.event_bus)
     app.state.search_indexer.start(app.state.event_bus)
     app.state.index_pinger.start(app.state.event_bus)
+    app.state.update_checker.start()
     await _maybe_auto_bootstrap(app)
     await _migrate_vocabulary_if_needed(app)
     await _warm_anonymous_authz_cache(app)
@@ -514,6 +532,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await asyncio.gather(*pending_publishes, return_exceptions=True)
         app.state.search_indexer.stop()
         await app.state.index_pinger.stop()
+        await app.state.update_checker.stop()
         await app.state.backup_job_registry.shutdown()
         await app.state.label_resolver.shutdown()
         app.state.audit_log.stop()
@@ -796,6 +815,10 @@ def create_app(
             service=app.state.index_target_service, pinger=app.state.index_pinger
         ),
         prefix=RESERVED_API_PATH,
+    )
+    # Update notifications (ADR-0028) at /fdp-api/admin/updates — admin-only.
+    app.include_router(
+        build_updates_router(checker=app.state.update_checker), prefix=RESERVED_API_PATH
     )
     # PROF conformance profiles (ADR-0019) — read-only at /fdp-api/profiles.
     # Profiles are the dct:conformsTo target for records; they are provisioned

@@ -39,6 +39,9 @@ _TEST_ENV = {
     # engine so every policy-denial assertion keeps its meaning. Open-mode
     # behaviour has its own tests (tests/unit/policy/test_mode.py et al.).
     "FDP_ACCESS_CONTROL_MODE": "odrl",
+    # Never contact GitHub from tests (ADR-0028); update-check tests build their
+    # own checker with a mocked transport.
+    "FDP_UPDATES_CHECK_ENABLED": "false",
 }
 for _key, _value in _TEST_ENV.items():
     os.environ.setdefault(_key, _value)

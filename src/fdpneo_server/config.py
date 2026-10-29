@@ -598,6 +598,29 @@ class RateLimitSettings(BaseSettings):
     trust_forwarded_for: bool = False
 
 
+class UpdatesSettings(BaseSettings):
+    """Release check for update notifications (ADR-0028).
+
+    ``check_enabled`` is the hard switch: when ``false`` the server never
+    contacts GitHub and the ``updates.check`` runtime setting cannot turn it
+    back on (air-gapped and policy-restricted sites). Forks point
+    ``server_repo`` / ``client_repo`` at their own releases.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_UPDATES_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    check_enabled: bool = True
+    server_repo: str = "FAIRDataTeam/fdpneo-server"
+    client_repo: str = "FAIRDataTeam/fdpneo-client"
+    check_interval_hours: int = Field(default=24, ge=1, le=24 * 30)
+    github_api: str = "https://api.github.com"
+    # Delay before the first scheduled check after startup, so a restart loop
+    # or a test client never hits GitHub immediately.
+    startup_delay_seconds: int = Field(default=120, ge=0)
+
+
 class AccessControlSettings(BaseSettings):
     """Deployment default for the access-control mode (ADR-0027).
 
@@ -723,6 +746,7 @@ class Settings(BaseSettings):
     rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
     pid: PIDSettings = Field(default_factory=lambda: PIDSettings())
     access_control: AccessControlSettings = Field(default_factory=lambda: AccessControlSettings())
+    updates: UpdatesSettings = Field(default_factory=lambda: UpdatesSettings())
 
     def require_triplestore(self) -> TripleStoreSettings:
         """The triple store settings, or a clear error naming both fixes.
