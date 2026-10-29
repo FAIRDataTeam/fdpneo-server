@@ -241,7 +241,10 @@ def test_container_prefer_minimisation(client: TestClient) -> None:
 
     full = client.get("/", headers={"Accept": "text/turtle"})
     assert full.status_code == 200
-    assert full.headers["Vary"] == "Prefer"  # representation varies by Prefer (LDP §7.2)
+    # The representation varies by Prefer (LDP §7.2). Other tokens may be
+    # present: Starlette's CORS middleware (>= 1.10) adds Origin.
+    vary = {token.strip() for token in full.headers["Vary"].split(",")}
+    assert "Prefer" in vary
 
     minimal = client.get(
         "/",
