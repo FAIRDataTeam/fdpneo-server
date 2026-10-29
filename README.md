@@ -1,18 +1,18 @@
-# FAIR Data Point v2 — Server
+# FDPneo — Server
 
 > [!CAUTION]
-This is NOT the reference implementation, just an experimentation. The initial development has been heavily based on AI code generation.
+> FDPneo is an **AI-developed** FAIR Data Point implementation: its architecture, code, tests and much of its documentation were generated with AI coding assistants under human direction and review. It is NOT the FDP reference implementation and is still experimental.
 
-A FAIR-aligned metadata repository implementing the [FAIR Data Point specifications](https://specs.fairdatapoint.org), modelled on W3C DCAT with user-defined SHACL schemas, ODRL-based access control, and a full W3C Linked Data Platform API.
+FDPneo is a FAIR-aligned metadata repository implementing the [FAIR Data Point specifications](https://specs.fairdatapoint.org), modelled on W3C DCAT with user-defined SHACL schemas, ODRL-based access control, and a full W3C Linked Data Platform API.
 
-This repository contains the **server** implementation. The reference web client lives in a separate repository: `fdp-client` (URL to be set at repo creation).
+This repository contains the **server** implementation. The web client lives in a separate repository: [`fdpneo-client`](https://github.com/FAIRDataTeam/fdpneo-client). Documentation for the whole stack is in [`fdpneo-docs`](https://github.com/FAIRDataTeam/fdpneo-docs).
 
 > **Status: active development.** The core stack runs — you can bring up the full client + server + services with one command (see [Getting started](#getting-started)). This README still describes some target-state features that are in progress, and the bundled deployment is dev-credentialed, so it is not yet hardened for production. 
 
 
-## What the FDP does
+## What FDPneo does
 
-The FDP is a metadata repository. It serves descriptions of datasets, data services, organizations, biobanks, patient registries, scientific publications, methodologies, semantic artefacts — anything a community wishes to describe through its own SHACL schemas — over standard semantic-web protocols. Consumers can browse and search the metadata through a REST API (Linked Data Platform), run SPARQL queries against it, and access the underlying open-access data distributions where policy permits.
+FDPneo is a metadata repository. It serves descriptions of datasets, data services, organizations, biobanks, patient registries, scientific publications, methodologies, semantic artefacts — anything a community wishes to describe through its own SHACL schemas — over standard semantic-web protocols. Consumers can browse and search the metadata through a REST API (Linked Data Platform), run SPARQL queries against it, and access the underlying open-access data distributions where policy permits.
 
 ## Key design choices
 
@@ -139,4 +139,4 @@ This compose starts GraphDB, PostgreSQL, and a Keycloak instance pre-configured 
 
 - FDP specifications: [specs.fairdatapoint.org](https://specs.fairdatapoint.org)
 - Current reference implementation: [github.com/FAIRDataTeam/FAIRDataPoint](https://github.com/FAIRDataTeam/FAIRDataPoint)
-- Reference client repository: `fdp-client` (URL to be set at repo creation)
+- Client repository: [github.com/FAIRDataTeam/fdpneo-client](https://github.com/FAIRDataTeam/fdpneo-client)
