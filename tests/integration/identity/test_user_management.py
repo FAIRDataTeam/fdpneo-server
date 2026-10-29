@@ -39,10 +39,10 @@ pytestmark = pytest.mark.integration
 def keycloak() -> Iterator[DockerContainer]:
     """A Keycloak that boots with the bundled fdp-dev realm imported."""
     container = (
-        DockerContainer("quay.io/keycloak/keycloak:25.0")
+        DockerContainer("quay.io/keycloak/keycloak:26.8")
         .with_exposed_ports(KEYCLOAK_PORT)
-        .with_env("KEYCLOAK_ADMIN", "admin")
-        .with_env("KEYCLOAK_ADMIN_PASSWORD", "admin")
+        .with_env("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+        .with_env("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
         .with_volume_mapping(str(REALM_FILE), "/opt/keycloak/data/import/realm-fdp-dev.json", "ro")
         .with_command("start-dev --import-realm")
         # "Listening on:" is logged once boot + realm import have completed.

@@ -19,7 +19,7 @@
 
 services:
   graphdb:
-    image: ontotext/graphdb:10.7.0
+    image: ontotext/graphdb:10.8.14
     container_name: fdp-graphdb
     ports:
       - "7200:7200"
@@ -38,12 +38,12 @@ services:
       retries: 12
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     container_name: fdp-postgres
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     environment:
       POSTGRES_USER: fdp
       POSTGRES_PASSWORD: fdp
@@ -55,7 +55,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:26.8
     container_name: fdp-keycloak
     command:
       - start-dev
@@ -65,8 +65,8 @@ services:
     volumes:
       - ./keycloak/realm-fdp-dev.json:/opt/keycloak/data/import/realm-fdp-dev.json:ro
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]

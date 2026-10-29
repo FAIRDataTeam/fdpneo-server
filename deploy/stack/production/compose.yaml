@@ -20,7 +20,7 @@ name: fdpneo-prod
 services:
   # --- edge -------------------------------------------------------------------
   caddy:
-    image: caddy:2.8
+    image: caddy:2.11
     restart: unless-stopped
     ports:
       - "80:80"
@@ -41,7 +41,7 @@ services:
 
   # --- backing services ---------------------------------------------------------
   postgres:
-    image: postgres:16
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-fdp}
@@ -51,7 +51,7 @@ services:
       # boot of an empty volume only).
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?set KC_DB_PASSWORD in .env}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fdp} -d ${POSTGRES_DB:-fdp}"]
@@ -60,7 +60,7 @@ services:
       retries: 12
 
   graphdb:
-    image: ontotext/graphdb:10.7.0
+    image: ontotext/graphdb:10.8.14
     restart: unless-stopped
     environment:
       GDB_JAVA_OPTS: -Xmx2g -Xms1g
@@ -74,7 +74,7 @@ services:
 
   # Oneshot: create the `fdp` GraphDB repository if missing (idempotent).
   graphdb-init:
-    image: curlimages/curl:8.10.1
+    image: curlimages/curl:8.23.0
     depends_on:
       graphdb:
         condition: service_healthy
@@ -99,12 +99,12 @@ services:
   # The imported realm template has NO demo users and env-parameterized
   # redirect URIs/secrets — see realm-fdp-prod.json.
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:26.8
     restart: unless-stopped
     command: ["start", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak

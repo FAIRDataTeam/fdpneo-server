@@ -48,7 +48,7 @@ def _async_dsn(container: PostgresContainer) -> str:
 
 @pytest.fixture(scope="module")
 def postgres_container() -> Iterator[PostgresContainer]:
-    with PostgresContainer("postgres:16-alpine") as container:
+    with PostgresContainer("postgres:18-alpine") as container:
         yield container
 
 

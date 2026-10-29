@@ -1,4 +1,4 @@
-# GraphDB repository configuration for the `fdp` repository (RDF4J/GraphDB 10).
+# GraphDB repository configuration for the `fdp` repository (RDF4J/GraphDB 10.8).
 #
 # Created headlessly by the `graphdb-init` service in deploy/stack/compose.yaml
 # (POST /rest/repositories). Tuned for the FDP's strict named-graph semantics:

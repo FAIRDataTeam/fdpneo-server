@@ -25,7 +25,7 @@ import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-_GRAPHDB_IMAGE = "ontotext/graphdb:10.7.0"
+_GRAPHDB_IMAGE = "ontotext/graphdb:10.8.14"
 _GRAPHDB_PORT = 7200
 _FDP_REPO = "fdp"
 # The deployment repository config (no inference, context index on) — the same
