@@ -30,6 +30,17 @@ def _load() -> ModuleType:
 
 upd = _load()
 
+
+@pytest.fixture(autouse=True)
+def _cosign_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pretend cosign is installed; FakeDocker answers its `verify` calls."""
+
+    def which(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(upd.shutil, "which", which)
+
+
 GITHUB = "https://api.github.test"
 SERVER_URL = "http://server:8000"
 
@@ -50,8 +61,11 @@ def _meta(version: str, component: str = "server", **extra: Any) -> dict[str, An
 class FakeDocker:
     """Records commands; answers pull/inspect/compose like a healthy host."""
 
-    def __init__(self, *, revision_after: str = "0012_updater", fail_up: bool = False) -> None:
+    def __init__(
+        self, *, revision_after: str = "0012_updater", fail_up: bool = False, signed: bool = True
+    ) -> None:
         self.calls: list[list[str]] = []
+        self.signed = signed
         self.revision = "0012_updater"
         self.revision_after = revision_after
         self.fail_up = fail_up
@@ -61,6 +75,10 @@ class FakeDocker:
         cmd = list(cmd)
         self.calls.append(cmd)
         out, code = "", 0
+        if cmd[:2] == ["cosign", "verify"]:
+            if not self.signed:
+                return subprocess.CompletedProcess(cmd, 1, "", "Error: no signatures found")
+            return subprocess.CompletedProcess(cmd, 0, "[]", "")
         if cmd[:2] == ["docker", "image"]:
             ref = cmd[-1]
             repo = ref.rsplit(":", 1)[0]
@@ -333,3 +351,71 @@ def test_old_pre_update_backups_are_pruned(tmp_path: Path) -> None:
     assert len(mine) == 3  # BACKUP_KEEP default
     assert "fdpneo-before-server-0.1.0-2026.fdpbk" not in mine
     assert (backups / "operator-made.fdpbk").exists()
+
+
+# --- signatures (ADR-0028 §1, ADR-0030) ---------------------------------------
+
+
+@pytest.mark.unit
+def test_signature_is_checked_against_the_exact_release_identity(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    docker = FakeDocker()
+    server = FakeServer(metadata=_meta("0.21.0"), info_version="0.21.0")
+    assert _agent(config, docker, server).handle(REQUEST, "0.20.0") == "succeeded"
+    [verify] = [c for c in docker.calls if c[:2] == ["cosign", "verify"]]
+    assert verify[2] == f"ghcr.io/fairdatateam/fdpneo-server@sha256:{'a' * 64}"
+    assert verify[verify.index("--certificate-identity") + 1] == (
+        "https://github.com/FAIRDataTeam/fdpneo-server/.github/workflows/release.yml"
+        "@refs/tags/v0.21.0"
+    )
+    assert verify[verify.index("--certificate-oidc-issuer") + 1] == (
+        "https://token.actions.githubusercontent.com"
+    )
+    order = [c[0] for c in docker.calls if c[0] in ("cosign", "sh")]
+    assert order == ["cosign", "sh"]  # verified before the backup
+
+
+@pytest.mark.unit
+def test_unsigned_image_is_refused_before_anything_changes(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    docker = FakeDocker(signed=False)
+    server = FakeServer(metadata=_meta("0.21.0"), info_version="0.21.0")
+    assert _agent(config, docker, server).handle(REQUEST, "0.20.0") == "failed"
+    assert "is not signed by" in server.reports[-1]["message"]
+    assert upd.read_env_value(config.env_file, "SERVER_IMAGE_TAG") == "0.20.0"
+    assert not any(c[:2] == ["sh", "-c"] for c in docker.calls)  # no backup
+    assert docker.ups == 0
+
+
+@pytest.mark.unit
+def test_signature_check_can_be_switched_off(tmp_path: Path) -> None:
+    (tmp_path / "compose.yaml").write_text("services: {}\n")
+    (tmp_path / ".env").write_text("SERVER_IMAGE_TAG=0.20.0\n")
+    secret = tmp_path / "pass"
+    secret.write_text("x")
+    config = upd.Config.from_env(
+        {
+            "FDP_UPDATER_KEY": "fdpk_x",
+            "STACK_DIR": str(tmp_path),
+            "BACKUP_COMMAND": "./backup.sh",
+            "BACKUP_PASSPHRASE_FILE": str(secret),
+            "UPDATER_VERIFY_SIGNATURES": "false",
+            "READY_TIMEOUT": "30",
+        }
+    )
+    docker = FakeDocker(signed=False)
+    server = FakeServer(metadata=_meta("0.21.0"), info_version="0.21.0")
+    assert _agent(config, docker, server).handle(REQUEST, "0.20.0") == "succeeded"
+    assert not any(c[0] == "cosign" for c in docker.calls)
+
+
+@pytest.mark.unit
+def test_agent_refuses_to_start_without_cosign(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def which(_name: str) -> None:
+        return None
+
+    monkeypatch.setattr(upd.shutil, "which", which)
+    with pytest.raises(SystemExit, match="cosign is required"):
+        _config(tmp_path)

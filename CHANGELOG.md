@@ -7,6 +7,31 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-10-29
+
+Upgrade from 0.19.x or 0.20.x. There are no migrations. Hosts running the
+optional updater should rebuild its image to get the signature check:
+`docker compose --profile updater up -d --build --no-deps updater`.
+
+### Added
+
+- **Signed, multi-architecture release images.** Release images are built
+  for `linux/amd64` and `linux/arm64` on native runners and merged into one
+  multi-architecture image. Apple Silicon and ARM servers no longer need to
+  build locally.
+  - **Signing.** The image is signed by digest with Sigstore keyless signing,
+    which binds the signature to the repository, `release.yml` and the tag.
+    A build-provenance attestation is attached.
+  - **Verification.** Use `cosign verify` or `gh attestation verify`. The
+    release workflow itself verifies the signature before publishing the
+    GitHub release. See ADR-0028 §1.
+- **The host updater verifies release signatures (ADR-0030).** Before taking
+  a backup or changing anything, the agent checks the pulled digest with
+  `cosign`. The identity must be the release workflow at exactly the
+  requested tag, otherwise the agent refuses the update. The agent image now
+  includes cosign. `UPDATER_VERIFY_SIGNATURES=false` opts out, for mirrors
+  that drop signatures.
+
 ## [0.20.0] — 2026-10-29
 
 Upgrade from 0.19.x. The two new migrations (`0011`, `0012`) run

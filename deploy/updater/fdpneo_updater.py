@@ -12,7 +12,9 @@ heartbeat), claim a pending request, then:
 1. re-validate the release against GitHub on its own: published, not a
    pre-release, upgrade metadata present, ``manual_steps`` false,
    ``min_upgrade_from`` satisfied, and for a client, ``requires.server``;
-2. pull the image by tag and pin the pulled digest (``X.Y.Z@sha256:…``);
+2. pull the image by tag, pin the pulled digest (``X.Y.Z@sha256:…``), and
+   verify its Sigstore signature with ``cosign``: it must have been signed by
+   the release workflow of the configured repository for exactly that tag;
 3. take a full backup with the stack's backup command (ADR-0029);
 4. write ``SERVER_IMAGE_TAG`` / ``CLIENT_IMAGE_TAG`` in the stack's ``.env``
    and recreate only that service;
@@ -35,6 +37,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -45,7 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.1.0"
 RELEASE_ASSET = "fdpneo-release.json"
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 _REQUIREMENT_RE = re.compile(r"^\s*(>=|==)?\s*v?(\d+\.\d+\.\d+)\s*$")
@@ -194,6 +197,8 @@ class Config:
     backup_keep: int
     poll_seconds: float
     ready_timeout: float
+    verify_signatures: bool = True
+    oidc_issuer: str = "https://token.actions.githubusercontent.com"
 
     @property
     def env_file(self) -> Path:
@@ -229,6 +234,12 @@ class Config:
                 "BACKUP_PASSPHRASE_FILE must name a readable file: the backup is encrypted and "
                 "the agent has no terminal to prompt on (put it under FDPNEO_ROOT, mode 0600)"
             )
+        verify = environ.get("UPDATER_VERIFY_SIGNATURES", "true").strip().lower() != "false"
+        if verify and shutil.which("cosign") is None:
+            raise SystemExit(
+                "cosign is required to verify release signatures (ADR-0030); install it, or set "
+                "UPDATER_VERIFY_SIGNATURES=false for images that are not signed (not recommended)"
+            )
         return Config(
             server_url=environ.get("FDP_URL", "http://server:8000").rstrip("/"),
             api_key=key,
@@ -240,6 +251,9 @@ class Config:
             backup_command=backup or None,
             backup_dir=Path(environ.get("BACKUP_DIR") or f"{stack_dir}/backups"),
             backup_keep=max(1, int(environ.get("BACKUP_KEEP") or "3")),
+            verify_signatures=verify,
+            oidc_issuer=environ.get("COSIGN_OIDC_ISSUER")
+            or "https://token.actions.githubusercontent.com",
             poll_seconds=float(environ.get("POLL_SECONDS") or "60"),
             ready_timeout=float(environ.get("READY_TIMEOUT") or "300"),
         )
@@ -407,6 +421,41 @@ class Agent:
                     return data if isinstance(data, dict) else None
         return None
 
+    # signatures
+
+    def verify_signature(self, component: str, version: str, pinned: str) -> None:
+        """Raise :class:`RefusedError` unless the pinned image carries the release signature.
+
+        The certificate identity is the release workflow of the configured
+        repository at exactly ``refs/tags/v<version>`` (keyless Sigstore
+        signing, ADR-0028 §1), so neither another workflow nor another tag of
+        the same repository can stand in for this release.
+        """
+        if not self.config.verify_signatures:
+            log.warning("UPDATER_VERIFY_SIGNATURES=false: applying without a signature check")
+            return
+        repo = self.config.server_repo if component == "server" else self.config.client_repo
+        digest = pinned.split("@", 1)[1]
+        reference = f"{self.stack.image_repo(component)}@{digest}"
+        identity = f"https://github.com/{repo}/.github/workflows/release.yml@refs/tags/v{version}"
+        result = self.stack.runner(
+            [
+                "cosign",
+                "verify",
+                reference,
+                "--certificate-identity",
+                identity,
+                "--certificate-oidc-issuer",
+                self.config.oidc_issuer,
+            ]
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()[-300:]
+            raise RefusedError(
+                f"{reference} is not signed by {identity}: {detail or 'verification failed'}"
+            )
+        log.info("signature verified: %s by %s", reference, identity)
+
     # readiness
 
     def wait_ready(self, component: str, version: str) -> bool:
@@ -491,6 +540,7 @@ class Agent:
                 running_server=server_version,
             )
             pinned = self.stack.pull_and_pin(component, target)
+            self.verify_signature(component, target, pinned)
         except RefusedError as exc:
             self.report(request_id, "failed", f"refused: {exc}")
             return "failed"

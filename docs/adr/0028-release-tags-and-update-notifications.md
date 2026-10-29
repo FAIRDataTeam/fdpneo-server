@@ -21,6 +21,22 @@ The versions themselves are already known at runtime. The server reports its ver
 
 A `v*` tag in either repository builds and pushes the image with three tags: the full version (`0.19.0`), the minor line (`0.19`) and `latest`. The existing `main` and SHA tags stay. The production `.env.example` defaults to `latest` and tells operators to pin each component to a full version. Server and client versions differ, so the compose files take `SERVER_IMAGE_TAG` and `CLIENT_IMAGE_TAG`, each falling back to `IMAGE_TAG`.
 
+**Amendment (server 0.21.0, client 0.9.1): multi-architecture, signed images.**
+
+- **Native builds per architecture.** Release images are built for `linux/amd64` and `linux/arm64`, each on its own GitHub runner, and merged into one multi-architecture image.
+- **Keyless signing.** The image is signed by digest with Sigstore keyless signing. The signing certificate binds the signature to the repository, the `release.yml` workflow and the tag. There are no keys to store or rotate.
+- **Transparency log and provenance.** The signature is recorded in Sigstore's public transparency log. A build-provenance attestation (`actions/attest-build-provenance`) records how, and from which commit, the image was built.
+- **Verification.** Anyone can verify an image:
+
+  ```bash
+  cosign verify ghcr.io/fairdatateam/fdpneo-server:0.21.0 \
+    --certificate-identity https://github.com/FAIRDataTeam/fdpneo-server/.github/workflows/release.yml@refs/tags/v0.21.0 \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  gh attestation verify oci://ghcr.io/fairdatateam/fdpneo-server:0.21.0 --repo FAIRDataTeam/fdpneo-server
+  ```
+
+Images published before these versions are amd64-only and unsigned. The `main` and commit-SHA images built on every merge also stay amd64-only and unsigned, which keeps CI cost down. They are development builds, not releases.
+
 ### 2. Every release carries machine-readable upgrade metadata
 
 Each repository keeps a `release.json` at its root, updated in the release commit:
