@@ -288,3 +288,46 @@ def test_router_disabled_returns_404(session_factory: Any) -> None:
     client = _client(svc, ctx=_ctx(ALICE))
     assert client.post("/me/api-keys", json={"label": "x"}).status_code == 404
     assert client.get("/me/api-keys").status_code == 404
+
+
+# --- updater scope (ADR-0030) ------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_only_admins_mint_updater_keys(session_factory: Any) -> None:
+    svc = _service(session_factory)
+    with pytest.raises(Forbidden):
+        await svc.mint(
+            _ctx(ALICE, roles=frozenset({"steward"})), label="u", expires_at=None, scope="updater"
+        )
+    with pytest.raises(BadRequest):
+        await svc.mint(
+            _ctx(ALICE, roles=frozenset({"admin"})), label="u", expires_at=None, scope="root"
+        )
+    minted = await svc.mint(
+        _ctx(ALICE, roles=frozenset({"admin", "steward"})),
+        label="updater",
+        expires_at=None,
+        scope="updater",
+    )
+    assert minted.info.scope == "updater"
+    assert minted.info.roles == ["updater"]
+    assert minted.info.groups == []
+
+
+@pytest.mark.unit
+async def test_updater_key_carries_only_the_updater_role_while_owner_is_admin(
+    session_factory: Any,
+) -> None:
+    svc = _service(session_factory)
+    principals = SubjectPrincipalRepository(session_factory=session_factory)
+    minted = await svc.mint(
+        _ctx(ALICE, roles=frozenset({"admin"})), label="u", expires_at=None, scope="updater"
+    )
+    ctx = await svc.authenticate(minted.token, trace_id="x")
+    assert ctx is not None
+    assert ctx.roles == frozenset({"updater"})
+    assert ctx.groups == frozenset()
+    # The owner loses admin at the IdP: the updater key stops working.
+    await principals.record(ALICE, roles=frozenset({"steward"}), groups=frozenset())
+    assert await svc.authenticate(minted.token, trace_id="x") is None

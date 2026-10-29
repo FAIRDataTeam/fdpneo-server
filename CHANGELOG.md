@@ -7,6 +7,13 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-29
+
+Upgrade from 0.19.x. The two new migrations (`0011`, `0012`) run
+automatically on start. The evaluation stack's Keycloak now keeps its data
+in a `keycloak-data` volume, so users created at runtime survive a
+recreated container from now on.
+
 ### Added
 
 - **Update notifications (ADR-0028).** Once a day, the server asks the GitHub
@@ -57,6 +64,28 @@ out explicitly below).
   an encrypted upload with a `passphrase` form field. Writes get `503` with
   `Retry-After` while a full backup or restore runs over HTTP, and reads
   continue.
+
+- **Optional host updater (ADR-0030).** An administrator can request an
+  update in the client. A small agent on the host then applies it.
+  - **Off by default.** The agent runs in the `updater` compose profile, or
+    as a systemd unit. It controls Docker, which is root-equivalent on a
+    standard host.
+  - **What it does.** It re-checks the release on GitHub, pins the pulled
+    image digest, takes a full backup, recreates only the updated service and
+    waits for the new version. It rolls back when the update fails and no
+    migration ran.
+  - **What it refuses.** Releases that need manual steps. It never touches
+    compose files or the database, IdP, store or proxy services.
+  - **Server side.** Migration `0012` adds `api_keys.scope`, the
+    `update_request` table and the `updater_agent` table. New endpoints sit
+    under `/fdp-api/admin/updates/requests` for admins and
+    `/fdp-api/admin/updates/agent/*` for the agent.
+  - **Updater-scoped API keys.** An admin can mint a key that carries only
+    the `updater` role. The server refuses it everywhere except the agent
+    endpoints, and it stops working when its owner loses the admin role.
+  - **Documentation.** See `deploy/updater/README.md`.
+- **Configurable image repositories.** `SERVER_IMAGE` and `CLIENT_IMAGE`
+  set the server and client image repositories, for example a mirror.
 
 ### Changed
 

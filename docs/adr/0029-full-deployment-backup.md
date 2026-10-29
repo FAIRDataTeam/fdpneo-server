@@ -39,8 +39,8 @@ Deployments with an external IdP use the application archive alone. Their IdP is
 
 `fdp backup dump --full` adds one JSON-lines file per state table under `postgres/`:
 
-- **Included:** `runtime_settings`, `api_keys`, `search_saved_queries`, `index_targets`, `profile_applied`, `subject_principal`, `metrics_hourly`, `metrics_daily`, and `record_audit`, which is already included today.
-- **Excluded, rebuilt on restore:** `authz_index`, `metadata_search`, `metadata_external_labels`.
+- **Included:** `runtime_settings`, `api_keys`, `search_saved_queries`, `index_targets`, `profile_applied`, `subject_principal`, `metrics_hourly`, `metrics_daily`, `update_request` (ADR-0030), and `record_audit`, which is already included today.
+- **Excluded, rebuilt on restore:** `authz_index`, `metadata_search`, `metadata_external_labels`, and the caches `release_check` (ADR-0028) and `updater_agent` (ADR-0030).
 - **Excluded by design:** `metrics_raw`. The dump runs the metrics rollup first, so no completed hour is lost.
 
 The manifest records the Alembic revision of the source database and a row count and SHA-256 per file. Without `--full`, the dump is exactly today's archive.

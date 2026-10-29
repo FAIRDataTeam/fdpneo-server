@@ -159,3 +159,48 @@ def test_role_change_records_immediately(
     )
     assert len(recorder.calls) == 2
     assert recorder.calls[1][1] == frozenset({"admin"})
+
+
+# --- updater-only contexts (ADR-0030) ----------------------------------------
+
+
+def _agent_app(authenticator: _FakeAuthenticator) -> FastAPI:
+    app = _whoami_app(jwks_provider=lambda: cast(Any, None), authenticator=authenticator)
+
+    @app.post("/fdp-api/admin/updates/agent/next")
+    async def agent_next() -> dict[str, object]:  # pyright: ignore[reportUnusedFunction]
+        ctx = get_current()
+        assert ctx is not None
+        return {"roles": sorted(ctx.roles)}
+
+    @app.post("/fdp-api/me/api-keys")
+    async def mint() -> dict[str, object]:  # pyright: ignore[reportUnusedFunction]
+        return {"minted": True}
+
+    return app
+
+
+@pytest.mark.unit
+def test_updater_only_context_is_confined_to_agent_endpoints() -> None:
+    auth = _FakeAuthenticator(
+        {APIKEY: RequestContext(subject="admin#1", roles=frozenset({"updater"}), trace_id="")}
+    )
+    client = TestClient(_agent_app(auth))
+    headers = {"Authorization": f"Bearer {APIKEY}"}
+    ok = client.post("/fdp-api/admin/updates/agent/next", headers=headers)
+    assert ok.status_code == 200
+    assert ok.json() == {"roles": ["updater"]}
+    for method, path in (("post", "/fdp-api/me/api-keys"), ("get", "/whoami")):
+        denied = getattr(client, method)(path, headers=headers)
+        assert denied.status_code == 403, path
+        assert denied.json()["code"] == "fdp.forbidden"
+
+
+@pytest.mark.unit
+def test_ordinary_keys_are_not_confined() -> None:
+    auth = _FakeAuthenticator(
+        {APIKEY: RequestContext(subject="admin#1", roles=frozenset({"admin"}), trace_id="")}
+    )
+    client = TestClient(_agent_app(auth))
+    resp = client.post("/fdp-api/me/api-keys", headers={"Authorization": f"Bearer {APIKEY}"})
+    assert resp.status_code == 200

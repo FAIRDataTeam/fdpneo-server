@@ -246,7 +246,12 @@ class GitHubReleaseSource:
         for asset in assets:  # pyright: ignore[reportUnknownVariableType]
             if isinstance(asset, dict) and asset.get("name") == RELEASE_ASSET:  # pyright: ignore[reportUnknownMemberType]
                 candidate = asset.get("browser_download_url")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-                if isinstance(candidate, str) and candidate.startswith("https://"):
+                # Asset links must be https. Only a deliberately plain-http
+                # API base (a local test double) may serve plain-http assets.
+                if isinstance(candidate, str) and (
+                    candidate.startswith("https://")
+                    or (self._api.startswith("http://") and candidate.startswith("http://"))
+                ):
                     url = candidate
                 break
         if url is None:

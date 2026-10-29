@@ -36,10 +36,10 @@ import jwt
 import structlog
 from jwt import InvalidTokenError
 
-from fdpneo_server.identity.api_keys import TOKEN_PREFIX
+from fdpneo_server.identity.api_keys import TOKEN_PREFIX, UPDATER_AGENT_PATH_PREFIX, UPDATER_ROLE
 from fdpneo_server.identity.jwks import JWKSError
 from fdpneo_server.shared.context import RequestContext, reset_current, set_current
-from fdpneo_server.shared.errors import Unauthenticated, error_envelope
+from fdpneo_server.shared.errors import FDPError, Forbidden, Unauthenticated, error_envelope
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -81,6 +81,9 @@ class PrincipalRecorder(Protocol):
     ) -> None: ...
 
 
+_UPDATER_ONLY: frozenset[str] = frozenset({UPDATER_ROLE})
+
+
 class AuthenticationMiddleware:
     """ASGI middleware that authenticates a request and binds the context."""
 
@@ -116,6 +119,20 @@ class AuthenticationMiddleware:
             ctx = await self._resolve_context(header, trace_id)
         except Unauthenticated as exc:
             await _send_envelope(send, exc, trace_id)
+            return
+
+        # An updater-only context (an ``updater``-scoped API key, ADR-0030)
+        # still carries its minting admin's subject, so confine it to the
+        # agent endpoints: it must not reach /me/* (minting a full key) or
+        # anything else keyed by subject.
+        if ctx.roles == _UPDATER_ONLY and not str(scope.get("path", "")).startswith(
+            UPDATER_AGENT_PATH_PREFIX
+        ):
+            await _send_envelope(
+                send,
+                Forbidden("an updater key may only call the updater agent endpoints"),
+                trace_id,
+            )
             return
 
         token = set_current(ctx)
@@ -257,7 +274,7 @@ def _get_nested_claim(payload: Mapping[str, object], dotted: str) -> list[str]:
     return [x for x in items if isinstance(x, str)]
 
 
-async def _send_envelope(send: Send, exc: Unauthenticated, trace_id: str) -> None:
+async def _send_envelope(send: Send, exc: FDPError, trace_id: str) -> None:
     """Render the FDP error envelope from inside the middleware."""
     log.warning(
         "fdp_error",

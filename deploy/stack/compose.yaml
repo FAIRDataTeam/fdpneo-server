@@ -102,7 +102,7 @@ services:
 
   # --- application tier -----------------------------------------------------
   server:
-    image: ghcr.io/fairdatateam/fdpneo-server:${SERVER_IMAGE_TAG:-${IMAGE_TAG:-main}}
+    image: ${SERVER_IMAGE:-ghcr.io/fairdatateam/fdpneo-server}:${SERVER_IMAGE_TAG:-${IMAGE_TAG:-main}}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -164,7 +164,7 @@ services:
       - "${SERVER_PORT:-8000}:8000"
 
   client:
-    image: ghcr.io/fairdatateam/fdpneo-client:${CLIENT_IMAGE_TAG:-${IMAGE_TAG:-main}}
+    image: ${CLIENT_IMAGE:-ghcr.io/fairdatateam/fdpneo-client}:${CLIENT_IMAGE_TAG:-${IMAGE_TAG:-main}}
     build:
       context: ../../../client
       dockerfile: Dockerfile
@@ -219,6 +219,41 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+
+  # Optional host updater (ADR-0030): applies server/client updates that an
+  # administrator requests in the web client. Off unless started with
+  # `--profile updater`. It controls the Docker daemon through the mounted
+  # socket, which is root-equivalent on a standard Docker host; see
+  # deploy/updater/README.md before enabling it.
+  updater:
+    profiles: ["updater"]
+    build:
+      context: ../updater
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      FDP_URL: http://server:8000
+      CLIENT_URL: http://client:80
+      FDP_UPDATER_KEY: ${FDP_UPDATER_KEY:-}
+      STACK_DIR: ${FDPNEO_ROOT:-/fdpneo-root-not-set}/deploy/stack
+      BACKUP_COMMAND: ${UPDATER_BACKUP_COMMAND:-./backup.sh}
+      # Pre-update archives (the newest BACKUP_KEEP are kept). Must lie under
+      # FDPNEO_ROOT, the host-path mount, so helper containers can see them.
+      BACKUP_DIR: ${UPDATER_BACKUP_DIR:-${FDPNEO_ROOT:-/fdpneo-root-not-set}/backups}
+      BACKUP_KEEP: ${UPDATER_BACKUP_KEEP:-3}
+      BACKUP_PASSPHRASE_FILE: ${UPDATER_BACKUP_PASSPHRASE_FILE:-}
+      UPDATER_SKIP_BACKUP: ${UPDATER_SKIP_BACKUP:-false}
+      GITHUB_API: ${UPDATER_GITHUB_API:-https://api.github.com}
+      POLL_SECONDS: ${UPDATER_POLL_SECONDS:-60}
+      READY_TIMEOUT: ${UPDATER_READY_TIMEOUT:-300}
+    volumes:
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      # The checkout is mounted at its host path, so `docker compose` inside
+      # the container resolves the same files and bind-mount paths as on the host.
+      - ${FDPNEO_ROOT:-/fdpneo-root-not-set}:${FDPNEO_ROOT:-/fdpneo-root-not-set}
 
 volumes:
   postgres-data:

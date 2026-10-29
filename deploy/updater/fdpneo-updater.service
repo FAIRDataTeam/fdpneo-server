@@ -1,0 +1,35 @@
+# systemd unit for the FDPneo host updater agent (ADR-0030), the alternative
+# to the `updater` compose profile. It runs as a dedicated user that is
+# allowed to use Docker (the `docker` group is root-equivalent; with rootless
+# Docker or Podman it controls only that user's containers).
+#
+# Install:
+#   sudo install -m 0755 fdpneo_updater.py /usr/local/bin/fdpneo-updater
+#   sudo install -m 0644 fdpneo-updater.service /etc/systemd/system/
+#   sudo install -m 0600 -o fdpneo /dev/null /etc/fdpneo-updater.env  # then edit
+#   sudo systemctl daemon-reload && sudo systemctl enable --now fdpneo-updater
+#
+# /etc/fdpneo-updater.env:
+#   FDP_URL=http://localhost:8000
+#   CLIENT_URL=http://localhost:5173
+#   FDP_UPDATER_KEY=fdpk_...           # an updater-scoped API key
+#   STACK_DIR=/srv/fdpneo/deploy/stack/production
+#   BACKUP_COMMAND=../backup.sh        # run from STACK_DIR; the archive path is appended
+#   BACKUP_DIR=/srv/fdpneo/backups
+#   BACKUP_PASSPHRASE_FILE=/etc/fdpneo-backup.passphrase
+
+[Unit]
+Description=FDPneo host updater agent
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=fdpneo
+EnvironmentFile=/etc/fdpneo-updater.env
+ExecStart=/usr/bin/python3 /usr/local/bin/fdpneo-updater
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
