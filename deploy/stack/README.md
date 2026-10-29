@@ -128,6 +128,22 @@ if those host ports are taken.
 > [`production/`](production/README.md) instead — one HTTPS origin for client,
 > API, and Keycloak, which eliminates the CORS configuration entirely.
 
+## Upgrading an existing stack to server 0.19
+
+Server 0.19 moves the stack to PostgreSQL 18 and Keycloak 26. After pulling,
+run two one-off, idempotent scripts from this directory:
+
+```bash
+./upgrade-postgres-18.sh      # dump PostgreSQL 16, restore into 18; keeps a backup volume
+./fix-keycloak-audience.sh    # Keycloak 26: restore the `fdp` token audience
+```
+
+Without the first, the `postgres` container exits with "old database(s)
+found". Without the second, every sign-in fails with "invalid bearer token".
+The evaluation stack's Keycloak keeps its realm inside the container, so a
+recreated `keycloak` container re-imports the fixed realm anyway. The
+script is still the safe step if the container was kept.
+
 ## ⚠ Before production — this stack is dev-credentialed
 
 The bundled realm runs Keycloak in `start-dev` mode with **development

@@ -51,7 +51,7 @@ async def _public_table_names(dsn: str) -> set[str]:
 
 @pytest.fixture
 def postgres_container() -> Iterator[PostgresContainer]:
-    with PostgresContainer("postgres:16-alpine") as container:
+    with PostgresContainer("postgres:18-alpine") as container:
         yield container
 
 

@@ -134,6 +134,23 @@ and `http://` URLs in logs.
   pseudonymous visitor hash). Running more than one server replica? Unset it
   and schedule `docker compose exec server fdp metrics rollup` (every ~5 min)
   instead, so replicas don't race.
+- **Upgrading from a server before 0.19 (PostgreSQL 18, Keycloak 26).** Two
+  one-off steps, both scripted and idempotent. Run them in this directory
+  after pulling the new compose files:
+  1. `../upgrade-postgres-18.sh`. PostgreSQL 18 cannot open the 16 data
+     directory and refuses to start until this has run. The script dumps
+     every database (FDP and Keycloak) with a temporary `postgres:16`
+     container, keeps a full copy of the old volume as
+     `fdpneo-prod_postgres-data-pg16-backup`, restores into PostgreSQL 18,
+     and starts the stack again.
+  2. `../fix-keycloak-audience.sh`. Keycloak 26 no longer emits the `fdp`
+     audience the way the realm used to declare it, so the server rejects
+     every token until the realm's audience mapper is updated. The realm file
+     carries the fix for new installs, but an existing realm is never
+     re-imported.
+
+  Then check that you can sign in, and remove the backup volume and the
+  `postgres-upgrade-*` dump directory once you are satisfied.
 - **Upgrading from a server before 0.17:** recorded metrics were keyed by the
   URL the container saw (`http://<host>/…`), so per-record metrics never
   matched the `https://` record IRIs. Re-key the history once:

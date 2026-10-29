@@ -49,7 +49,8 @@ binds a public port. App ↔ store ↔ DB traffic stays on a private network.
 ## 2. Secrets management (F-07)
 
 - [ ] **Rotate every bundled dev credential** — none belong in any non-dev env:
-      `KEYCLOAK_ADMIN_PASSWORD: admin`, the realm `admin/alice/bob` passwords, and
+      the Keycloak bootstrap admin `admin/admin` (`KC_BOOTSTRAP_ADMIN_*`, set from
+      `KEYCLOAK_ADMIN*` in `.env`), the realm `admin/alice/bob` passwords, and
       `fdp-server-dev-secret` (the `/users` service-account client). The files
       `deploy/compose.yaml` and `deploy/keycloak/realm-fdp-dev.json` are **dev-only**.
 - [ ] Source secrets from a manager (Vault / sealed-secrets / cloud secret store),

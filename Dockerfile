@@ -5,7 +5,7 @@
 # uvicorn; the default profile auto-applies on first boot (FDP_PROFILE_AUTO_APPLY).
 
 # --- builder: resolve + install deps and the project into /app/.venv ---------
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -39,14 +39,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # month") and scripts/fetch-geoip.sh does the same for local dev; pass
 # --build-arg DBIP_CITY_VERSION=YYYY-MM when building by hand after this
 # default ages out.
-ARG DBIP_CITY_VERSION=2026-08
+ARG DBIP_CITY_VERSION=2026-10
 ADD https://download.db-ip.com/free/dbip-city-lite-${DBIP_CITY_VERSION}.mmdb.gz /tmp/geo.mmdb.gz
 RUN mkdir -p /app/geo \
     && gunzip -c /tmp/geo.mmdb.gz > /app/geo/GeoLite2-City.mmdb \
     && rm /tmp/geo.mmdb.gz
 
 # --- runtime: slim image with just the venv + app, run as non-root -----------
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 RUN groupadd --system fdp \
     && useradd --system --gid fdp --home-dir /app --no-create-home fdp

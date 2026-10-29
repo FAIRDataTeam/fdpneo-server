@@ -63,7 +63,7 @@ class _FakeFetcher:
 
 @pytest.fixture
 def pg_dsn() -> Iterator[str]:
-    with PostgresContainer("postgres:16-alpine") as container:
+    with PostgresContainer("postgres:18-alpine") as container:
         dsn = _async_dsn(container)
         saved = os.environ.get("POSTGRES_DSN")
         os.environ["POSTGRES_DSN"] = dsn

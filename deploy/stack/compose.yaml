@@ -20,14 +20,14 @@ name: fdpneo
 services:
   # --- backing services ----------------------------------------------------
   postgres:
-    image: postgres:16
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-fdp}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fdp}
       POSTGRES_DB: ${POSTGRES_DB:-fdp}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fdp} -d ${POSTGRES_DB:-fdp}"]
       interval: 5s
@@ -35,7 +35,7 @@ services:
       retries: 12
 
   graphdb:
-    image: ontotext/graphdb:10.7.0
+    image: ontotext/graphdb:10.8.14
     restart: unless-stopped
     environment:
       GDB_JAVA_OPTS: >-
@@ -53,7 +53,7 @@ services:
   # Idempotent — checks /repositories/fdp/size first, only POSTs the config when
   # the repo is missing. Exits 0 either way so the server can start.
   graphdb-init:
-    image: curlimages/curl:8.10.1
+    image: curlimages/curl:8.23.0
     depends_on:
       graphdb:
         condition: service_healthy
@@ -74,12 +74,12 @@ services:
     restart: "no"
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:26.8
     restart: unless-stopped
     command: ["start-dev", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HEALTH_ENABLED: "true"
       # Lenient hostname (start-dev) → the token issuer follows the request URL,
       # so browser and server agree as long as both use PUBLIC_HOST:KEYCLOAK_PORT.
