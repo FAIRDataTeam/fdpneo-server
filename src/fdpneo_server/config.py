@@ -598,6 +598,24 @@ class RateLimitSettings(BaseSettings):
     trust_forwarded_for: bool = False
 
 
+class AccessControlSettings(BaseSettings):
+    """Deployment default for the access-control mode (ADR-0027).
+
+    ``open`` (the default): every record is readable by everyone, and
+    ``admin`` / ``steward`` may write — no ODRL evaluation at all.
+    ``odrl``: the full policy engine (per-record ``dct:rights``, inheritance,
+    managed policies). This is only the *initial* value: an administrator can
+    switch modes at runtime through the ``access.control`` settings key, and
+    that override wins until it is reset.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="FDP_ACCESS_CONTROL_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    mode: Literal["open", "odrl"] = "open"
+
+
 class MigrationSettings(BaseSettings):
     """The one setting database migrations need, parsed exactly like ``Settings``.
 
@@ -704,6 +722,7 @@ class Settings(BaseSettings):
     idp_admin: IdpAdminSettings = Field(default_factory=lambda: IdpAdminSettings())
     rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
     pid: PIDSettings = Field(default_factory=lambda: PIDSettings())
+    access_control: AccessControlSettings = Field(default_factory=lambda: AccessControlSettings())
 
     def require_triplestore(self) -> TripleStoreSettings:
         """The triple store settings, or a clear error naming both fixes.

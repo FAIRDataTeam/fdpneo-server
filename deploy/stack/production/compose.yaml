@@ -168,6 +168,9 @@ services:
       FDP_IDP_ADMIN_CLIENT_SECRET: ${FDP_SERVER_CLIENT_SECRET}
       FDP_IDP_ADMIN_BASE_URL: http://keycloak:8080/auth
       FDP_PROFILE_AUTO_APPLY: "true"
+      # Access control (ADR-0027): "open" (default) or "odrl". Seeds the
+      # runtime setting `access.control`; admins can switch it in the client.
+      FDP_ACCESS_CONTROL_MODE: ${FDP_ACCESS_CONTROL_MODE:-open}
       # Behind the TLS proxy: key rate limits on the real client IP.
       FDP_RATELIMIT_ENABLED: "true"
       FDP_RATELIMIT_TRUST_FORWARDED_FOR: "true"

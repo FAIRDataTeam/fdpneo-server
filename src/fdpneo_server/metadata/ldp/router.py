@@ -89,7 +89,7 @@ from fdpneo_server.shared.negotiation import (
     select_media_type,
     serialize,
 )
-from fdpneo_server.shared.sparql_safety import require_sparql_safe_iri
+from fdpneo_server.shared.sparql_safety import is_sparql_safe_iri, require_sparql_safe_iri
 
 if TYPE_CHECKING:
     from fdpneo_server.metadata.containment import ContainmentManager
@@ -216,6 +216,12 @@ def build_ldp_router(
         a record, so it is a plain 404 — the store is never touched and the
         raw value never reaches a query.
         """
+        # Starlette >= 1.10 keeps some escapes (``%5C``) in ``request.url`` while
+        # the ASGI ``path`` is decoded; gate the decoded form too so a probe like
+        # ``..%5C..%5C`` is still a 404 before any authorization work.
+        decoded_path = str(request.scope.get("path") or "/")
+        if not is_sparql_safe_iri(decoded_path):
+            raise NotFound("resource not found")
         raw = _request_url(request)
         iri = (
             raw

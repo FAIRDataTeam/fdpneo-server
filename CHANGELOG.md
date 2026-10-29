@@ -5,6 +5,51 @@ All notable changes to the FDPneo server are documented here. The format follows
 versioning while pre-1.0 (minor versions may carry breaking API changes, called
 out explicitly below).
 
+## [Unreleased]
+
+## [0.18.0] — 2026-10-29
+
+### Changed
+
+- **Access control defaults to open access; ODRL is opt-in (ADR-0027).** A
+  fresh deployment no longer evaluates ODRL at all: every record is publicly
+  readable and the `admin` / `steward` roles may create, edit and delete —
+  nothing to author, no inheritance walk, no rows in the authorization index.
+  The full policy engine (per-record `dct:rights`, inheritance, managed
+  policies, decision cache) is one switch away: `FDP_ACCESS_CONTROL_MODE=odrl`
+  seeds the deployment default, and an administrator can flip the new
+  `access.control` runtime setting (`{"mode": "open" | "odrl", "writer_roles":
+  [...]}`) at any time without a restart. A mode switch drops the
+  authorization cache and rebuilds the search index's anonymous-visibility
+  flags in the background. Publication state still gates visibility in both
+  modes (a draft stays hidden from anyone who cannot curate it). Managed
+  policies and record `dct:rights` are stored and served unchanged in open
+  mode — they are simply not consulted.
+  **Upgrading:** an existing deployment that relies on ODRL policies must set
+  `FDP_ACCESS_CONTROL_MODE=odrl` (or switch the setting) — otherwise every
+  published record becomes publicly readable after the upgrade.
+
+### Security
+
+- **Dependency refresh clears the pip-audit gate.** The lockfile carried
+  known advisories in pyjwt (2.13.0 → 2.15.1), authlib (1.7.2 → 1.9.1),
+  aiohttp (→ 3.14.5), urllib3 (→ 2.8.0), certifi, dnspython, multidict
+  and opentelemetry-api. All locked dependencies were refreshed, including
+  SQLAlchemy 2.1, FastAPI 0.162 and Starlette 1.10.
+- **The LDP SPARQL-safety gate also checks the decoded path.** Starlette
+  1.10 keeps some escapes, such as `%5C`, in `request.url`. A probe like
+  `/..%5C..%5C` therefore reached the policy check before 404ing. The IRI
+  it carried was still SPARQL-safe. Now the decoded ASGI path is gated as
+  well, so such probes 404 before any authorization work, as they did
+  before.
+
+### Changed (CI)
+
+- The workflow actions moved to their Node 24 runtimes. The previous
+  actions ran on the deprecated Node 20 runtime. `astral-sh/setup-uv` is
+  pinned to an exact version because it no longer publishes floating major
+  tags.
+
 ## [0.17.0] — 2026-09-09
 
 ### Security

@@ -137,8 +137,17 @@ services:
       # Enable the /fdp-api/users IdP-admin facade (confidential service account).
       FDP_IDP_ADMIN_CLIENT_ID: ${FDP_IDP_ADMIN_CLIENT_ID:-fdp-server}
       FDP_IDP_ADMIN_CLIENT_SECRET: ${FDP_IDP_ADMIN_CLIENT_SECRET:-fdp-server-dev-secret}
-      FDP_IDP_ADMIN_BASE_URL: http://keycloak:8080
+      # Use the same public Keycloak origin as the issuer (reached via the docker
+      # host-gateway): in start-dev mode Keycloak derives the token issuer from the
+      # request host, so a service-account token minted at the public issuer is
+      # rejected (401) by the Admin API when called at the internal keycloak:8080.
+      FDP_IDP_ADMIN_BASE_URL: http://${PUBLIC_HOST:-localhost}:${KEYCLOAK_PORT:-8081}
       FDP_PROFILE_AUTO_APPLY: "true"
+      # Access control (ADR-0027): "open" = every record publicly readable,
+      # admin/steward may write, no ODRL evaluation (the beginner-friendly
+      # default). Set "odrl" to enforce per-record ODRL policies from the
+      # start; admins can also switch at runtime under Instance settings.
+      FDP_ACCESS_CONTROL_MODE: ${FDP_ACCESS_CONTROL_MODE:-open}
       # External (remote) label resolution (Phase 21 / ADR-0012 extension): let
       # GET /labels dereference external IRIs (DOI/ORCID/SKOS) to human labels.
       # Allow-listed + SSRF-guarded; the list includes the terminal RDF hosts

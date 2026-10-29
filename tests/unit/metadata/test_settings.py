@@ -70,6 +70,7 @@ def _build_app(repository: SettingsRepository, *, ctx: RequestContext | None = N
 @pytest.mark.unit
 def test_registry_seeded_with_expected_keys() -> None:
     assert set(SETTINGS_REGISTRY) == {
+        "access.control",
         "forms.autocomplete-sources",
         "search.filters",
     }
@@ -209,7 +210,7 @@ async def test_get_settings_returns_all_keys_with_defaults(
     repo = SettingsRepository(session_factory=session_factory)
     app = _build_app(repo)
     body = TestClient(app).get("/settings").json()
-    assert set(body["values"]) == {"forms.autocomplete-sources", "search.filters"}
+    assert set(body["values"]) == {"access.control", "forms.autocomplete-sources", "search.filters"}
 
 
 @pytest.mark.unit
@@ -318,3 +319,107 @@ async def test_search_filters_schema_round_trip(session_factory: Any) -> None:
     await repo.write("search.filters", value, subject=None)
     read_back = await repo.read("search.filters")
     assert read_back == value
+
+
+# --- access.control (ADR-0027) ------------------------------------------------
+
+
+@pytest.mark.unit
+def test_access_control_default_is_open_with_admin_and_steward_writers() -> None:
+    from fdpneo_server.metadata.settings import AccessControl
+
+    default = SETTINGS_REGISTRY["access.control"].default
+    assert isinstance(default, AccessControl)
+    assert default.mode == "open"
+    assert default.writer_roles == ["admin", "steward"]
+    assert default.model_dump(mode="json") == {"mode": "open", "writer_roles": ["admin", "steward"]}
+
+
+@pytest.mark.unit
+def test_access_control_validates_mode_and_roles() -> None:
+    from pydantic import ValidationError
+
+    from fdpneo_server.metadata.settings import AccessControl
+
+    assert AccessControl.model_validate({"mode": "odrl"}).mode == "odrl"
+    assert AccessControl.model_validate({"mode": "open", "writer_roles": ["x"]}).writer_roles == [
+        "x"
+    ]
+    with pytest.raises(ValidationError):
+        AccessControl.model_validate({"mode": "rbac"})
+    with pytest.raises(ValidationError):
+        AccessControl.model_validate({"mode": "open", "writer_roles": []})
+
+
+@pytest.mark.unit
+def test_set_registered_default_replaces_the_fallback() -> None:
+    from fdpneo_server.metadata.settings import AccessControl, set_registered_default
+
+    original = SETTINGS_REGISTRY["access.control"].default
+    try:
+        set_registered_default("access.control", AccessControl(mode="odrl"))
+        default = SETTINGS_REGISTRY["access.control"].default
+        assert isinstance(default, AccessControl)
+        assert default.mode == "odrl"
+        with pytest.raises(TypeError):
+            set_registered_default("access.control", SearchFilters())
+        with pytest.raises(KeyError):
+            set_registered_default("nope", AccessControl())
+    finally:
+        set_registered_default("access.control", original)
+
+
+@pytest.mark.unit
+async def test_put_access_control_switches_mode_via_api(session_factory: Any) -> None:
+    repo = SettingsRepository(session_factory=session_factory)
+    app = _build_app(repo, ctx=_ctx(roles=frozenset({"admin"})))
+    client = TestClient(app)
+    res = client.put("/settings/access.control", json={"mode": "odrl"})
+    assert res.status_code == 200, res.text
+    assert res.json()["value"] == {"mode": "odrl", "writer_roles": ["admin", "steward"]}
+    assert client.get("/settings/access.control").json()["value"]["mode"] == "odrl"
+    assert client.delete("/settings/access.control").status_code == 204
+    assert client.get("/settings/access.control").json()["value"]["mode"] == "open"
+
+
+@pytest.mark.unit
+async def test_listeners_fire_on_write_delete_and_clear(session_factory: Any) -> None:
+    from fdpneo_server.metadata.settings import AccessControl
+
+    repo = SettingsRepository(session_factory=session_factory)
+    seen: list[str] = []
+    repo.subscribe("access.control", seen.append)
+    await repo.write("access.control", AccessControl(mode="odrl"), subject=None)
+    await repo.write("search.filters", SearchFilters(), subject=None)  # other key: silent
+    assert seen == ["access.control"]
+    assert await repo.delete("access.control") is True
+    assert await repo.delete("access.control") is False  # nothing removed → no event
+    assert seen == ["access.control", "access.control"]
+    await repo.clear_all()
+    assert seen == ["access.control"] * 3
+
+
+@pytest.mark.unit
+async def test_cached_setting_reader_memoizes_until_ttl_or_write(session_factory: Any) -> None:
+    from fdpneo_server.metadata.settings import AccessControl, CachedSettingReader
+
+    repo = SettingsRepository(session_factory=session_factory)
+    now = {"t": 100.0}
+    reader = CachedSettingReader(repo, "access.control", ttl_seconds=5.0, clock=lambda: now["t"])
+
+    first = await reader()
+    assert isinstance(first, AccessControl) and first.mode == "open"
+
+    # A write through the same repository drops the memo immediately.
+    await repo.write("access.control", AccessControl(mode="odrl"), subject=None)
+    assert (await reader()).mode == "odrl"  # type: ignore[union-attr]
+
+    # A write the reader did not observe (another replica) is seen once the TTL lapses.
+    other = SettingsRepository(session_factory=session_factory)
+    await other.write("access.control", AccessControl(mode="open"), subject=None)
+    assert (await reader()).mode == "odrl"  # type: ignore[union-attr]
+    now["t"] += 5.0
+    assert (await reader()).mode == "open"  # type: ignore[union-attr]
+
+    with pytest.raises(KeyError):
+        CachedSettingReader(repo, "nope")

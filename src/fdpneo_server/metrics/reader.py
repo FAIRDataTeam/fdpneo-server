@@ -281,12 +281,12 @@ class MetricsReader:
         ]
 
 
-def _filter(
-    stmt: Select[Any],
+def _filter[S: Select[*tuple[Any, ...]]](
+    stmt: S,
     window: Subquery,
     resource_iri: str | None,
     event_type: str | None,
-) -> Select[Any]:
+) -> S:
     """Apply the optional dimension filters to a query over the unified window."""
     if resource_iri is not None:
         stmt = stmt.where(window.c.resource_iri == resource_iri)

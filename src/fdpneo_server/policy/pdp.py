@@ -15,6 +15,15 @@ applies). Ticket 1.3 deliberately does *not* implement inheritance — a
 resource with no resolved Offer evaluates to DENY by default; the
 inheritance walk lives in a later ticket (architecture §8.3).
 
+**Access-control mode (ADR-0027)**
+
+The PDP receives an :class:`AccessControlConfig` per construction. In
+:attr:`AccessMode.OPEN` (the default) every decision is the pure
+:func:`decide_open` function — the resolver and the cache are never
+consulted, so open mode leaves no rows in the authorization index and
+costs no store round-trip. Only :attr:`AccessMode.ODRL` runs the
+machinery described above.
+
 **Invalidation**
 
 * :meth:`PDP.invalidate_resource` — synchronous, called by the metadata
@@ -32,6 +41,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from fdpneo_server.policy.cache import CacheRepository, compute_subject_key
 from fdpneo_server.policy.evaluator import evaluate
+from fdpneo_server.policy.mode import ODRL_ACCESS, AccessControlConfig, AccessMode, decide_open
 from fdpneo_server.policy.model import Action, Decision, Outcome
 from fdpneo_server.shared.graphs import is_internal_graph_uri
 
@@ -51,9 +61,25 @@ class OfferResolver(Protocol):
 class PDP:
     """Cached policy decision point."""
 
-    def __init__(self, *, cache: CacheRepository, offer_resolver: OfferResolver) -> None:
+    def __init__(
+        self,
+        *,
+        cache: CacheRepository,
+        offer_resolver: OfferResolver,
+        access_control: AccessControlConfig = ODRL_ACCESS,
+    ) -> None:
         self._cache = cache
         self._resolver = offer_resolver
+        self._access_control = access_control
+
+    @property
+    def access_control(self) -> AccessControlConfig:
+        """The configuration this instance decides under."""
+        return self._access_control
+
+    @property
+    def _open(self) -> bool:
+        return self._access_control.mode is AccessMode.OPEN
 
     async def authorize(
         self,
@@ -62,6 +88,8 @@ class PDP:
         resource_iri: str,
     ) -> Decision:
         """Decide whether ``ctx`` may perform ``action`` on ``resource_iri``."""
+        if self._open:
+            return decide_open(ctx, action, self._access_control)
         subject_key = compute_subject_key(ctx)
         cached = await self._cache.lookup(
             subject_key=subject_key, action=action.value, graph_uri=resource_iri
@@ -104,7 +132,14 @@ class PDP:
         the given candidate set regardless of what this subject has touched
         before. Candidates with a cached DENY cost one cache lookup each and
         are not re-evaluated.
+
+        In open mode the answer is the pure open decision applied to every
+        candidate (all of them for ``read``; all or none for writes).
         """
+        if self._open:
+            if decide_open(ctx, action, self._access_control).outcome is not Outcome.PERMIT:
+                return set()
+            return {g for g in resource_iris if not is_internal_graph_uri(g)}
         subject_key = compute_subject_key(ctx)
         cached_permits = await self._cache.authorized_resources(
             subject_key=subject_key, action=action.value
@@ -136,7 +171,13 @@ class PDP:
         query (ADR-0009): even if a resource definition is granted public
         ``read`` so the client can fetch it over REST, it must not surface as
         a graph in a SPARQL projection.
+
+        Open mode has no cache and no candidate set, so it returns the empty
+        set — callers that need a complete answer pass their candidates to
+        :meth:`authorize_many` (every production PEP does, via the state gate).
         """
+        if self._open:
+            return set()
         subject_key = compute_subject_key(ctx)
         permitted = await self._cache.authorized_resources(
             subject_key=subject_key, action=action.value
