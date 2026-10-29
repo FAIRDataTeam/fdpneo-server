@@ -67,6 +67,8 @@ DERIVED_TABLES: Final[tuple[str, ...]] = (
     "authz_index",
     "metadata_search",
     "metadata_external_labels",
+    # ADR-0028 release-check cache; the next update check rebuilds it.
+    "release_check",
 )
 EXCLUDED_TABLES: Final[tuple[str, ...]] = ("metrics_raw",)
 
