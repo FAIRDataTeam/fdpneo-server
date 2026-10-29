@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from fdpneo_server.metadata.backup.restore import RestoreError
+from fdpneo_server.metadata.backup.seal import SealError
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -92,7 +95,9 @@ class BackupJobRegistry:
             await runner(job)
         except Exception as err:  # a failed job is reported, never crashes the server
             job.state = JobState.FAILED
-            job.error = repr(err)
+            # Expected failures (wrong passphrase, refused precondition) read as
+            # plain sentences in the client; anything else keeps its type name.
+            job.error = str(err) if isinstance(err, RestoreError | SealError) else repr(err)
             log.warning("backup_job_failed", job_id=job.id, kind=job.kind, error=repr(err))
         else:
             job.state = JobState.SUCCEEDED

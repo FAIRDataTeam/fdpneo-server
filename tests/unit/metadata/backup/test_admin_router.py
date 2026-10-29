@@ -143,3 +143,106 @@ def test_download_404_for_non_dump_job() -> None:
     app = _app(registry, _ctx("admin"))
     with TestClient(app) as client:
         assert client.get(f"/admin/backup/jobs/{job.id}/archive").status_code == 404
+
+
+# --- full-deployment scope (ADR-0029) ---------------------------------------
+
+
+def _full_app(registry: _FakeRegistry, ctx: RequestContext) -> FastAPI:
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(
+        build_backup_admin_router(
+            registry=registry,  # type: ignore[arg-type]
+            adapter=object(),  # type: ignore[arg-type]
+            session_factory=object(),  # type: ignore[arg-type]
+            settings=object(),  # type: ignore[arg-type]
+            engine=object(),  # type: ignore[arg-type]  # only touched inside the runner
+        )
+    )
+    app.dependency_overrides[require_auth] = lambda: ctx
+    return app
+
+
+def test_full_dump_requires_a_passphrase() -> None:
+    registry = _FakeRegistry()
+    with TestClient(_full_app(registry, _ctx("admin"))) as client:
+        resp = client.post("/admin/backup/dump?scope=full")
+    assert resp.status_code == 400
+    assert "encrypted" in resp.json()["message"]
+    assert registry.launched == 0
+
+
+def test_full_dump_rejects_a_short_passphrase() -> None:
+    registry = _FakeRegistry()
+    with TestClient(_full_app(registry, _ctx("admin"))) as client:
+        resp = client.post("/admin/backup/dump?scope=full", json={"passphrase": "short"})
+    assert resp.status_code == 422
+    assert registry.launched == 0
+
+
+def test_full_dump_with_passphrase_starts_job() -> None:
+    registry = _FakeRegistry()
+    with TestClient(_full_app(registry, _ctx("admin"))) as client:
+        resp = client.post(
+            "/admin/backup/dump?scope=full",
+            json={"passphrase": "a long enough passphrase"},
+        )
+    assert resp.status_code == 202
+    assert registry.launched == 1
+
+
+def test_full_dump_unavailable_without_engine() -> None:
+    with TestClient(_app(_FakeRegistry(), _ctx("admin"))) as client:
+        resp = client.post(
+            "/admin/backup/dump?scope=full",
+            json={"passphrase": "a long enough passphrase"},
+        )
+    assert resp.status_code == 400
+
+
+def test_full_dump_still_requires_admin() -> None:
+    with TestClient(_full_app(_FakeRegistry(), _ctx("steward"))) as client:
+        resp = client.post(
+            "/admin/backup/dump?scope=full",
+            json={"passphrase": "a long enough passphrase"},
+        )
+    assert resp.status_code == 403
+
+
+def test_sealed_upload_without_passphrase_is_rejected_up_front() -> None:
+    registry = _FakeRegistry()
+    with TestClient(_full_app(registry, _ctx("admin"))) as client:
+        resp = client.post(
+            "/admin/backup/restore",
+            files={"archive": ("b.fdpbk", b"FDPNEO-ENC1" + b"\0" * 64, "application/octet-stream")},
+        )
+    assert resp.status_code == 400
+    assert "passphrase" in resp.json()["message"]
+    assert registry.launched == 0
+
+
+def test_sealed_upload_with_passphrase_starts_job() -> None:
+    registry = _FakeRegistry()
+    with TestClient(_full_app(registry, _ctx("admin"))) as client:
+        resp = client.post(
+            "/admin/backup/restore",
+            files={"archive": ("b.fdpbk", b"FDPNEO-ENC1" + b"\0" * 64, "application/octet-stream")},
+            data={"passphrase": "a long enough passphrase"},
+        )
+    assert resp.status_code == 202
+    assert registry.launched == 1
+
+
+def test_download_of_a_sealed_dump_is_octet_stream(tmp_path: Path) -> None:
+    registry = _FakeRegistry()
+    job = registry.create("dump")
+    sealed = tmp_path / "backup.fdpbk"
+    sealed.write_bytes(b"FDPNEO-ENC1 sealed")
+    job.state = JobState.SUCCEEDED
+    job.artifact_path = sealed
+    with TestClient(_full_app(registry, _ctx("admin"))) as client:
+        resp = client.get(f"/admin/backup/jobs/{job.id}/archive")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/octet-stream"
+    assert resp.headers["content-disposition"].endswith('.fdpbk"')

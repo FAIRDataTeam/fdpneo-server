@@ -7,7 +7,9 @@ writes the triple store directly, never through the LDP layer, so provenance
 audit graphs survive a round trip byte-for-byte.
 
 * :func:`dump_store` — export every named graph as N-Quads + a versioned manifest.
-* restore / import land in later tasks (18.3+).
+* :func:`orchestrate_restore` — faithful restore (+ audit, migration, reindex).
+* Full-deployment archives (ADR-0029): Postgres state tables, passphrase sealing
+  (:mod:`.seal`) and offline verification (:mod:`.verify`).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from fdpneo_server.metadata.backup.orchestrate import (
     RestoreOutcome,
     dump_to_archive,
     extract_archive,
+    open_archive,
     orchestrate_restore,
 )
 from fdpneo_server.metadata.backup.restore import (
@@ -49,6 +52,7 @@ __all__ = [
     "dump_to_archive",
     "extract_archive",
     "import_reference_fdp",
+    "open_archive",
     "orchestrate_restore",
     "restore_audit",
     "restore_store",

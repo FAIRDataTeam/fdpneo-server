@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from rdflib import Graph
@@ -40,6 +40,7 @@ from fdpneo_server.metadata.backup.dump import (
     DATA_MODEL_LEGACY,
     MANIFEST_FILE,
     RECORDS_FILE,
+    SUPPORTED_DUMP_FORMATS,
 )
 from fdpneo_server.metadata.pid.rebase import rebased, rewrite_graph
 from fdpneo_server.storage.triplestore.adapter import SPARQL_JSON
@@ -96,7 +97,7 @@ async def restore_store(
     ``rebase`` a base mismatch is refused - a faithful restore never re-mints IRIs.
     """
     src = Path(in_dir)
-    manifest = json.loads((src / MANIFEST_FILE).read_text(encoding="utf-8"))
+    manifest = read_manifest(src)
 
     records_path = src / RECORDS_FILE
     _verify_checksum(records_path, manifest.get("files", {}).get(RECORDS_FILE))
@@ -154,6 +155,23 @@ async def restore_store(
         dry_run=dry_run,
     )
     return result
+
+
+def read_manifest(in_dir: Path | str) -> dict[str, Any]:  # JSON document: values are untyped
+    """Load and sanity-check an archive's ``manifest.json``."""
+    path = Path(in_dir) / MANIFEST_FILE
+    if not path.is_file():
+        raise RestoreError(f"not a backup archive: {MANIFEST_FILE} is missing")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise RestoreError(f"{MANIFEST_FILE} is not a JSON object")
+    version = str(manifest.get("dump_format_version", ""))
+    if version not in SUPPORTED_DUMP_FORMATS:
+        raise RestoreError(
+            f"unsupported dump format version {version!r}; this server reads "
+            f"{', '.join(sorted(SUPPORTED_DUMP_FORMATS))} (a newer server wrote it?)"
+        )
+    return cast("dict[str, Any]", manifest)
 
 
 async def restore_audit(
@@ -221,6 +239,11 @@ def _verify_checksum(path: Path, expected: str | None) -> None:
         )
 
 
+async def existing_graph_count(adapter: TripleStoreAdapter) -> int:
+    """How many non-empty named graphs the store already holds."""
+    return len(await _all_graph_uris(adapter))
+
+
 async def _all_graph_uris(adapter: TripleStoreAdapter) -> list[str]:
     body = await adapter.query(
         "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }", accept=SPARQL_JSON
@@ -229,4 +252,11 @@ async def _all_graph_uris(adapter: TripleStoreAdapter) -> list[str]:
     return [b["g"]["value"] for b in bindings if "g" in b]
 
 
-__all__ = ["RestoreError", "RestoreResult", "restore_audit", "restore_store"]
+__all__ = [
+    "RestoreError",
+    "RestoreResult",
+    "existing_graph_count",
+    "read_manifest",
+    "restore_audit",
+    "restore_store",
+]

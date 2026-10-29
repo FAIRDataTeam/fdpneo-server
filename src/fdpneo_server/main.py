@@ -27,7 +27,7 @@ from rdflib import URIRef
 
 from fdpneo_server import __version__
 from fdpneo_server.access.router import build_sparql_router
-from fdpneo_server.config import TripleStoreSettings, get_settings
+from fdpneo_server.config import Settings, TripleStoreSettings, get_settings
 from fdpneo_server.data.router import build_data_router
 from fdpneo_server.identity import AuthenticationMiddleware, build_jwks_client
 from fdpneo_server.identity.api_keys import ApiKeyRepository, ApiKeyService, build_api_keys_router
@@ -127,6 +127,7 @@ from fdpneo_server.shared.limits import BodySizeLimitMiddleware, RateLimitMiddle
 from fdpneo_server.shared.logging import configure_logging
 from fdpneo_server.shared.reserved import RESERVED_API_PATH
 from fdpneo_server.shared.security_headers import SecurityHeadersMiddleware
+from fdpneo_server.shared.write_freeze import WriteFreeze, WriteFreezeMiddleware
 from fdpneo_server.storage.postgres.engine import build_engine, build_session_factory
 from fdpneo_server.storage.triplestore.adapter import TripleStoreAdapter
 from fdpneo_server.storage.triplestore.conformance import verify_named_graph_isolation
@@ -453,6 +454,8 @@ def _build_shared_state(
     # Admin backup/restore jobs (ADR-0016 §5 amendment): in-process job registry
     # backing the admin-only /admin/backup endpoints (dump/restore over HTTP).
     app.state.backup_job_registry = BackupJobRegistry()
+    # Full HTTP backups/restores (ADR-0029 §6) pause writes while they run.
+    app.state.write_freeze = WriteFreeze()
 
     # Search (Phase 7). The indexer (event subscriber) keeps metadata_search
     # current; the query service applies the ODRL+state visibility gate
@@ -523,6 +526,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await app.state.triplestore.close()
         await app.state.engine.dispose()
         await app.state.http_client.aclose()
+
+
+async def _roll_up_metrics_before_dump(app: FastAPI, settings: Settings) -> None:
+    """Aggregate completed raw metrics before a full dump (ADR-0029 §2).
+
+    ``metrics_raw`` never travels (ADR-0002), so a full backup first rolls every
+    completed hour into ``metrics_hourly``, which does.
+    """
+    from fdpneo_server.metrics.aggregation import roll_up_raw_to_hourly
+
+    await roll_up_raw_to_hourly(
+        app.state.session_factory,
+        aggregate_after_seconds=settings.metrics.aggregate_to_hourly_after_seconds,
+    )
 
 
 def create_app(
@@ -600,6 +617,10 @@ def create_app(
         identifier_base=settings.resolved_identifier_base,
         serving_origins=[settings.serving_base],
     )
+    # Write freeze (ADR-0029 §6): while a full HTTP backup or restore runs,
+    # writes get 503 + Retry-After and reads continue. Outside auth, so a paused
+    # write is refused before any token or store work.
+    app.add_middleware(WriteFreezeMiddleware, freeze=app.state.write_freeze)
     # Request limits (audit R-02) — added here so they sit just inside CORS and
     # outside auth: floods and oversize bodies are shed before the JWKS/auth work.
     # Per-instance defense-in-depth; the reverse proxy is the authoritative limiter.
@@ -715,6 +736,9 @@ def create_app(
             adapter=app.state.triplestore,
             session_factory=app.state.session_factory,
             settings=settings,
+            engine=app.state.engine,
+            write_freeze=app.state.write_freeze,
+            before_dump=lambda: _roll_up_metrics_before_dump(app, settings),
         ),
         prefix=RESERVED_API_PATH,
     )
