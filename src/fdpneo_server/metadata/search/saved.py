@@ -180,9 +180,21 @@ class SavedQueryService:
         await self._repo.delete(query_id)
 
 
+class _StoredSearchRequest(SearchRequest):
+    """A saved search is a :class:`SearchRequest`, validated strictly.
+
+    ``POST /search`` tolerates unknown keys, but a saved search that silently
+    drops them stores an empty search: client 0.9.2 sent ``{"q", "facets"}``
+    and every saved search came back with ``"query": null``. Unknown keys are
+    therefore a 400 here.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 def _validate_query(query: dict[str, Any]) -> dict[str, Any]:
     try:
-        return SearchRequest.model_validate(query).model_dump(mode="json", by_alias=True)
+        return _StoredSearchRequest.model_validate(query).model_dump(mode="json", by_alias=True)
     except ValidationError as err:
         raise BadRequest(
             "query is not a valid search request", details={"errors": err.errors()}

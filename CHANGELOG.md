@@ -7,6 +7,37 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.21.2] — 2026-10-30
+
+Upgrade the web client to 0.9.3 together with this release: it is the
+first client that saves searches in the format the server expects.
+
+### Fixed
+
+- **Saved searches no longer lose their search text.** A saved search is
+  validated as a search request (`query`, `types`, `license`, …).
+  Client 0.9.2 and earlier sent `{"q", "facets"}` instead. The server dropped
+  both keys without an error and stored an empty search, so
+  `GET /fdp-api/me/saved-queries` returned `"query": null`. Unknown keys are
+  now rejected with a 400, so a format mismatch is visible instead of
+  silently losing data. Client 0.9.3 sends the right format. Searches saved
+  before the fix never stored their text and cannot be repaired: delete
+  them and save them again.
+
+### Security
+
+- **Removed a database dump that was committed by mistake.** Commit
+  `5a2a140` (part of 0.21.0) committed the output of a local
+  `upgrade-postgres-18.sh` run: a `pg_dumpall` of an evaluation stack with
+  demo data, a role password hash and revoked API key hashes. The dump was
+  removed, and history after 0.20.0 was rewritten so it is no longer
+  reachable. Tags `v0.21.0` and `v0.21.1` were re-created on the rewritten
+  commits, without changing their content otherwise. Existing clones need
+  `git fetch --force --tags` followed by a hard reset of `main`. The
+  affected evaluation stack's database password was rotated. `.gitignore`
+  now covers upgrade dumps, backup bundles, and the host updater's
+  `backups/` and passphrase file.
+
 ## [0.21.1] — 2026-10-29
 
 ### Fixed

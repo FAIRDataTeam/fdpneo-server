@@ -125,3 +125,30 @@ def test_router_create_list_flow(session_factory: Any) -> None:
     created = client.post("/me/saved-queries", json={"name": "mine", "query": {"query": "x"}})
     assert created.status_code == 201, created.text
     assert client.get("/me/saved-queries").json()["queries"][0]["name"] == "mine"
+
+
+@pytest.mark.unit
+async def test_saved_search_keeps_the_search_text_and_filters(session_factory: Any) -> None:
+    svc = _service(session_factory)
+    created = await svc.create(
+        _ctx(ALICE),
+        SavedQueryCreate(
+            name="River temperature",
+            query={"query": "temperature", "types": ["http://www.w3.org/ns/dcat#Dataset"]},
+        ),
+    )
+    [listed] = [q for q in await svc.list_for(_ctx(ALICE)) if q.id == created.id]
+    assert listed.query["query"] == "temperature"
+    assert listed.query["types"] == ["http://www.w3.org/ns/dcat#Dataset"]
+
+
+@pytest.mark.unit
+async def test_unknown_keys_are_rejected_not_dropped(session_factory: Any) -> None:
+    # Client 0.9.2 sent {"q", "facets"}; the server used to drop both and store
+    # an all-null search. Now the mismatch is a 400 the client sees.
+    svc = _service(session_factory)
+    with pytest.raises(BadRequest):
+        await svc.create(_ctx(ALICE), SavedQueryCreate(name="bad", query={"q": "temperature"}))
+    mine = await svc.create(_ctx(ALICE), SavedQueryCreate(name="ok", query={}))
+    with pytest.raises(BadRequest):
+        await svc.update(_ctx(ALICE), mine.id, SavedQueryUpdate(query={"facets": {"type": ["x"]}}))
