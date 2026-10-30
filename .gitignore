@@ -96,3 +96,10 @@ desktop.ini
 # GeoIP database fetched by scripts/fetch-geoip.sh (DB-IP lite, refreshed monthly;
 # redistributed via the Docker image, not vendored in git)
 /data/geoip/
+
+# One-off upgrade artefacts (database dumps, backup bundles) never belong in the repository
+deploy/stack/postgres-upgrade-*/
+deploy/stack/production/postgres-upgrade-*/
+*.fdpbk
+/backups/
+.backup.pass
