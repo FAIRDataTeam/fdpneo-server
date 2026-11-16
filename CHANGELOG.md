@@ -7,6 +7,15 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.21.3] — 2026-11-16
+
+### Security
+
+- **Patched dependencies in the image.** dnspython 2.9.0 → 2.9.2
+  (CVE-2026-128089) and opentelemetry-api 1.45.1 → 1.45.2 (CVE-2026-126360),
+  with the matching 0.66b2 OpenTelemetry instrumentation packages. No code
+  changes; no upgrade steps.
+
 ## [0.21.2] — 2026-10-30
 
 Upgrade the web client to 0.9.3 together with this release: it is the
