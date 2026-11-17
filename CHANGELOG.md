@@ -7,6 +7,21 @@ out explicitly below).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A restore over HTTP no longer silences the server's logs.** When a
+  full-backup restore crosses a schema revision, it runs the migrations
+  inside the server. Alembic's `env.py` then loaded the logging section
+  of `alembic.ini`, which replaced the JSON log handler and disabled every
+  logger that already existed, until the next restart. In-process migrations
+  now leave logging alone; `fdp db migrate` still logs as before.
+- **The test suite passes in any order.** `create_app()` no longer
+  changes the global settings registry: the `FDP_ACCESS_CONTROL_MODE`
+  default now belongs to each app's `SettingsRepository` (`defaults=`).
+  The LDP conformance fixture restores the environment variables it sets.
+  `configure_logging()` re-enables the uvicorn loggers if something
+  disabled them.
+
 ## [0.21.3] — 2026-11-16
 
 ### Security

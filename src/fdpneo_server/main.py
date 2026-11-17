@@ -100,7 +100,6 @@ from fdpneo_server.metadata.settings import (
     SettingsRepository,
     UpdateCheck,
     build_settings_router,
-    set_registered_default,
 )
 from fdpneo_server.metadata.shacl import ShaclValidator
 from fdpneo_server.metadata.shape_provider import MetadataShapeProvider, PredefinedShapeProvider
@@ -398,14 +397,16 @@ def _build_shared_state(
     # Runtime settings repository — Postgres-backed; read on demand so admin
     # updates are visible without restart. Built before the label resolver and
     # autocomplete service, which both read from it.
-    app.state.settings_repository = SettingsRepository(session_factory=app.state.session_factory)
-
     # Access-control mode (ADR-0027): FDP_ACCESS_CONTROL_MODE seeds the value
     # ``access.control`` reverts to; the admin's runtime override wins over it.
+    app.state.settings_repository = SettingsRepository(
+        session_factory=app.state.session_factory,
+        defaults={"access.control": AccessControl(mode=settings.access_control.mode)},
+    )
+
     # A mode switch invalidates derived state the old mode produced — the
     # authorization index (ODRL → open leaves rows that open never reads but
     # open → ODRL must not trust) and the search index's ``anon_read`` flags.
-    set_registered_default("access.control", AccessControl(mode=settings.access_control.mode))
     app.state.access_control_reader = CachedSettingReader(
         app.state.settings_repository, "access.control"
     )

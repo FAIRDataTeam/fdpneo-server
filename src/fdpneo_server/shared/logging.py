@@ -160,6 +160,9 @@ def configure_logging(env: Environment, *, subject_salt: str | None = None) -> N
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
+        # ``logging.config.fileConfig`` (e.g. alembic.ini) disables loggers
+        # that already exist; these are ours to configure, so turn them back on.
+        uvicorn_logger.disabled = False
 
 
 __all__ = ["Environment", "configure_logging", "pseudonymize_subject"]

@@ -131,3 +131,11 @@ def test_uvicorn_logger_flows_through_same_handler(capture_root_logs: StringIO) 
     line = capture_root_logs.getvalue().strip().splitlines()[-1]
     payload = json.loads(line)
     assert payload["event"] == "served"
+
+
+@pytest.mark.unit
+def test_configure_logging_re_enables_uvicorn_loggers() -> None:
+    # ``fileConfig`` (alembic.ini) disables existing loggers.
+    logging.getLogger("uvicorn.access").disabled = True
+    configure_logging("production")
+    assert not logging.getLogger("uvicorn.access").disabled

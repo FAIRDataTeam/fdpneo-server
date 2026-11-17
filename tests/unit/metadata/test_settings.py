@@ -358,21 +358,32 @@ def test_access_control_validates_mode_and_roles() -> None:
 
 
 @pytest.mark.unit
-def test_set_registered_default_replaces_the_fallback() -> None:
-    from fdpneo_server.metadata.settings import AccessControl, set_registered_default
+async def test_repository_defaults_replace_the_fallback_for_that_repository_only(
+    session_factory: Any,
+) -> None:
+    from fdpneo_server.metadata.settings import AccessControl
 
-    original = SETTINGS_REGISTRY["access.control"].default
-    try:
-        set_registered_default("access.control", AccessControl(mode="odrl"))
-        default = SETTINGS_REGISTRY["access.control"].default
-        assert isinstance(default, AccessControl)
-        assert default.mode == "odrl"
-        with pytest.raises(TypeError):
-            set_registered_default("access.control", SearchFilters())
-        with pytest.raises(KeyError):
-            set_registered_default("nope", AccessControl())
-    finally:
-        set_registered_default("access.control", original)
+    odrl = SettingsRepository(
+        session_factory=session_factory, defaults={"access.control": AccessControl(mode="odrl")}
+    )
+    plain = SettingsRepository(session_factory=session_factory)
+    assert (await odrl.read_with_default("access.control")).mode == "odrl"  # type: ignore[union-attr]
+    assert (await odrl.read_all())["access.control"].mode == "odrl"  # type: ignore[attr-defined]
+    assert (await plain.read_with_default("access.control")).mode == "open"  # type: ignore[union-attr]
+    assert SETTINGS_REGISTRY["access.control"].default.mode == "open"  # type: ignore[attr-defined]
+
+    # An override wins; deleting it reverts to this repository's default.
+    await odrl.write("access.control", AccessControl(mode="open"), subject=None)
+    assert (await odrl.read_with_default("access.control")).mode == "open"  # type: ignore[union-attr]
+    await odrl.delete("access.control")
+    assert (await odrl.read_with_default("access.control")).mode == "odrl"  # type: ignore[union-attr]
+
+    with pytest.raises(TypeError):
+        SettingsRepository(
+            session_factory=session_factory, defaults={"access.control": SearchFilters()}
+        )
+    with pytest.raises(KeyError):
+        SettingsRepository(session_factory=session_factory, defaults={"nope": AccessControl()})
 
 
 @pytest.mark.unit
