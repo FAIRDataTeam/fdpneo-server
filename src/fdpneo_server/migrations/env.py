@@ -27,7 +27,12 @@ if TYPE_CHECKING:
 # Alembic Config object provides access to .ini file values.
 config = context.config
 
-if config.config_file_name is not None:
+# ``fdp db migrate`` runs in its own process and logs through alembic.ini. A
+# programmatic caller inside a configured process (``storage.postgres.migrations``,
+# used by full-backup restore over HTTP) sets ``configure_logger`` to False:
+# ``fileConfig`` would replace the root handler and disable every existing
+# logger, silencing the server's structured logs until restart.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 # Inject the DSN at runtime so neither alembic.ini nor env-supplied URL is required.

@@ -28,6 +28,8 @@ def alembic_config(dsn: str) -> Config:
     """An Alembic config for the packaged migrations, bound to ``dsn``."""
     config = Config(str(files("fdpneo_server") / "alembic.ini"))
     config.attributes["dsn"] = dsn
+    # Keep the caller's logging (see migrations/env.py).
+    config.attributes["configure_logger"] = False
     return config
 
 

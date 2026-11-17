@@ -110,7 +110,10 @@ def client(
             yield c
     finally:
         for k, prior in saved.items():
-            os.environ[k] = prior if prior is not None else os.environ.pop(k, "")
+            if prior is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = prior
         get_settings.cache_clear()
 
 

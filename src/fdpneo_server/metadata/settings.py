@@ -15,10 +15,10 @@ Keys currently registered:
   shipped).
 * ``access.control`` — the access-control mode (ADR-0027): ``open`` (every
   record publicly readable, writer roles may write, no ODRL evaluation) or
-  ``odrl`` (the full policy engine). The registered default is seeded from
-  ``FDP_ACCESS_CONTROL_MODE`` at composition time
-  (:func:`set_registered_default`); the PDP reads the effective value per
-  call through a :class:`CachedSettingReader`.
+  ``odrl`` (the full policy engine). The deployment default comes from
+  ``FDP_ACCESS_CONTROL_MODE``, passed to the app's :class:`SettingsRepository`
+  at composition time (its ``defaults``); the PDP reads the effective value
+  per call through a :class:`CachedSettingReader`.
 
 Auth model:
 
@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, cast
 
@@ -277,24 +277,6 @@ def _registry() -> dict[str, _RegisteredKey]:
 SETTINGS_REGISTRY: Final = _registry()
 
 
-def set_registered_default(key: str, default: BaseModel) -> None:
-    """Replace the registered default for ``key`` (composition-time only).
-
-    Lets a deployment environment variable seed the value a key reverts to
-    on ``DELETE /settings/{key}`` — e.g. ``FDP_ACCESS_CONTROL_MODE`` for
-    ``access.control``. The runtime override, when present, still wins.
-    """
-    registered = SETTINGS_REGISTRY.get(key)
-    if registered is None:
-        raise KeyError(f"unknown settings key: {key}")
-    if not isinstance(default, registered.model_class):
-        raise TypeError(
-            f"default for {key} must be {registered.model_class.__name__}, "
-            f"got {type(default).__name__}"
-        )
-    registered.default = default
-
-
 # --- storage --------------------------------------------------------------
 
 
@@ -345,10 +327,32 @@ class SettingsRepository:
     key. Unknown keys raise ``NotFound`` at the router boundary; the
     repository itself returns ``None`` so it can also be used to drive
     the "key has no override" branch.
+
+    ``defaults`` replaces the registered default for some keys in this
+    repository only — e.g. ``FDP_ACCESS_CONTROL_MODE`` for ``access.control``.
+    It is the value the key reverts to on ``DELETE /settings/{key}``; a
+    runtime override still wins. :data:`SETTINGS_REGISTRY` itself is never
+    modified, so apps built in the same process do not affect each other.
     """
 
-    def __init__(self, *, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        *,
+        session_factory: async_sessionmaker[AsyncSession],
+        defaults: Mapping[str, BaseModel] | None = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._defaults: dict[str, BaseModel] = {}
+        for key, default in (defaults or {}).items():
+            registered = SETTINGS_REGISTRY.get(key)
+            if registered is None:
+                raise KeyError(f"unknown settings key: {key}")
+            if not isinstance(default, registered.model_class):
+                raise TypeError(
+                    f"default for {key} must be {registered.model_class.__name__}, "
+                    f"got {type(default).__name__}"
+                )
+            self._defaults[key] = default
         self._listeners: defaultdict[str, list[Callable[[str], None]]] = defaultdict(list)
 
     def subscribe(self, key: str, listener: Callable[[str], None]) -> None:
@@ -394,16 +398,19 @@ class SettingsRepository:
             )
             return None
 
+    def default(self, key: str) -> BaseModel:
+        """The value ``key`` has without an override: this repository's, else the registry's."""
+        return self._defaults.get(key, SETTINGS_REGISTRY[key].default)
+
     async def read_with_default(self, key: str) -> BaseModel:
-        """Like :meth:`read` but falls back to the registered default."""
-        registered = SETTINGS_REGISTRY[key]
+        """Like :meth:`read` but falls back to :meth:`default`."""
         value = await self.read(key)
-        return value if value is not None else registered.default
+        return value if value is not None else self.default(key)
 
     async def read_all(self) -> dict[str, BaseModel]:
         """Return every registered key with its current effective value.
 
-        Effective = override if present, else registered default. The
+        Effective = override if present, else :meth:`default`. The
         client uses this to render a single bootstrap payload.
         """
         async with self._session_factory() as session:
@@ -414,7 +421,7 @@ class SettingsRepository:
         for key, registered in SETTINGS_REGISTRY.items():
             raw = overrides.get(key)
             if raw is None:
-                result[key] = registered.default
+                result[key] = self.default(key)
                 continue
             try:
                 result[key] = registered.model_class.model_validate(raw)
@@ -424,7 +431,7 @@ class SettingsRepository:
                     key=key,
                     value=raw,
                 )
-                result[key] = registered.default
+                result[key] = self.default(key)
         return result
 
     async def write(self, key: str, value: BaseModel, *, subject: str | None) -> None:
@@ -670,5 +677,4 @@ __all__ = [
     "SettingsValueResponse",
     "UpdateCheck",
     "build_settings_router",
-    "set_registered_default",
 ]

@@ -7,6 +7,7 @@ chain from scratch, and asserts that every reserved table exists.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Iterator
 from importlib.resources import files
@@ -102,3 +103,26 @@ def test_downgrade_base_removes_all_reserved_tables(
     tables = asyncio.run(_public_table_names(_async_dsn(postgres_container)))
     leftover = EXPECTED_TABLES & tables
     assert not leftover, f"Downgrade left tables behind: {sorted(leftover)}"
+
+
+@pytest.mark.integration
+def test_in_process_migration_keeps_the_callers_logging(
+    postgres_container: PostgresContainer,
+) -> None:
+    """Full-backup restore migrates inside the running server (ADR-0029).
+
+    alembic.ini's ``fileConfig`` must not replace the server's handler or
+    disable its existing loggers.
+    """
+    from fdpneo_server.shared.logging import configure_logging
+    from fdpneo_server.storage.postgres.migrations import head_revision, migrate_to
+
+    configure_logging("production")
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    access = logging.getLogger("uvicorn.access")
+
+    asyncio.run(migrate_to(_async_dsn(postgres_container), current=None, target=head_revision()))
+
+    assert root.handlers == handlers
+    assert not access.disabled
