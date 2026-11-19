@@ -164,6 +164,21 @@ The evaluation stack's Keycloak keeps its realm inside the container, so a
 recreated `keycloak` container re-imports the fixed realm anyway. The
 script is still the safe step if the container was kept.
 
+## Keycloak 26.8.2 and later
+
+Keycloak 26.8.2 only lets tokens that carry the `kc-admin-api` client scope
+call its Admin REST API. The `fdp-server` client of older realms lacks it, so
+user management (`/users`) fails with "IdP admin … returned HTTP 401" while
+sign-in still works. The `26.8` image tag picks up 26.8.2 on the next pull.
+The realm file now assigns the scope, but an existing realm is never
+re-imported. Run this once from this directory:
+
+```bash
+./fix-keycloak-admin-scope.sh   # add kc-admin-api to the fdp-server client
+```
+
+It is idempotent and does nothing on a Keycloak before 26.8.2.
+
 ## ⚠ Before production — this stack is dev-credentialed
 
 The bundled realm runs Keycloak in `start-dev` mode with **development

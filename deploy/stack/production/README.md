@@ -151,6 +151,14 @@ and `http://` URLs in logs.
 
   Then check that you can sign in, and remove the backup volume and the
   `postgres-upgrade-*` dump directory once you are satisfied.
+- **Keycloak 26.8.2 and later: user management needs `../fix-keycloak-admin-scope.sh`.**
+  Keycloak 26.8.2 only lets tokens that carry the `kc-admin-api` client
+  scope call its Admin REST API. Without the scope, the server's user
+  management (`/users`) fails with "IdP admin … returned HTTP 401", while
+  sign-in still works. The `26.8` image tag picks up 26.8.2 on the next pull.
+  The realm file assigns the scope for new installs, but an existing realm is
+  never re-imported, so run the script once in this directory after pulling.
+  It is idempotent and does nothing on an older Keycloak.
 - **Upgrading from a server before 0.17:** recorded metrics were keyed by the
   URL the container saw (`http://<host>/…`), so per-record metrics never
   matched the `https://` record IRIs. Re-key the history once:
