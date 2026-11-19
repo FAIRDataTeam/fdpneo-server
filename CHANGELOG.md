@@ -7,6 +7,8 @@ out explicitly below).
 
 ## [Unreleased]
 
+## [0.21.4] — 2026-11-19
+
 ### Fixed
 
 - **User management works with Keycloak 26.8.2.** From 26.8.2, Keycloak's
@@ -16,11 +18,6 @@ out explicitly below).
   has failed on `main` since 2026-11-16 for this reason. Sign-in was not
   affected. Both bundled realms now give `fdp-server` the scope; a Keycloak
   before 26.8.2 ignores the unknown scope with a warning.
-- **`fix-keycloak-admin-scope.sh`.** An existing realm is never re-imported.
-  Stacks whose Keycloak has moved to 26.8.2 (the `26.8` tag follows patch
-  releases) run this once from the stack directory. It adds the scope through
-  the Keycloak admin CLI, is idempotent, and does nothing on an older
-  Keycloak.
 - **A restore over HTTP no longer silences the server's logs.** When a
   full-backup restore crosses a schema revision, it runs the migrations
   inside the server. Alembic's `env.py` then loaded the logging section
@@ -33,6 +30,21 @@ out explicitly below).
   The LDP conformance fixture restores the environment variables it sets.
   `configure_logging()` re-enables the uvicorn loggers if something
   disabled them.
+
+### Upgrading
+
+After pulling this release, run one idempotent script from the stack directory:
+
+```bash
+cd deploy/stack && ./fix-keycloak-admin-scope.sh                # evaluation stack
+cd deploy/stack/production && ../fix-keycloak-admin-scope.sh    # production stack
+```
+
+An existing realm is never re-imported, so it keeps the `fdp-server` client
+without the `kc-admin-api` scope. The script adds the scope through the
+Keycloak admin CLI. On a Keycloak before 26.8.2 it does nothing; run it again
+once the `26.8` tag has moved you to 26.8.2. With your own Keycloak, add the
+`kc-admin-api` scope to the `fdp-server` client as a default client scope.
 
 ## [0.21.3] — 2026-11-16
 
