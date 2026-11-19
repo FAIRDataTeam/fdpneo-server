@@ -119,6 +119,7 @@
       "publicClient": false,
       "secret": "${FDP_SERVER_CLIENT_SECRET}",
       "serviceAccountsEnabled": true,
+      "defaultClientScopes": ["basic", "profile", "email", "roles", "web-origins", "acr", "kc-admin-api"],
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,

@@ -45,6 +45,15 @@ logged-in admin's own token (on-behalf/token-exchange) — was rejected: it need
 every admin user granted `realm-management` roles directly in the IdP and depends
 on token-exchange being enabled and version-stable.
 
+> **Note (2026-11-19): Keycloak 26.8.2.** From 26.8.2, Keycloak's Admin API
+> only accepts tokens that carry the `kc-admin-api` client scope. The
+> `fdp-server` client therefore needs that scope as a default client scope,
+> in addition to the four roles. Without it, the token is still issued but
+> every Admin API call answers 401. The bundled realms assign it, and
+> `deploy/stack/fix-keycloak-admin-scope.sh` adds it to an existing realm.
+> Operators with their own Keycloak add it in the admin console under
+> Clients → `fdp-server` → Client scopes.
+
 **3. Capability-gated; off by default.** The facade is built only when the
 service-account credentials are configured (`FDP_IDP_ADMIN_CLIENT_ID/SECRET`).
 Otherwise the `UserDirectory` is `None`, every `/users` route returns

@@ -57,7 +57,8 @@ binds a public port. App ↔ store ↔ DB traffic stays on a private network.
       injected as env or mounted files — never committed, never in container images.
 - [ ] `.env*` stays git-ignored (verified); use `deploy/.env.production.example` as the shape.
 - [ ] Least-privilege DB role; the IdP service account keeps only the four
-      `realm-management` roles it needs (ADR-0013).
+      `realm-management` roles it needs (ADR-0013), plus the `kc-admin-api`
+      client scope that Keycloak 26.8.2 and later require for Admin API calls.
 
 ## 3. HTTP security headers + banner (F-05)
 
