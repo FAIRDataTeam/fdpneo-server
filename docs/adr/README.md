@@ -28,7 +28,7 @@ ADRs are numbered sequentially and are immutable once accepted. Superseding deci
 | [0018](0018-agent-consumption-mcp-server.md) | Agent consumption via a standalone MCP sidecar (`fdp-mcp`) | Accepted |
 | [0019](0019-record-schema-binding-and-versioning.md) | Self-describing record–schema binding and schema versioning | Accepted |
 | [0020](0020-product-distributions.md) | Products as distributions — module manifests and composed deployments | Proposed |
-| [0021](0021-fair-discovery-product.md) | FAIR Discovery — the aggregation product: name, tiers, and validation posture | Proposed |
+| [0021](0021-fair-discovery-product.md) | FAIR Discovery — the aggregation product: name, tiers, and validation posture | Accepted, amended (standalone service) |
 | [0022](0022-in-band-affordance-advertisement.md) | In-band affordance advertisement — closing the HATEOAS gap | Proposed |
 | [0023](0023-downstream-composition-seams.md) | Downstream composition seams on `create_app` | Accepted |
 | [0024](0024-mcp-opt-in-write-tools.md) | Opt-in write tools in the MCP sidecar (`fdp-mcp`) | Accepted |

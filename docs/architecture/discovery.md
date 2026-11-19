@@ -1,6 +1,6 @@
 # FAIR Discovery — design of the `registry/` and `harvest/` contexts
 
-**Status:** Draft (companion to [ADR-0021](../adr/0021-fair-discovery-product.md))
+**Status:** Draft (companion to [ADR-0021](../adr/0021-fair-discovery-product.md)). Not built in this repository: FAIR Discovery is the standalone FDPneo Index (see the ADR's 2026-11-19 amendment), which keeps this document as its target design.
 **Date:** 2026-07-05
 
 FAIR Discovery is the aggregation product of the platform: it registers metadata
