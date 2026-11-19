@@ -1,6 +1,6 @@
 # ADR-0021: FAIR Discovery — the aggregation product: name, tiers, and validation posture
 
-**Status:** Proposed
+**Status:** Accepted, amended 2026-11-19: built as a standalone service (see the amendment)
 **Date:** 2026-07-05
 
 ## Context
@@ -75,3 +75,46 @@ What happens to a harvested record that fails profile validation is a **deployme
 - Incremental harvesting with provenance is substantially more complex than wipe-and-recrawl; correctness (deletions, moves, partial failures) needs explicit design — see `docs/architecture/discovery.md`.
 - Per-surface validation strictness adds a policy dimension to configuration and testing.
 - The rename touches public artifacts (image names, tags, app shell, docs) and community habit.
+
+## Amendment (2026-11-19): FAIR Discovery is built as a standalone service
+
+FDPneo separates the FDP from the index. The aggregation product of this ADR
+is built as a **standalone service, the FDPneo Index**
+([`luizbonino/fdpneo-index`](https://github.com/luizbonino/fdpneo-index)),
+not as the `registry/` and `harvest/` contexts of this server.
+
+- **§1 Name.** The service is called the FDPneo Index for now. "FAIR
+  Discovery" names the product role this ADR describes. The protocol
+  vocabulary is unchanged: FDPs still ping the index.
+- **§3 Contexts are superseded.** This server keeps only the sending side:
+  pinging the index targets an administrator configures (ADR-0025). It gets
+  no `registry/` or `harvest/` context.
+- **"Separate harvester product/repository", rejected above, is the choice
+  now.** That rejection rested on harvest being meaningless without this
+  server's serving stack. The Index has its own:
+  - faceted search and a SPARQL endpoint over the harvested metadata;
+  - an administration client;
+  - storage, a PostgreSQL projection plus an embedded SPARQL store;
+  - its own release cycle.
+
+  It is wire compatible with every FDP (`POST /` ping) and with the
+  reference index API. FDP deployments no longer carry index code.
+- **§2 Tiers and §4 validation posture remain the target.** The Index
+  tracks them in its `TASKS.md`.
+  - **Built:**
+    - the directory tier: registration by ping, approval, deny list,
+      liveness checks, events and signed webhooks with retries;
+    - harvesting with change sets and per-node conditional requests;
+    - failed nodes kept, marked stale;
+    - the source's `dct:modified` kept apart from the harvest time;
+    - multilingual faceted search and SPARQL.
+  - **Open:**
+    - per-source tiers and options (Index tasks 4.6–4.9);
+    - profile validation, conformance reports, DCAT-AP republication, the
+      EHDS profile and an MCP server (Phase 11);
+    - non-FDP sources (Phase 12);
+    - grouping duplicates (8.8).
+- **Deviations from [`discovery.md`](../architecture/discovery.md):**
+  - storage is PostgreSQL with an embedded SPARQL store, not an external
+    triple store (§5.1; the Index's ADR-0005);
+  - harvested metadata is one graph per FDP, not per record.
