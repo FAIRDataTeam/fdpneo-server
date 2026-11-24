@@ -7,6 +7,21 @@ out explicitly below).
 
 ## [Unreleased]
 
+### Security
+
+- **Server-side fetches connect to the address they checked** (security audit
+  2026-11-23, F-01). The stream-mode download proxy and the external-label
+  fetcher resolved a host to check it, and resolved it again to connect, so a
+  host that changed its DNS answer in between (DNS rebinding) could still
+  reach an internal address. Each hop now connects to the checked address,
+  with the host name kept for `Host` and for TLS. Stream mode stays off by
+  default.
+- **No raw subject identifiers in logs** (audit 2026-11-23, F-02). Four log
+  calls (API-key revocation, update requests) passed the user's subject under
+  `by=` or `owner=`, which the log pseudonymizer does not cover. They now use
+  the pseudonymized `subject` and `owner_subject` keys, and a test fails on
+  any log call that passes a subject under another key.
+
 ## [0.21.4] — 2026-11-19
 
 ### Fixed

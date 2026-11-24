@@ -209,7 +209,7 @@ class UpdateRequestService:
             component=row.component,
             target=target,
             from_version=current,
-            by=ctx.subject,
+            subject=ctx.subject,
         )
         return _view(row)
 
@@ -235,7 +235,7 @@ class UpdateRequestService:
     async def cancel(self, ctx: RequestContext, request_id: str) -> UpdateRequestView:
         _require(ctx, _ADMIN_ROLE)
         row = await self._transition(request_id, from_status="pending", to_status="cancelled")
-        log.info("update_request_cancelled", request_id=request_id, by=ctx.subject)
+        log.info("update_request_cancelled", request_id=request_id, subject=ctx.subject)
         return row
 
     # agent side
