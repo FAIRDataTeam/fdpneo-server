@@ -7,6 +7,7 @@ configuration group (env parsing + the ``effective_enabled`` gate).
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -234,19 +235,23 @@ def _fetcher(handler: Callable[[httpx.Request], httpx.Response], **over: object)
     return ExternalLabelFetcher(http_client=client, settings=settings), client
 
 
+PUBLIC_IP = "93.184.216.34"
+
+
 @pytest.fixture
 def patch_ssrf(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neutralize the SSRF guard's DNS so functional fetch tests stay offline.
+    """Answer the SSRF guard's DNS with a public address so fetch tests stay offline.
 
-    Opt-in (not autouse): tests that assert the guard *itself* — e.g.
-    ``test_fetch_blocks_private_address_with_real_guard`` — must not request it,
-    or they'd pass for the wrong reason.
+    The guard itself still runs, and pins each request to that address with
+    the name in ``Host`` (audit F-01). Opt-in (not autouse): tests that assert
+    the guard blocks something — e.g.
+    ``test_fetch_blocks_private_address_with_real_guard`` — must not request it.
     """
 
-    async def _ok(*_a: object, **_k: object) -> None:
-        return None
+    async def _public(_host: str, _port: int | None) -> list[ipaddress.IPv4Address]:
+        return [ipaddress.IPv4Address(PUBLIC_IP)]
 
-    monkeypatch.setattr("fdpneo_server.metadata.external_labels.assert_public_url", _ok)
+    monkeypatch.setattr("fdpneo_server.shared.ssrf._resolve", _public)
 
 
 async def test_fetch_resolves_turtle_label(patch_ssrf: None) -> None:
@@ -267,15 +272,21 @@ async def test_fetch_resolves_turtle_label(patch_ssrf: None) -> None:
 async def test_fetch_follows_redirect_then_resolves(patch_ssrf: None) -> None:
     ttl = '<http://dx.doi.example/10.1/x> <http://purl.org/dc/terms/title> "Redirected Work" .'
 
+    sent: list[tuple[str, str, object]] = []
+
     def handler(req: httpx.Request) -> httpx.Response:
-        if req.url.host == "doi.example":
-            return httpx.Response(302, headers={"location": "https://api.cross.example/works/x"})
+        # Each hop goes to the checked address, the name in Host and as the TLS name.
+        sent.append((req.url.host, req.headers["host"], req.extensions.get("sni_hostname")))
+        if req.url.path == "/10.1/x":
+            return httpx.Response(302, headers={"location": "/works/x"})
         return httpx.Response(200, content=ttl.encode(), headers=_TTL_HEADERS)
 
-    fetcher, client = _fetcher(handler)
+    fetcher, client = _fetcher(handler, allowed_hosts="doi.example")
     async with client:
         got = await fetcher.fetch("https://doi.example/10.1/x", language="en")
     assert got == "Redirected Work"
+    # The relative redirect resolves against the name, not the pinned address.
+    assert sent == [(PUBLIC_IP, "doi.example", "doi.example")] * 2
 
 
 async def test_fetch_skips_host_not_on_allow_list() -> None:

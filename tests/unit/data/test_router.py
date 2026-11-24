@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
@@ -259,6 +260,76 @@ def test_stream_mode_does_not_follow_redirect_to_internal_host() -> None:
     assert response.status_code == 200
     assert response.content == b""
     assert not internal.called
+
+
+_NAMED_UPSTREAM = "https://files.example/d1.csv"
+_VETTED = "93.184.216.34"
+
+
+@pytest.mark.unit
+def test_stream_mode_connects_to_the_address_it_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    # DNS rebinding (audit F-01): the name passes the check with a public
+    # address and would answer an internal one when httpx looked it up again.
+    # The proxy never looks it up again: it connects to the checked address,
+    # with the name kept for Host and TLS.
+    lookups: list[str] = []
+
+    async def resolve(host: str, _port: int | None) -> list[ipaddress.IPv4Address]:
+        lookups.append(host)
+        return [ipaddress.IPv4Address(_VETTED if len(lookups) == 1 else "169.254.169.254")]
+
+    monkeypatch.setattr("fdpneo_server.shared.ssrf._resolve", resolve)
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph(download_url=_NAMED_UPSTREAM)})
+    with respx.mock(assert_all_called=False) as mock:
+        pinned = mock.get(f"https://{_VETTED}/d1.csv").mock(
+            return_value=httpx.Response(200, content=b"hello\n")
+        )
+        by_name = mock.get(_NAMED_UPSTREAM).mock(return_value=httpx.Response(200, content=b"x"))
+        app = _build_app(
+            repo=repo,
+            pdp=_FakePDP(),
+            adapter=_FakeAdapter(),
+            settings=DataSettings(download_mode="stream"),
+            http_client=httpx.AsyncClient(),
+        )
+        response = TestClient(app).get(f"/data/{DIST_ID}")
+    assert response.status_code == 200
+    assert response.content == b"hello\n"
+    assert lookups == ["files.example"]  # once, by the guard
+    assert not by_name.called
+    sent = pinned.calls.last.request
+    assert sent.headers["host"] == "files.example"
+    assert sent.headers["connection"] == "close"
+    assert sent.extensions["sni_hostname"] == "files.example"
+
+
+@pytest.mark.unit
+def test_stream_mode_pins_every_redirect_hop(monkeypatch: pytest.MonkeyPatch) -> None:
+    addresses = {"files.example": _VETTED, "mirror.example": "93.184.216.35"}
+
+    async def resolve(host: str, _port: int | None) -> list[ipaddress.IPv4Address]:
+        return [ipaddress.IPv4Address(addresses[host])]
+
+    monkeypatch.setattr("fdpneo_server.shared.ssrf._resolve", resolve)
+    repo = _FakeRepo(graphs={DIST_IRI: _distribution_graph(download_url=_NAMED_UPSTREAM)})
+    with respx.mock(assert_all_called=True) as mock:
+        mock.get(f"https://{_VETTED}/d1.csv").mock(
+            # Relative: resolved against the name, not the pinned address.
+            return_value=httpx.Response(302, headers={"location": "//mirror.example/d1.csv"})
+        )
+        mirror = mock.get("https://93.184.216.35/d1.csv").mock(
+            return_value=httpx.Response(200, content=b"mirrored\n")
+        )
+        app = _build_app(
+            repo=repo,
+            pdp=_FakePDP(),
+            adapter=_FakeAdapter(),
+            settings=DataSettings(download_mode="stream"),
+            http_client=httpx.AsyncClient(),
+        )
+        response = TestClient(app).get(f"/data/{DIST_ID}")
+    assert response.content == b"mirrored\n"
+    assert mirror.calls.last.request.headers["host"] == "mirror.example"
 
 
 # --- SPARQL forwarding ----------------------------------------------------

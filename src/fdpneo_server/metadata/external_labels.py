@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import structlog
 from rdflib import Graph, Literal, URIRef
@@ -37,7 +37,7 @@ from fdpneo_server.metadata.labels import is_safe_iri
 from fdpneo_server.shared import negotiation
 from fdpneo_server.shared.errors import UpstreamError
 from fdpneo_server.shared.namespaces import DCT, FOAF, RDFS, SDO, SKOS
-from fdpneo_server.shared.ssrf import assert_public_url
+from fdpneo_server.shared.ssrf import PinnedUrl, pin_public_url
 from fdpneo_server.storage.postgres.models import Base
 from fdpneo_server.storage.postgres.types import AwareDateTime
 
@@ -263,28 +263,31 @@ class ExternalLabelFetcher:
         """Fetch + parse ``iri``, following redirects with per-hop re-validation."""
         url = iri
         for _ in range(self._settings.max_redirects + 1):
-            await assert_public_url(url, allowed_hosts=self._settings.hosts)
-            body, content_type, redirect = await self._fetch_once(url)
+            # Connect where the guard looked: no DNS rebinding in between (audit F-01).
+            pinned = await pin_public_url(url, allowed_hosts=self._settings.hosts)
+            body, content_type, redirect = await self._fetch_once(url, pinned)
             if redirect is not None:
                 url = redirect
                 continue
             return self._parse(body, content_type, base=url)
         raise UpstreamError("too many redirects resolving external label")
 
-    async def _fetch_once(self, url: str) -> tuple[bytes, str, str | None]:
+    async def _fetch_once(self, url: str, pinned: PinnedUrl) -> tuple[bytes, str, str | None]:
         """One hop: return ``(body, content_type, None)`` or ``(b"", "", redirect_url)``."""
         async with self._http.stream(
             "GET",
-            url,
+            pinned.url,
             timeout=self._settings.timeout_seconds,
             follow_redirects=False,
-            headers={"Accept": _ACCEPT},
+            headers={"Accept": _ACCEPT, **pinned.headers},
+            extensions=pinned.extensions,
         ) as response:
             if response.is_redirect:
                 location = response.headers.get("location")
                 if not location:
                     raise UpstreamError("redirect without a Location header")
-                return b"", "", str(response.url.join(location))
+                # Against the name, not the pinned address the request went to.
+                return b"", "", urljoin(url, location)
             response.raise_for_status()
             content_type = response.headers.get("content-type", "")
             chunks: list[bytes] = []

@@ -10,15 +10,15 @@ before the FDP fetches it we enforce two structural rules:
   non-public address — this is what blocks the cloud-metadata / internal-service
   pivot (``http://169.254.169.254/…``, RFC1918, ``::1``, …).
 
-The caller follows redirects manually so every hop passes back through
-:func:`assert_public_url` — an allowlisted or public host that ``302``\\s inward
-is caught too.
+The caller follows redirects manually so every hop passes back through the
+guard — an allowlisted or public host that ``302``\\s inward is caught too.
 
-**Residual (documented):** validation resolves DNS and then httpx resolves it
-again when it connects, so a TOCTOU / DNS-rebinding window remains. For the
-highest assurance, lock the proxy down with an egress allow-list
-(``DataSettings.allowed_download_hosts``) or an egress proxy. Stream mode is
-opt-in and off by default, which bounds the exposure.
+The connection is pinned to the address that was checked
+(:func:`pin_public_url`): the request goes to that IP, with the original host
+in ``Host`` and as the TLS server name (SNI and certificate check). A host that
+changes its DNS answer between the check and the connection (DNS rebinding)
+therefore cannot steer the request to an internal address (security audit
+2026-11-23, F-01; the FDPneo Index's outbound client does the same).
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
+
+import httpx
 
 from fdpneo_server.shared.errors import UpstreamError
 
@@ -55,6 +58,50 @@ def _is_public_ip(ip: _IpAddress) -> bool:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class PinnedUrl:
+    """Where to send a request for a vetted URL.
+
+    ``url`` has the checked address in place of the host name; ``headers`` and
+    ``extensions`` keep the name for ``Host`` and for TLS (SNI and the
+    certificate check). Pass all three to ``httpx``. For a URL whose host is
+    already an IP literal there is nothing to pin.
+
+    ``headers`` always carries ``Connection: close``. The connection pool is
+    keyed on the URL's host, which is now an address: a connection left open
+    for one name could otherwise be reused for another name at the same
+    address, whose certificate was then never checked.
+    """
+
+    url: httpx.URL
+    headers: dict[str, str] = field(default_factory=lambda: {"Connection": "close"})
+    extensions: dict[str, str] = field(default_factory=dict[str, str])
+
+
+async def pin_public_url(
+    url: str,
+    *,
+    allowed_hosts: frozenset[str] | None = None,
+) -> PinnedUrl:
+    """Vet ``url`` like :func:`assert_public_url`, and pin it to the checked address.
+
+    Every address the host resolves to must be public; the connection goes to
+    the first IPv4 one (containers often have no IPv6 route), else the first.
+    """
+    addresses, literal = await _vet(url, allowed_hosts)
+    target = httpx.URL(url)
+    if literal:
+        return PinnedUrl(url=target)
+    address = next((a for a in addresses if a.version == 4), addresses[0])
+    headers = {"Host": target.netloc.decode("ascii"), "Connection": "close"}
+    extensions = (
+        {"sni_hostname": target.raw_host.decode("ascii")} if target.scheme == "https" else {}
+    )
+    return PinnedUrl(
+        url=target.copy_with(host=str(address)), headers=headers, extensions=extensions
+    )
+
+
 async def assert_public_url(
     url: str,
     *,
@@ -66,7 +113,15 @@ async def assert_public_url(
     not the caller's request) when the scheme is disallowed, the host is
     missing, a non-empty ``allowed_hosts`` set excludes the host, the host fails
     to resolve, or *any* resolved address is non-public.
+
+    A check only: a caller that then fetches ``url`` should use
+    :func:`pin_public_url` instead, so the connection goes where the check looked.
     """
+    await _vet(url, allowed_hosts)
+
+
+async def _vet(url: str, allowed_hosts: frozenset[str] | None) -> tuple[list[_IpAddress], bool]:
+    """The host's addresses (all public), and whether the host is an IP literal."""
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme not in ALLOWED_SCHEMES:
@@ -76,9 +131,16 @@ async def assert_public_url(
         raise UpstreamError("download URL has no host")
     if allowed_hosts and host not in allowed_hosts:
         raise UpstreamError("download URL host is not on the egress allow-list")
-    for address in await _resolve(host, parts.port):
+    try:
+        ipaddress.ip_address(host)
+        literal = True
+    except ValueError:
+        literal = False
+    addresses = await _resolve(host, parts.port)
+    for address in addresses:
         if not _is_public_ip(address):
             raise UpstreamError("download URL resolves to a non-public address (SSRF blocked)")
+    return addresses, literal
 
 
 async def _resolve(host: str, port: int | None) -> list[_IpAddress]:
@@ -116,4 +178,4 @@ async def _resolve(host: str, port: int | None) -> list[_IpAddress]:
     return addresses
 
 
-__all__ = ["ALLOWED_SCHEMES", "assert_public_url"]
+__all__ = ["ALLOWED_SCHEMES", "PinnedUrl", "assert_public_url", "pin_public_url"]

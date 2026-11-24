@@ -4,7 +4,8 @@ Audience: any agent (or human) extending the FDP server. Read this before touchi
 authn/authz, the SPARQL or data paths, RDF parsing, outbound HTTP, or secrets.
 It has two parts: **(A) history of the 2026-06-10 audit remediations** (all landed —
 kept for context), then **(B) the standing rules** for all future work.
-Reference: `../../SECURITY-AUDIT-2026-06-10.md`.
+Reference: `../../SECURITY-AUDIT-2026-06-10.md`; the follow-ups from the 2026-11-23
+audit are under A-2 and A-4.
 
 ---
 
@@ -48,6 +49,19 @@ proposed `FDP_DATA_PROXY_ALLOW_PRIVATE_HOSTS`, and private hosts are **always** 
 rather than being unlockable by a flag. Tests: `tests/unit/shared/test_ssrf.py` and the
 redirect/entry-block tests in `tests/unit/data/test_router.py`.
 
+**Follow-up (audit 2026-11-23, F-01): connections are pinned.** The check resolved the
+host and httpx then resolved it again to connect, so a host that changed its DNS answer
+in between (DNS rebinding) could still turn the request inward. `pin_public_url`
+(`shared/ssrf.py`) now returns the URL with the checked address in place of the name,
+plus the name for `Host` and TLS (`sni_hostname`, which is also the name the certificate
+is checked against). The download proxy and the external-label fetcher
+(`metadata/external_labels.py`) connect through it on every hop, as the FDPneo Index's
+outbound client does. Every vetted request also sends `Connection: close`: httpx pools
+connections by the URL's host, now an address, so a connection kept open for one name
+could otherwise carry a request for another name at that address whose certificate was
+never checked. Tests: the pinning tests in `test_ssrf.py`, and
+`test_stream_mode_connects_to_the_address_it_checked` in `test_router.py`.
+
 ### A-3 (Low) — Download-proxy resource limits tightened ✅
 
 `DataSettings.proxy_max_bytes` default lowered 1 GiB → 256 MiB; added
@@ -63,6 +77,12 @@ pseudonym (`subj_<16hex>`). Salt from `FDP_LOG_SUBJECT_SALT` (else a per-process
 salt — still pseudonymized, just not stable across restarts). The identified trail stays
 in the audit log / audit graph, which don't flow through structlog. Tests:
 `tests/unit/shared/test_logging.py`.
+
+**Follow-up (audit 2026-11-23, F-02).** The processor only knows those two keys, and four
+log calls passed a subject under others (`by=` in API-key revocation and update requests,
+`owner=` in revocation), so those went out raw. They now use `subject`/`owner_subject`,
+and `test_subjects_are_only_logged_under_the_pseudonymized_keys` walks every log call in
+the package and fails on a subject logged under any other key.
 
 ---
 
@@ -101,10 +121,13 @@ named-graph isolation gate (`multigraph_safe_provider`) must stay fail-closed �
 "optimize" it to assume the store is conformant.
 
 ### 3. Treat every outbound request as SSRF-prone
-The server makes outbound HTTP in three places today: JWKS/OIDC discovery (trusted
-issuer, fine), the download proxy, and the (now-guarded) JSON-LD parser. Any **new**
-outbound fetch whose URL is influenced by user/metadata input must: allow only
-`http`/`https`, block private/loopback/link-local unless explicitly configured, bound
+The server makes outbound HTTP to operator-configured services (JWKS/OIDC discovery,
+Keycloak, the triple store, update checks) and to URLs that metadata or users influence:
+the download proxy and external labels (both pinned through `pin_public_url`), schema sync
+(operator allow-list) and the (now-guarded) JSON-LD parser. Any **new** outbound fetch
+whose URL is influenced by user/metadata input must: allow only `http`/`https`, block
+private/loopback/link-local unless explicitly configured, connect to the address it
+checked (`pin_public_url`, not `assert_public_url` followed by a fetch by name), bound
 redirects with per-hop re-validation, and bound size + time. RDF parsing counts —
 never let a parser dereference remote documents (`@context`, `LOAD`, XML external
 entities). Keep RDFLib pinned `>=7` (RDF/XML XXE safety) with the existing pin comment.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from io import StringIO
+from pathlib import Path
 
 import pytest
 import structlog
@@ -139,3 +141,42 @@ def test_configure_logging_re_enables_uvicorn_loggers() -> None:
     logging.getLogger("uvicorn.access").disabled = True
     configure_logging("production")
     assert not logging.getLogger("uvicorn.access").disabled
+
+
+_LOG_METHODS = {"debug", "info", "warning", "error", "exception", "critical", "msg"}
+
+
+def _names_a_subject(node: ast.expr) -> bool:
+    """True when a log value reads a subject (``ctx.subject``, ``row.owner_subject`` …)."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Attribute) and sub.attr.endswith("subject"):
+            return True
+        if isinstance(sub, ast.Name) and sub.id.endswith("subject"):
+            return True
+    return False
+
+
+def test_subjects_are_only_logged_under_the_pseudonymized_keys() -> None:
+    # The processor pseudonymizes the keys in ``_SUBJECT_FIELDS`` only: a subject
+    # logged under any other key (``by=ctx.subject``) goes out raw (audit
+    # 2026-11-23, F-02). Walk every log call in the package and check the keys.
+    import fdpneo_server
+    from fdpneo_server.shared.logging import _SUBJECT_FIELDS  # pyright: ignore[reportPrivateUsage]
+
+    root = Path(fdpneo_server.__file__).parent
+    raw: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for call in ast.walk(tree):
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr in _LOG_METHODS
+                and isinstance(call.func.value, ast.Name)
+                and "log" in call.func.value.id.lower()
+            ):
+                continue
+            for keyword in call.keywords:
+                if keyword.arg not in _SUBJECT_FIELDS and _names_a_subject(keyword.value):
+                    raw.append(f"{path.relative_to(root)}:{call.lineno} {keyword.arg}=")
+    assert raw == []

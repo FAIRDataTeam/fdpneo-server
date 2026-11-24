@@ -311,8 +311,8 @@ class ApiKeyService:
         log.info(
             "api_key_revoked",
             key_id=key_id,
-            by=ctx.subject,
-            owner=row.owner_subject,
+            subject=ctx.subject,
+            owner_subject=row.owner_subject,
             admin=is_admin,
         )
 

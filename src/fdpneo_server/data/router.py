@@ -50,7 +50,7 @@ from fdpneo_server.shared.errors import (
 )
 from fdpneo_server.shared.graphs import data_graph_uri
 from fdpneo_server.shared.sparql_safety import assert_query_safe
-from fdpneo_server.shared.ssrf import assert_public_url
+from fdpneo_server.shared.ssrf import pin_public_url
 
 if TYPE_CHECKING:
     from fdpneo_server.config import DataSettings
@@ -241,32 +241,35 @@ async def _stream_upstream(
     """Proxy an upstream download, forwarding Range / If-* request headers.
 
     The upstream URL comes from steward-supplied ``dcat:downloadURL`` metadata,
-    so it passes the SSRF guard (:func:`assert_public_url`, audit N-02) before
+    so it passes the SSRF guard (:func:`pin_public_url`, audit N-02) before
     the entry fetch *and* at every redirect hop — redirects are resolved
     manually (``follow_redirects=False``) precisely so each hop is re-validated,
     closing the "allow-listed host 302s inward" gap. The entry URL is validated
     here so a blocked target fails cleanly with ``502`` before any streaming
     response is committed; a redirect that later points inward aborts the
-    in-flight stream instead (the status line is already sent).
+    in-flight stream instead (the status line is already sent). Each hop
+    connects to the address the guard checked, with the host name kept for
+    ``Host`` and TLS, so DNS rebinding cannot turn it inward (audit F-01).
 
     Volume is capped by ``proxy_max_bytes`` and the whole transfer by a
     wall-clock ``proxy_max_seconds`` deadline (audit N-04) — defense against
     large-blob / slow-upstream worker exhaustion.
     """
     allowed = frozenset(settings.allowed_download_hosts) or None
-    await assert_public_url(url, allowed_hosts=allowed)
+    pinned = await pin_public_url(url, allowed_hosts=allowed)
     forwarded = _forwarded_headers(request)
 
     async def iterator() -> AsyncIterator[bytes]:
         deadline = time.monotonic() + settings.proxy_max_seconds
         bytes_sent = 0
-        current = url
+        current, target = url, pinned
         hops = 0
         while True:
             async with client.stream(
                 "GET",
-                current,
-                headers=forwarded,
+                target.url,
+                headers={**forwarded, **target.headers},
+                extensions=target.extensions,
                 timeout=settings.proxy_timeout_seconds,
                 follow_redirects=False,
             ) as response:
@@ -282,7 +285,7 @@ async def _stream_upstream(
                         return
                     current = urljoin(current, location)
                     try:
-                        await assert_public_url(current, allowed_hosts=allowed)
+                        target = await pin_public_url(current, allowed_hosts=allowed)
                     except UpstreamError:
                         # Status line already sent; can't 502 now — log and
                         # truncate rather than fetch the inward target.
